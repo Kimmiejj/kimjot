@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../transactions/transaction_repository.dart';
@@ -27,18 +28,20 @@ class ScanHubScreen extends StatelessWidget {
 
     if (saved == true && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Transaction saved.')),
+        SnackBar(content: Text(context.strings.transactionSaved)),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Scaffold(
       backgroundColor: const Color(0xFFEAFBFF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: const Text('Scan Hub'),
+        title: Text(strings.scanHub),
         elevation: 0,
       ),
       body: DecoratedBox(
@@ -55,9 +58,9 @@ class ScanHubScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-              const Text(
-                'Page 4',
-                style: TextStyle(
+              Text(
+                strings.page4,
+                style: const TextStyle(
                   color: Color(0xFF65748B),
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
@@ -65,23 +68,22 @@ class ScanHubScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              const MascotTip(
-                message:
-                    'Pick a slip or QR route. Images stay private and are used only for reading.',
+              MascotTip(
+                message: strings.scanHubTip,
                 mood: MascotMood.calm,
               ),
               const SizedBox(height: 16),
               _ScanOption(
                 icon: Icons.document_scanner_rounded,
-                title: 'Scan slip',
-                subtitle: 'Open slip review. OCR engine comes next.',
+                title: strings.scanSlipTitle,
+                subtitle: strings.scanSlipSubtitle,
                 onTap: () => _openSlipReview(context),
               ),
               const SizedBox(height: 12),
-              const _ScanOption(
+              _ScanOption(
                 icon: Icons.photo_library_rounded,
-                title: 'Import from gallery',
-                subtitle: 'Coming next after the save flow is stable.',
+                title: strings.importFromGallery,
+                subtitle: strings.comingNext,
               ),
               ],
             ),

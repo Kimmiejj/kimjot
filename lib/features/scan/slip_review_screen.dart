@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../transactions/manual_transaction_sheet.dart';
@@ -19,11 +20,13 @@ class SlipReviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Scaffold(
       backgroundColor: const Color(0xFFEAFBFF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: const Text('Slip Review'),
+        title: Text(strings.slipReview),
         elevation: 0,
       ),
       body: DecoratedBox(
@@ -45,9 +48,8 @@ class SlipReviewScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const MascotTip(
-                  message:
-                      'Review the slip result before saving. The image is not uploaded.',
+                MascotTip(
+                  message: strings.slipReviewTip,
                   mood: MascotMood.calm,
                 ),
                 const SizedBox(height: 14),
@@ -55,9 +57,8 @@ class SlipReviewScreen extends StatelessWidget {
                   user: user,
                   transactionRepository: transactionRepository,
                   source: TransactionSource.gallerySlip,
-                  title: 'Review slip',
-                  description:
-                      'Page 5. OCR will prefill this later. For now, confirm the slip amount manually.',
+                  title: strings.reviewSlip,
+                  description: strings.slipReviewDescription,
                   initialType: TransactionType.expense,
                   onSaved: () => Navigator.of(context).pop(true),
                 ),

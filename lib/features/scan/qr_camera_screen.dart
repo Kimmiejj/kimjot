@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../transactions/manual_transaction_sheet.dart';
@@ -19,11 +20,13 @@ class QrCameraScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Scaffold(
       backgroundColor: const Color(0xFFEAFBFF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: const Text('QR Camera'),
+        title: Text(strings.qrCamera),
         elevation: 0,
       ),
       body: DecoratedBox(
@@ -45,9 +48,8 @@ class QrCameraScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const MascotTip(
-                  message:
-                      'QR reading is only for prefilling details. kimjod never makes payments.',
+                MascotTip(
+                  message: strings.qrTip,
                   mood: MascotMood.calm,
                 ),
                 const SizedBox(height: 14),
@@ -70,9 +72,8 @@ class QrCameraScreen extends StatelessWidget {
                   user: user,
                   transactionRepository: transactionRepository,
                   source: TransactionSource.qrCamera,
-                  title: 'Review QR',
-                  description:
-                      'Page 6. Camera parsing will prefill this later. For now, enter the QR amount manually.',
+                  title: strings.reviewQr,
+                  description: strings.qrDescription,
                   initialType: TransactionType.expense,
                   onSaved: () => Navigator.of(context).pop(true),
                 ),

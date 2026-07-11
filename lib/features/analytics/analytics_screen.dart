@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../transactions/home_summary.dart';
@@ -19,10 +20,12 @@ class AnalyticsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return _DesignScaffold(
-      status: 'FROM SUMMARY',
-      smallLabel: 'Analytics',
-      title: 'วิเคราะห์เดือนนี้',
+      status: strings.fromSummary,
+      smallLabel: strings.analytics,
+      title: strings.analyticsTitle,
       onBack: () => Navigator.of(context).maybePop(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -35,9 +38,8 @@ class AnalyticsScreen extends StatelessWidget {
             },
           ),
           const SizedBox(height: 14),
-          const MascotTip(
-            message:
-                'Trends will get friendlier as you add more real transactions.',
+          MascotTip(
+            message: strings.analyticsTip,
             mood: MascotMood.calm,
           ),
           const SizedBox(height: 14),
@@ -48,9 +50,9 @@ class AnalyticsScreen extends StatelessWidget {
               final categoryTotals = _expenseTotalsByCategory(transactions);
 
               if (categoryTotals.isEmpty) {
-                return const _EmptyCard(
-                  title: 'ยังไม่มีข้อมูลวิเคราะห์',
-                  message: 'บันทึกรายจ่ายก่อน แล้วกราฟและหมวดที่ใช้เยอะจะขึ้นที่นี่',
+                return _EmptyCard(
+                  title: strings.noAnalyticsTitle,
+                  message: strings.noAnalyticsMessage,
                 );
               }
 
@@ -76,9 +78,9 @@ class _SummaryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'แนวโน้มเดือนนี้',
-            style: TextStyle(
+          Text(
+            context.strings.monthTrend,
+            style: const TextStyle(
               color: Color(0xFF123052),
               fontSize: 16,
               fontWeight: FontWeight.w900,
@@ -89,16 +91,16 @@ class _SummaryCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _Metric(label: 'รายรับ', value: _formatMoney(summary.incomeTotal)),
+                child: _Metric(label: context.strings.income, value: _formatMoney(summary.incomeTotal)),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _Metric(label: 'รายจ่าย', value: _formatMoney(summary.expenseTotal)),
+                child: _Metric(label: context.strings.expense, value: _formatMoney(summary.expenseTotal)),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          _Metric(label: 'คงเหลือ', value: _formatMoney(summary.balance)),
+          _Metric(label: context.strings.balance, value: _formatMoney(summary.balance)),
         ],
       ),
     );
@@ -122,9 +124,9 @@ class _CategoryBreakdownCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'หมวดที่ใช้เยอะสุด',
-            style: TextStyle(
+          Text(
+            context.strings.topCategories,
+            style: const TextStyle(
               color: Color(0xFF123052),
               fontSize: 16,
               fontWeight: FontWeight.w900,

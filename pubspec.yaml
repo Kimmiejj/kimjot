@@ -64,19 +64,21 @@ flutter:
   uses-material-design: true
 
   fonts:
-    - family: Prompt
+    - family: Itim
       fonts:
-        - asset: assets/fonts/prompt/Prompt-Regular.ttf
+        - asset: assets/fonts/itim/Itim-Regular.ttf
+          weight: 300
+        - asset: assets/fonts/itim/Itim-Regular.ttf
           weight: 400
-        - asset: assets/fonts/prompt/Prompt-Medium.ttf
+        - asset: assets/fonts/itim/Itim-Regular.ttf
           weight: 500
-        - asset: assets/fonts/prompt/Prompt-SemiBold.ttf
+        - asset: assets/fonts/itim/Itim-Regular.ttf
           weight: 600
-        - asset: assets/fonts/prompt/Prompt-Bold.ttf
+        - asset: assets/fonts/itim/Itim-Regular.ttf
           weight: 700
-        - asset: assets/fonts/prompt/Prompt-ExtraBold.ttf
+        - asset: assets/fonts/itim/Itim-Regular.ttf
           weight: 800
-        - asset: assets/fonts/prompt/Prompt-Black.ttf
+        - asset: assets/fonts/itim/Itim-Regular.ttf
           weight: 900
 
   # To add assets to your application, add an assets section, like this:

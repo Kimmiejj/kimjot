@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../auth/auth_user.dart';
 import 'create_transaction_input.dart';
 import 'transaction_repository.dart';
@@ -143,7 +144,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not save transaction.')),
+          SnackBar(content: Text(context.strings.couldNotSaveTransaction)),
         );
       }
     }
@@ -158,6 +159,8 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Form(
       key: _formKey,
       child: Column(
@@ -188,16 +191,16 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
                 ],
                 const SizedBox(height: 18),
                 SegmentedButton<TransactionType>(
-                  segments: const [
+                  segments: [
                     ButtonSegment(
                       value: TransactionType.expense,
-                      label: Text('Expense'),
-                      icon: Icon(Icons.arrow_upward_rounded),
+                      label: Text(strings.expense),
+                      icon: const Icon(Icons.arrow_upward_rounded),
                     ),
                     ButtonSegment(
                       value: TransactionType.income,
-                      label: Text('Income'),
-                      icon: Icon(Icons.arrow_downward_rounded),
+                      label: Text(strings.income),
+                      icon: const Icon(Icons.arrow_downward_rounded),
                     ),
                   ],
                   selected: {_type},
@@ -213,15 +216,15 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Amount',
-                    prefixText: 'THB ',
+                  decoration: InputDecoration(
+                    labelText: strings.amount,
+                    prefixText: strings.amountPrefix,
                     border: OutlineInputBorder(),
                   ),
                   validator: (value) {
                     final amount = double.tryParse(value?.trim() ?? '');
                     if (amount == null || amount <= 0) {
-                      return 'Enter an amount greater than 0.';
+                      return strings.amountValidation;
                     }
 
                     return null;
@@ -234,7 +237,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
                   children: [
                     for (final category in _categories)
                       ChoiceChip(
-                        label: Text(category.name),
+                        label: Text(category.label(strings)),
                         selected: _category.id == category.id,
                         onSelected: _isSaving
                             ? null
@@ -252,8 +255,8 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
                   enabled: !_isSaving,
                   minLines: 1,
                   maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Note',
+                  decoration: InputDecoration(
+                    labelText: strings.note,
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -266,7 +269,9 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
                           child: CircularProgressIndicator(strokeWidth: 2.2),
                         )
                       : const Icon(Icons.save_rounded),
-                  label: Text(_isSaving ? 'Saving...' : 'Save transaction'),
+                  label: Text(
+                    _isSaving ? strings.saving : strings.saveTransaction,
+                  ),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(54),
                   ),
@@ -282,6 +287,21 @@ class _CategoryOption {
 
   final String id;
   final String name;
+
+  String label(AppStrings strings) {
+    return switch (id) {
+      'food' => strings.food,
+      'transport' => strings.transport,
+      'shopping' => strings.shopping,
+      'bills' => strings.bills,
+      'transfer' => strings.transfer,
+      'salary' => strings.salary,
+      'side_job' => strings.sideJob,
+      'gift' => strings.gift,
+      'refund' => strings.refund,
+      _ => strings.other,
+    };
+  }
 }
 
 const _expenseCategories = [

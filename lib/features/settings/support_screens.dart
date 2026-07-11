@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 
 class BudgetsScreen extends StatelessWidget {
@@ -7,15 +8,17 @@ class BudgetsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _SupportScreen(
+    final strings = context.strings;
+
+    return _SupportScreen(
       status: 'PENDING SYNC',
-      smallLabel: 'Budget',
-      title: 'คุมงบรายเดือน',
-      heroTitle: 'ยังไม่มีงบประมาณ',
-      heroMessage: 'เมื่อสร้างงบรายเดือนหรือแยกหมวด ระบบจะแสดง progress จริงจาก Firestore ที่นี่',
+      smallLabel: strings.budget,
+      title: strings.budgetControl,
+      heroTitle: strings.noBudgetYet,
+      heroMessage: strings.budgetHeroMessage,
       rows: [
-        _SupportRowData(icon: 'TT', title: 'งบรวมรายเดือน', subtitle: 'ยังไม่ได้ตั้งค่า'),
-        _SupportRowData(icon: 'CT', title: 'งบแยกหมวด', subtitle: 'ยังไม่ได้ตั้งค่า'),
+        _SupportRowData(icon: 'TT', title: strings.totalMonthlyBudget, subtitle: strings.notSet),
+        _SupportRowData(icon: 'CT', title: strings.categoryBudget, subtitle: strings.notSet),
       ],
     );
   }
@@ -26,15 +29,17 @@ class InstallmentsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _SupportScreen(
+    final strings = context.strings;
+
+    return _SupportScreen(
       status: 'USER CONFIRMS',
-      smallLabel: 'Installments',
-      title: 'รายการผ่อน',
-      heroTitle: 'ยังไม่มีรายการผ่อน',
-      heroMessage: 'เมื่อเพิ่มแผนผ่อน ระบบจะแสดงงวดที่ต้องจ่ายและให้ผู้ใช้กดยืนยันเอง ไม่มีการสร้าง transaction อัตโนมัติ',
+      smallLabel: strings.installments,
+      title: strings.installments,
+      heroTitle: strings.noInstallmentsYet,
+      heroMessage: strings.installmentsHeroMessage,
       rows: [
-        _SupportRowData(icon: 'AC', title: 'Active plans', subtitle: '0 รายการ'),
-        _SupportRowData(icon: 'PA', title: 'Mark as paid', subtitle: 'รอรายการผ่อนจริง'),
+        _SupportRowData(icon: 'AC', title: strings.activePlans, subtitle: strings.zeroItems),
+        _SupportRowData(icon: 'PA', title: strings.markAsPaid, subtitle: strings.waitingInstallments),
       ],
     );
   }
@@ -45,17 +50,19 @@ class CategoriesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _SupportScreen(
+    final strings = context.strings;
+
+    return _SupportScreen(
       status: 'SCHEMA SAFE',
-      smallLabel: 'Categories',
-      title: 'จัดหมวดหมู่',
-      heroTitle: 'หมวดเริ่มต้นพร้อมใช้',
-      heroMessage: 'Food, Transport, Bills และ Other ถูกใช้กับ transaction จริงแล้ว ส่วน custom category จะต่อกับ Firestore ในขั้นถัดไป',
+      smallLabel: strings.category,
+      title: strings.manageCategories,
+      heroTitle: strings.defaultCategoriesReady,
+      heroMessage: strings.categoriesHeroMessage,
       rows: [
-        _SupportRowData(icon: 'FD', title: 'Food', subtitle: 'default expense'),
-        _SupportRowData(icon: 'TR', title: 'Transport', subtitle: 'default expense'),
-        _SupportRowData(icon: 'BL', title: 'Bills', subtitle: 'default expense'),
-        _SupportRowData(icon: 'OT', title: 'Other', subtitle: 'default'),
+        _SupportRowData(icon: 'FD', title: strings.food, subtitle: strings.defaultExpense),
+        _SupportRowData(icon: 'TR', title: strings.transport, subtitle: strings.defaultExpense),
+        _SupportRowData(icon: 'BL', title: strings.bills, subtitle: strings.defaultExpense),
+        _SupportRowData(icon: 'OT', title: strings.other, subtitle: strings.defaultCategory),
       ],
     );
   }
@@ -115,9 +122,8 @@ class _SupportScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(title, style: _pageTitleStyle),
                 const SizedBox(height: 20),
-                const MascotTip(
-                  message:
-                      'This section will use your real saved data as soon as you add it.',
+                MascotTip(
+                  message: context.strings.realDataSoon,
                   mood: MascotMood.calm,
                 ),
                 const SizedBox(height: 14),

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kimjod/app/app_language.dart';
 import 'package:kimjod/features/auth/auth_gate.dart';
 import 'package:kimjod/features/auth/auth_service.dart';
 import 'package:kimjod/features/auth/auth_user.dart';
@@ -18,7 +19,7 @@ void main() {
     final authService = _FakeAuthService();
 
     await tester.pumpWidget(
-      MaterialApp(home: LoginScreen(authService: authService)),
+      _buildTestApp(LoginScreen(authService: authService)),
     );
 
     expect(find.text('Keep money clear\nevery day'), findsOneWidget);
@@ -36,8 +37,8 @@ void main() {
     final transactionRepository = _FakeTransactionRepository();
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: AuthGate(
+      _buildTestApp(
+        AuthGate(
           authService: authService,
           transactionRepository: transactionRepository,
         ),
@@ -72,8 +73,8 @@ void main() {
     final transactionRepository = _FakeTransactionRepository();
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: AuthGate(
+      _buildTestApp(
+        AuthGate(
           authService: authService,
           transactionRepository: transactionRepository,
         ),
@@ -86,12 +87,12 @@ void main() {
     await tester.tap(find.text('+\nAdd'));
     await tester.pumpAndSettle();
 
-    expect(find.text('เพิ่มรายการ'), findsOneWidget);
+    expect(find.text('Add transaction'), findsOneWidget);
 
     await tester.enterText(find.byType(TextFormField).first, '125.50');
     await tester.enterText(find.byType(TextFormField).last, 'Lunch');
-    await tester.ensureVisible(find.text('บันทึกรายการ'));
-    await tester.tap(find.text('บันทึกรายการ'));
+    await tester.ensureVisible(find.text('Save transaction'));
+    await tester.tap(find.text('Save transaction'));
     await tester.pumpAndSettle();
 
     expect(transactionRepository.savedInputs, hasLength(1));
@@ -117,8 +118,8 @@ void main() {
     final transactionRepository = _FakeTransactionRepository();
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: AuthGate(
+      _buildTestApp(
+        AuthGate(
           authService: authService,
           transactionRepository: transactionRepository,
         ),
@@ -147,12 +148,12 @@ void main() {
 
     final qrAuthService = _FakeAuthService();
     await tester.pumpWidget(
-      MaterialApp(
-        key: UniqueKey(),
-        home: AuthGate(
+      _buildTestApp(
+        AuthGate(
           authService: qrAuthService,
           transactionRepository: transactionRepository,
         ),
+        key: UniqueKey(),
       ),
     );
     await tester.pump();
@@ -181,6 +182,13 @@ void main() {
 
     qrAuthService.dispose();
   });
+}
+
+Widget _buildTestApp(Widget home, {Key? key}) {
+  return AppLanguageScope(
+    controller: AppLanguageController(initialLanguage: AppLanguage.en),
+    child: MaterialApp(key: key, home: home),
+  );
 }
 
 class _FakeAuthService implements AuthService {

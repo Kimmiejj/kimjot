@@ -39,11 +39,13 @@ class AppLanguageScope extends InheritedNotifier<AppLanguageController> {
     super.key,
   }) : super(notifier: controller);
 
+  static final AppLanguageController _fallbackController =
+      AppLanguageController();
+
   static AppLanguageController controllerOf(BuildContext context) {
     final scope = context
         .dependOnInheritedWidgetOfExactType<AppLanguageScope>();
-    assert(scope != null, 'AppLanguageScope was not found in the widget tree.');
-    return scope!.notifier!;
+    return scope?.notifier ?? _fallbackController;
   }
 
   static AppStrings stringsOf(BuildContext context) {
@@ -59,11 +61,11 @@ extension AppLanguageContext on BuildContext {
 }
 
 class AppStrings {
-  const AppStrings(this.language);
+  const AppStrings(this.currentLanguage);
 
-  final AppLanguage language;
+  final AppLanguage currentLanguage;
 
-  bool get isThai => language == AppLanguage.th;
+  bool get isThai => currentLanguage == AppLanguage.th;
 
   String get startingKimjod => isThai ? 'กำลังเริ่ม kimjod...' : 'Starting kimjod...';
   String get checkingSignIn => isThai ? 'กำลังตรวจสอบการเข้าสู่ระบบ...' : 'Checking sign in...';
@@ -120,6 +122,10 @@ class AppStrings {
       ? 'รายการที่บันทึกจะแสดงที่นี่'
       : 'Saved transactions will appear here.';
   String get seeMore => isThai ? 'ดูทั้งหมด' : 'See more';
+  String get history => isThai ? 'ประวัติ' : 'History';
+  String get allTransactions => isThai ? 'รายการทั้งหมด' : 'All transactions';
+  String get searchPlaceholder => isThai ? 'ค้นหา / เดือน / หมวดหมู่' : 'Search / month / category';
+  String get noSavedTransactions => isThai ? 'ยังไม่มีรายการที่บันทึก' : 'No saved transactions yet';
 
   String get addTransaction => isThai ? 'เพิ่มรายการ' : 'Add transaction';
   String get addTransactionTip => isThai
@@ -142,12 +148,45 @@ class AppStrings {
       : 'Could not save transaction.';
   String get back => isThai ? 'กลับ' : 'Back';
 
+  String get scanHub => isThai ? 'ศูนย์สแกน' : 'Scan Hub';
+  String get page4 => isThai ? 'หน้า 4' : 'Page 4';
+  String get scanHubTip => isThai
+      ? 'เลือกเส้นทางสลิปหรือ QR รูปภาพยังเป็นส่วนตัวและใช้เพื่ออ่านข้อมูลเท่านั้น'
+      : 'Pick a slip or QR route. Images stay private and are used only for reading.';
+  String get scanSlipTitle => isThai ? 'สแกนสลิป' : 'Scan slip';
+  String get scanSlipSubtitle => isThai
+      ? 'เปิดหน้าตรวจสลิป ระบบ OCR จะตามมาในขั้นถัดไป'
+      : 'Open slip review. OCR engine comes next.';
+  String get importFromGallery => isThai ? 'นำเข้าจากแกลเลอรี' : 'Import from gallery';
+  String get comingNext => isThai
+      ? 'จะเพิ่มหลังจาก flow บันทึกนิ่งแล้ว'
+      : 'Coming next after the save flow is stable.';
+  String get slipReview => isThai ? 'ตรวจสลิป' : 'Slip Review';
+  String get reviewSlip => isThai ? 'ตรวจรายการสลิป' : 'Review slip';
+  String get slipReviewTip => isThai
+      ? 'ตรวจผลลัพธ์จากสลิปก่อนบันทึก รูปภาพจะไม่ถูกอัปโหลด'
+      : 'Review the slip result before saving. The image is not uploaded.';
+  String get slipReviewDescription => isThai
+      ? 'หน้า 5 ระบบ OCR จะกรอกให้อัตโนมัติภายหลัง ตอนนี้ยืนยันจำนวนเงินด้วยตัวเองก่อน'
+      : 'Page 5. OCR will prefill this later. For now, confirm the slip amount manually.';
+  String get qrCamera => isThai ? 'กล้อง QR' : 'QR Camera';
+  String get reviewQr => isThai ? 'ตรวจรายการ QR' : 'Review QR';
+  String get qrTip => isThai
+      ? 'การอ่าน QR ใช้เพื่อกรอกข้อมูลเท่านั้น kimjod ไม่ทำรายการจ่ายเงิน'
+      : 'QR reading is only for prefilling details. kimjod never makes payments.';
+  String get qrDescription => isThai
+      ? 'หน้า 6 ระบบกล้องจะกรอกข้อมูลให้อัตโนมัติภายหลัง ตอนนี้ใส่จำนวนเงินจาก QR ด้วยตัวเองก่อน'
+      : 'Page 6. Camera parsing will prefill this later. For now, enter the QR amount manually.';
+
   String get food => isThai ? 'อาหาร' : 'Food';
   String get transport => isThai ? 'เดินทาง' : 'Transport';
   String get bills => isThai ? 'บิล' : 'Bills';
+  String get shopping => isThai ? 'ช้อปปิ้ง' : 'Shopping';
+  String get transfer => isThai ? 'โอนเงิน' : 'Transfer';
   String get other => isThai ? 'อื่น ๆ' : 'Other';
   String get salary => isThai ? 'เงินเดือน' : 'Salary';
   String get sideJob => isThai ? 'งานเสริม' : 'Side Job';
+  String get gift => isThai ? 'ของขวัญ' : 'Gift';
   String get refund => isThai ? 'คืนเงิน' : 'Refund';
 
   String get privateData => isThai ? 'ข้อมูลส่วนตัว' : 'PRIVATE DATA';
@@ -165,6 +204,45 @@ class AppStrings {
       ? 'ใช้ Firestore offline persistence'
       : 'Uses Firestore offline persistence';
   String get signOut => isThai ? 'ออกจากระบบ' : 'Sign out';
+  String get analytics => isThai ? 'วิเคราะห์' : 'Analytics';
+  String get analyticsTitle => isThai ? 'วิเคราะห์เดือนนี้' : 'This month analytics';
+  String get fromSummary => isThai ? 'จากสรุป' : 'FROM SUMMARY';
+  String get analyticsTip => isThai
+      ? 'เมื่อเพิ่มรายการจริงมากขึ้น แนวโน้มจะอ่านง่ายขึ้น'
+      : 'Trends will get friendlier as you add more real transactions.';
+  String get noAnalyticsTitle => isThai ? 'ยังไม่มีข้อมูลวิเคราะห์' : 'No analytics yet';
+  String get noAnalyticsMessage => isThai
+      ? 'บันทึกรายจ่ายก่อน แล้วกราฟและหมวดที่ใช้เยอะจะขึ้นที่นี่'
+      : 'Save expenses first, then charts and top categories will appear here.';
+  String get monthTrend => isThai ? 'แนวโน้มเดือนนี้' : 'This month trend';
+  String get balance => isThai ? 'คงเหลือ' : 'Balance';
+  String get topCategories => isThai ? 'หมวดที่ใช้เยอะสุด' : 'Top categories';
+  String get realDataSoon => isThai
+      ? 'ส่วนนี้จะใช้ข้อมูลจริงทันทีเมื่อคุณเพิ่มข้อมูล'
+      : 'This section will use your real saved data as soon as you add it.';
+  String get budgetControl => isThai ? 'คุมงบรายเดือน' : 'Monthly budget';
+  String get noBudgetYet => isThai ? 'ยังไม่มีงบประมาณ' : 'No budget yet';
+  String get budgetHeroMessage => isThai
+      ? 'เมื่อสร้างงบรายเดือนหรือแยกหมวด ระบบจะแสดง progress จริงจาก Firestore ที่นี่'
+      : 'When you create monthly or category budgets, real Firestore progress will appear here.';
+  String get totalMonthlyBudget => isThai ? 'งบรวมรายเดือน' : 'Total monthly budget';
+  String get categoryBudget => isThai ? 'งบแยกหมวด' : 'Category budget';
+  String get notSet => isThai ? 'ยังไม่ได้ตั้งค่า' : 'Not set';
+  String get noInstallmentsYet => isThai ? 'ยังไม่มีรายการผ่อน' : 'No installments yet';
+  String get installmentsHeroMessage => isThai
+      ? 'เมื่อเพิ่มแผนผ่อน ระบบจะแสดงงวดที่ต้องจ่ายและให้ผู้ใช้กดยืนยันเอง ไม่มีการสร้าง transaction อัตโนมัติ'
+      : 'When you add installment plans, due payments will appear for manual confirmation. No automatic transactions are created.';
+  String get activePlans => isThai ? 'แผนที่ใช้งาน' : 'Active plans';
+  String get zeroItems => isThai ? '0 รายการ' : '0 items';
+  String get markAsPaid => isThai ? 'ทำเครื่องหมายว่าจ่ายแล้ว' : 'Mark as paid';
+  String get waitingInstallments => isThai ? 'รอรายการผ่อนจริง' : 'Waiting for real installments';
+  String get manageCategories => isThai ? 'จัดหมวดหมู่' : 'Manage categories';
+  String get defaultCategoriesReady => isThai ? 'หมวดเริ่มต้นพร้อมใช้' : 'Default categories ready';
+  String get categoriesHeroMessage => isThai
+      ? 'Food, Transport, Bills และ Other ถูกใช้กับ transaction จริงแล้ว ส่วน custom category จะต่อกับ Firestore ในขั้นถัดไป'
+      : 'Food, Transport, Bills, and Other are already used by real transactions. Custom categories will connect to Firestore next.';
+  String get defaultExpense => isThai ? 'รายจ่ายพื้นฐาน' : 'default expense';
+  String get defaultCategory => isThai ? 'พื้นฐาน' : 'default';
 
   String formatDate(DateTime date) {
     final months = isThai

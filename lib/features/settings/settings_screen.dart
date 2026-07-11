@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
@@ -20,45 +21,48 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return _SettingsScaffold(
-      title: 'ตั้งค่า',
-      smallLabel: 'Settings',
-      status: 'PRIVATE DATA',
+      title: strings.settings,
+      smallLabel: strings.settings,
+      status: strings.privateData,
       onBack: () => Navigator.of(context).maybePop(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ProfileCard(user: user),
           const SizedBox(height: 14),
-          const MascotTip(
-            message:
-                'Your settings, categories, budgets, and installments live here.',
+          MascotTip(
+            message: strings.settingsTip,
           ),
+          const SizedBox(height: 14),
+          const _LanguageCard(),
           const SizedBox(height: 14),
           _SettingsCard(
             children: [
               _SettingsRow(
                 icon: 'CT',
-                title: 'หมวดหมู่',
-                subtitle: 'fixed + custom',
+                title: strings.category,
+                subtitle: strings.fixedCustom,
                 onTap: () => _open(context, const CategoriesScreen()),
               ),
               _SettingsRow(
                 icon: 'BG',
-                title: 'งบประมาณ',
-                subtitle: 'รายเดือนและแยกหมวด',
+                title: strings.budget,
+                subtitle: strings.monthlyAndCategory,
                 onTap: () => _open(context, const BudgetsScreen()),
               ),
               _SettingsRow(
                 icon: 'IN',
-                title: 'รายการผ่อน',
-                subtitle: 'งวดคงที่',
+                title: strings.installments,
+                subtitle: strings.fixedInstallment,
                 onTap: () => _open(context, const InstallmentsScreen()),
               ),
-              const _SettingsRow(
+              _SettingsRow(
                 icon: 'SY',
-                title: 'สถานะ sync',
-                subtitle: 'ใช้ Firestore offline persistence',
+                title: strings.syncStatus,
+                subtitle: strings.firestoreOffline,
               ),
             ],
           ),
@@ -74,9 +78,9 @@ class SettingsScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(21),
               ),
             ),
-            child: const Text(
-              'ออกจากระบบ',
-              style: TextStyle(
+            child: Text(
+              strings.signOut,
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0,
@@ -183,6 +187,61 @@ class _SettingsCard extends StatelessWidget {
   }
 }
 
+class _LanguageCard extends StatelessWidget {
+  const _LanguageCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.languageController;
+    final strings = context.strings;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const _IconBadge(label: 'LA'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(strings.language, style: _rowTitleStyle),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SegmentedButton<AppLanguage>(
+            segments: [
+              ButtonSegment(
+                value: AppLanguage.th,
+                label: Text(strings.thai),
+              ),
+              ButtonSegment(
+                value: AppLanguage.en,
+                label: Text(strings.english),
+              ),
+            ],
+            selected: {controller.language},
+            onSelectionChanged: (selection) {
+              controller.setLanguage(selection.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              textStyle: const WidgetStatePropertyAll(
+                TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0),
+              ),
+              side: const WidgetStatePropertyAll(
+                BorderSide(color: Color(0x2E5D81AD)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
     required this.icon,
@@ -274,9 +333,7 @@ class _SettingsScaffold extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
                 Text(smallLabel, style: _mutedStyle),
-                const SizedBox(height: 4),
-                Text(title, style: _pageTitleStyle),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 child,
               ],
             ),
@@ -332,13 +389,6 @@ BoxDecoration _cardDecoration() {
     ],
   );
 }
-
-const _pageTitleStyle = TextStyle(
-  color: Color(0xFF10233F),
-  fontSize: 30,
-  fontWeight: FontWeight.w900,
-  letterSpacing: 0,
-);
 
 const _rowTitleStyle = TextStyle(
   color: Color(0xFF10233F),

@@ -72,7 +72,7 @@ class _KimjodAppState extends State<KimjodApp> {
         seedColor: seedColor,
         brightness: Brightness.light,
       ),
-      fontFamily: 'Prompt',
+      fontFamily: 'Itim',
       useMaterial3: true,
     );
 

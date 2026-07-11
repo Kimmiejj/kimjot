@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import 'transaction_record.dart';
@@ -108,16 +109,16 @@ class _TransactionsHeader extends StatelessWidget {
             IconButton(
               onPressed: onBack,
               icon: const Icon(Icons.arrow_back_rounded),
-              tooltip: 'Back',
+              tooltip: context.strings.back,
               style: IconButton.styleFrom(
                 backgroundColor: Colors.white.withValues(alpha: 0.72),
                 foregroundColor: const Color(0xFF10233F),
               ),
             ),
             const Spacer(),
-            const Text(
-              'SYNCED',
-              style: TextStyle(
+            Text(
+              context.strings.synced,
+              style: const TextStyle(
                 color: Color(0xFF65748B),
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
@@ -132,9 +133,9 @@ class _TransactionsHeader extends StatelessWidget {
           child: KimjodMascot(size: 62, mood: MascotMood.calm),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'History',
-          style: TextStyle(
+        Text(
+          context.strings.history,
+          style: const TextStyle(
             color: Color(0xFF65748B),
             fontSize: 14,
             fontWeight: FontWeight.w800,
@@ -142,9 +143,9 @@ class _TransactionsHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'รายการทั้งหมด',
-          style: TextStyle(
+        Text(
+          context.strings.allTransactions,
+          style: const TextStyle(
             color: Color(0xFF10233F),
             fontSize: 30,
             fontWeight: FontWeight.w900,
@@ -159,14 +160,14 @@ class _TransactionsHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: const Color(0x2E7092BE)),
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.search_rounded, color: Color(0xFF65748B)),
-              SizedBox(width: 10),
+              const Icon(Icons.search_rounded, color: Color(0xFF65748B)),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'ค้นหา / เดือน / หมวดหมู่',
-                  style: TextStyle(
+                  context.strings.searchPlaceholder,
+                  style: const TextStyle(
                     color: Color(0xFF65748B),
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -282,9 +283,9 @@ class _EmptyTransactionsCard extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(24),
       ),
-      child: const Text(
-        'ยังไม่มีรายการที่บันทึก',
-        style: TextStyle(
+      child: Text(
+        context.strings.noSavedTransactions,
+        style: const TextStyle(
           color: Color(0xFF65748B),
           fontSize: 15,
           fontWeight: FontWeight.w800,
