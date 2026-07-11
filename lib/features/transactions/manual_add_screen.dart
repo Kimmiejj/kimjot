@@ -1,0 +1,800 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../auth/auth_user.dart';
+import 'create_transaction_input.dart';
+import 'transaction_repository.dart';
+import 'transaction_source.dart';
+import 'transaction_type.dart';
+
+class ManualAddScreen extends StatefulWidget {
+  const ManualAddScreen({
+    required this.user,
+    required this.transactionRepository,
+    super.key,
+  });
+
+  final AuthUser user;
+  final TransactionRepository transactionRepository;
+
+  @override
+  State<ManualAddScreen> createState() => _ManualAddScreenState();
+}
+
+class _ManualAddScreenState extends State<ManualAddScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _amountController = TextEditingController();
+  final _noteController = TextEditingController();
+  final _detailController = TextEditingController();
+
+  var _type = TransactionType.expense;
+  var _category = _expenseCategories.first;
+  late DateTime _selectedDate;
+  var _isSaving = false;
+
+  List<_CategoryOption> get _categories =>
+      _type == TransactionType.expense ? _expenseCategories : _incomeCategories;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = DateTime.now();
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _noteController.dispose();
+    _detailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 2),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF3268F6),
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Color(0xFF10233F),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
+  void _setType(TransactionType type) {
+    setState(() {
+      _type = type;
+      _category = _categoriesFor(type).first;
+    });
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    final notes = [
+      _noteController.text.trim(),
+      _detailController.text.trim(),
+    ].where((value) => value.isNotEmpty).join(' / ');
+
+    try {
+      await widget.transactionRepository.createManualTransaction(
+        CreateTransactionInput(
+          userId: widget.user.uid,
+          amount: _parseAmount(_amountController.text),
+          type: _type,
+          categoryId: _category.id,
+          categoryName: _category.savedName,
+          transactionDate: _selectedDate,
+          source: TransactionSource.manual,
+          note: notes,
+        ),
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSaving = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save transaction.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FFFF),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFE7FFF4),
+              Color(0xFFEAFBFF),
+              Color(0xFFF7F4FF),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(22, 18, 22, bottomInset + 28),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _StatusRow(onBack: () => Navigator.of(context).maybePop()),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'เพิ่มรายการ',
+                    style: TextStyle(
+                      color: Color(0xFF10233F),
+                      fontSize: 32,
+                      fontWeight: FontWeight.w900,
+                      height: 1.15,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  _FormSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _AmountField(
+                          controller: _amountController,
+                          enabled: !_isSaving,
+                        ),
+                        const SizedBox(height: 12),
+                        _TypeSelector(
+                          type: _type,
+                          enabled: !_isSaving,
+                          onChanged: _setType,
+                        ),
+                        const SizedBox(height: 12),
+                        _CategoryField(
+                          categories: _categories,
+                          selected: _category,
+                          enabled: !_isSaving,
+                          onChanged: (category) {
+                            setState(() {
+                              _category = category;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        _DateField(
+                          label: 'วันที่',
+                          value: _formatThaiDate(_selectedDate),
+                          enabled: !_isSaving,
+                          onTap: _pickDate,
+                        ),
+                        const SizedBox(height: 12),
+                        _TextFieldBlock(
+                          controller: _noteController,
+                          enabled: !_isSaving,
+                          label: 'โน้ต',
+                          hint: 'อาหารกลางวัน',
+                        ),
+                        const SizedBox(height: 12),
+                        _TextFieldBlock(
+                          controller: _detailController,
+                          enabled: !_isSaving,
+                          label: 'รายละเอียดเพิ่มเติม',
+                          hint: 'ร้าน / source / merchant',
+                        ),
+                        const SizedBox(height: 12),
+                        _PrimaryButton(
+                          isSaving: _isSaving,
+                          onPressed: _save,
+                        ),
+                        const SizedBox(height: 12),
+                        _SecondaryButton(enabled: !_isSaving),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusRow extends StatelessWidget {
+  const _StatusRow({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: onBack,
+          icon: const Icon(Icons.arrow_back_rounded),
+          color: const Color(0xFF10233F),
+          tooltip: 'Back',
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: 0.72),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          _formatClock(TimeOfDay.now()),
+          style: const TextStyle(
+            color: Color(0xFF10233F),
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FormSurface extends StatelessWidget {
+  const _FormSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.zero,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _AmountField extends StatelessWidget {
+  const _AmountField({required this.controller, required this.enabled});
+
+  final TextEditingController controller;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 112),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0x291FC9DC),
+            Color(0x1F6A4DF4),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.76)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14305472),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: TextFormField(
+        controller: controller,
+        enabled: enabled,
+        autofocus: false,
+        showCursor: false,
+        inputFormatters: const [_AmountTextInputFormatter()],
+        textAlign: TextAlign.center,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        style: const TextStyle(
+          color: Color(0xFF071844),
+          fontSize: 46,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0,
+        ),
+        decoration: const InputDecoration(
+          labelText: 'จำนวนเงิน',
+          floatingLabelAlignment: FloatingLabelAlignment.center,
+          prefixText: '฿',
+          hintText: '0',
+          border: InputBorder.none,
+          labelStyle: TextStyle(
+            color: Color(0xFF10233F),
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+          ),
+          hintStyle: TextStyle(color: Color(0x6610233F)),
+        ),
+        validator: (value) {
+          final amount = _tryParseAmount(value);
+          if (amount == null || amount <= 0) {
+            return 'กรอกจำนวนเงินมากกว่า 0';
+          }
+
+          return null;
+        },
+      ),
+    );
+  }
+}
+
+class _TypeSelector extends StatelessWidget {
+  const _TypeSelector({
+    required this.type,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final TransactionType type;
+  final bool enabled;
+  final ValueChanged<TransactionType> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.76)),
+      ),
+      child: Row(
+        children: [
+          _Segment(
+            label: 'รายจ่าย',
+            selected: type == TransactionType.expense,
+            enabled: enabled,
+            onTap: () => onChanged(TransactionType.expense),
+          ),
+          _Segment(
+            label: 'รายรับ',
+            selected: type == TransactionType.income,
+            enabled: enabled,
+            onTap: () => onChanged(TransactionType.income),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Segment extends StatelessWidget {
+  const _Segment({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          constraints: const BoxConstraints(minHeight: 46),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: selected
+                ? const LinearGradient(
+                    colors: [
+                      Color(0xFF1FC9DC),
+                      Color(0xFF3268F6),
+                    ],
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(19),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : const Color(0xFF65748B),
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryField extends StatelessWidget {
+  const _CategoryField({
+    required this.categories,
+    required this.selected,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final List<_CategoryOption> categories;
+  final _CategoryOption selected;
+  final bool enabled;
+  final ValueChanged<_CategoryOption> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Field(
+      label: 'หมวดหมู่',
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final category in categories)
+            ChoiceChip(
+              label: Text(category.label),
+              selected: selected.id == category.id,
+              onSelected: enabled ? (_) => onChanged(category) : null,
+              showCheckmark: false,
+              selectedColor: const Color(0xFF102F67),
+              backgroundColor: Colors.white.withValues(alpha: 0.72),
+              side: const BorderSide(color: Color(0x2E5D81AD)),
+              labelStyle: TextStyle(
+                color: selected.id == category.id
+                    ? Colors.white
+                    : const Color(0xFF1D3C6C),
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DateField extends StatelessWidget {
+  const _DateField({
+    required this.label,
+    required this.value,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Field(
+      label: label,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xFF10233F),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.calendar_month_rounded,
+                color: Color(0xFF3268F6),
+                size: 22,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TextFieldBlock extends StatelessWidget {
+  const _TextFieldBlock({
+    required this.controller,
+    required this.enabled,
+    required this.label,
+    required this.hint,
+  });
+
+  final TextEditingController controller;
+  final bool enabled;
+  final String label;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Field(
+      label: label,
+      child: TextFormField(
+        controller: controller,
+        enabled: enabled,
+        minLines: 1,
+        maxLines: 2,
+        style: const TextStyle(
+          color: Color(0xFF10233F),
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0,
+        ),
+        decoration: InputDecoration.collapsed(
+          hintText: hint,
+          hintStyle: const TextStyle(
+            color: Color(0x8065748B),
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Field extends StatelessWidget {
+  const _Field({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.78)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF65748B),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 4),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({required this.isSaving, required this.onPressed});
+
+  final bool isSaving;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF1FC9DC),
+            Color(0xFF3268F6),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(21),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x3D1FC9DC),
+            blurRadius: 32,
+            offset: Offset(0, 16),
+          ),
+        ],
+      ),
+      child: FilledButton(
+        onPressed: isSaving ? null : onPressed,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(58),
+          backgroundColor: Colors.transparent,
+          disabledBackgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(21),
+          ),
+        ),
+        child: Text(
+          isSaving ? 'กำลังบันทึก...' : 'บันทึกรายการ',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SecondaryButton extends StatelessWidget {
+  const _SecondaryButton({required this.enabled});
+
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: enabled ? () {} : null,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(58),
+        foregroundColor: const Color(0xFF16345F),
+        backgroundColor: Colors.white.withValues(alpha: 0.72),
+        side: const BorderSide(color: Color(0x2E5D81AD)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(21)),
+      ),
+      child: const Text(
+        'บันทึกเป็นงวดผ่อน',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryOption {
+  const _CategoryOption({
+    required this.id,
+    required this.label,
+    required this.savedName,
+  });
+
+  final String id;
+  final String label;
+  final String savedName;
+}
+
+List<_CategoryOption> _categoriesFor(TransactionType type) {
+  return type == TransactionType.expense ? _expenseCategories : _incomeCategories;
+}
+
+const _expenseCategories = [
+  _CategoryOption(id: 'food', label: 'อาหาร', savedName: 'Food'),
+  _CategoryOption(id: 'transport', label: 'เดินทาง', savedName: 'Transport'),
+  _CategoryOption(id: 'bills', label: 'บิล', savedName: 'Bills'),
+  _CategoryOption(id: 'other', label: 'อื่น ๆ', savedName: 'Other'),
+];
+
+const _incomeCategories = [
+  _CategoryOption(id: 'salary', label: 'เงินเดือน', savedName: 'Salary'),
+  _CategoryOption(id: 'side_job', label: 'งานเสริม', savedName: 'Side Job'),
+  _CategoryOption(id: 'refund', label: 'คืนเงิน', savedName: 'Refund'),
+  _CategoryOption(id: 'other_income', label: 'อื่น ๆ', savedName: 'Other'),
+];
+
+String _formatThaiDate(DateTime date) {
+  const months = [
+    'ม.ค.',
+    'ก.พ.',
+    'มี.ค.',
+    'เม.ย.',
+    'พ.ค.',
+    'มิ.ย.',
+    'ก.ค.',
+    'ส.ค.',
+    'ก.ย.',
+    'ต.ค.',
+    'พ.ย.',
+    'ธ.ค.',
+  ];
+
+  return 'วันนี้, ${date.day} ${months[date.month - 1]} ${date.year}';
+}
+
+String _formatClock(TimeOfDay time) {
+  final hour = time.hour.toString().padLeft(2, '0');
+  final minute = time.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
+}
+
+double _parseAmount(String value) {
+  return _tryParseAmount(value)!;
+}
+
+double? _tryParseAmount(String? value) {
+  return double.tryParse((value ?? '').replaceAll(',', '').trim());
+}
+
+class _AmountTextInputFormatter extends TextInputFormatter {
+  const _AmountTextInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final raw = newValue.text.replaceAll(',', '');
+    if (raw.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    final parts = raw.split('.');
+    var whole = parts.first.replaceAll(RegExp(r'[^0-9]'), '');
+    if (whole.isEmpty) {
+      whole = '0';
+    }
+
+    final decimal = parts.length > 1
+        ? '.${parts.sublist(1).join().replaceAll(RegExp(r'[^0-9]'), '')}'
+        : '';
+    final formatted = '${_addThousandsSeparators(whole)}$decimal';
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+String _addThousandsSeparators(String digits) {
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    final remaining = digits.length - i;
+    buffer.write(digits[i]);
+    if (remaining > 1 && remaining % 3 == 1) {
+      buffer.write(',');
+    }
+  }
+  return buffer.toString();
+}

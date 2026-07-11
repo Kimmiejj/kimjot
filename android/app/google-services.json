@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "193387033943",
+    "project_id": "kimjot",
+    "storage_bucket": "kimjot.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:193387033943:android:f5b56f1819019df11dfa12",
+        "android_client_info": {
+          "package_name": "com.kimjot.project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4fNSL0bgNTLmreqKh0Ro8AJ4jij_M4bg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
