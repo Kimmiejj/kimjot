@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
+import '../../shared/widgets/pastel_kit.dart';
 import '../analytics/analytics_screen.dart';
 import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
@@ -32,13 +34,15 @@ class HomeScreen extends StatelessWidget {
 
     if (saved == true && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Transaction saved.')),
+        SnackBar(content: Text(context.strings.transactionSaved)),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFF3FAFB),
@@ -87,7 +91,14 @@ class HomeScreen extends StatelessWidget {
                 sliver: SliverToBoxAdapter(
                   child: _HomeHeader(
                     displayName: user.displayName ?? 'Kim',
-                    onSignOut: authService.signOut,
+                    onSettings: () => _openPage(
+                      context,
+                      SettingsScreen(
+                        user: user,
+                        authService: authService,
+                        transactionRepository: transactionRepository,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -129,37 +140,37 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
                 sliver: SliverToBoxAdapter(
                   child: _EmptyInfoCard(
-                    title: 'Budget',
-                    message: 'No budget has been created yet.',
+                    title: strings.budget,
+                    message: strings.noBudget,
                     icon: Icons.account_balance_wallet_rounded,
                   ),
                 ),
               ),
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(24, 22, 24, 0),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
                 sliver: SliverToBoxAdapter(
-                  child: _SectionHeader(title: 'Installments'),
+                  child: _SectionHeader(title: strings.installments),
                 ),
               ),
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(24, 10, 24, 0),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
                 sliver: SliverToBoxAdapter(
                   child: _EmptyInfoCard(
-                    title: 'No due installment',
-                    message: 'Installment items will appear here after setup.',
+                    title: strings.noDueInstallment,
+                    message: strings.installmentHint,
                     icon: Icons.event_available_rounded,
                   ),
                 ),
               ),
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(24, 22, 24, 0),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
                 sliver: SliverToBoxAdapter(
                   child: _SectionHeader(
-                    title: 'Recent transactions',
+                    title: strings.recentTransactions,
                   ),
                 ),
               ),
@@ -211,13 +222,15 @@ class _SummaryBuilder extends StatelessWidget {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.displayName, required this.onSignOut});
+  const _HomeHeader({required this.displayName, required this.onSettings});
 
   final String displayName;
-  final VoidCallback onSignOut;
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -225,8 +238,8 @@ class _HomeHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'SYNCED',
+              Text(
+                strings.synced,
                 style: TextStyle(
                   color: Color(0xFF111827),
                   fontSize: 12,
@@ -236,7 +249,7 @@ class _HomeHeader extends StatelessWidget {
               ),
               const SizedBox(height: 22),
               Text(
-                'Hello, $displayName',
+                strings.hello(displayName),
                 style: const TextStyle(
                   color: Color(0xFF64748B),
                   fontSize: 15,
@@ -245,8 +258,8 @@ class _HomeHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'This month',
+              Text(
+                strings.thisMonth,
                 style: TextStyle(
                   color: Color(0xFF111827),
                   fontSize: 30,
@@ -257,17 +270,12 @@ class _HomeHeader extends StatelessWidget {
             ],
           ),
         ),
-        IconButton.filledTonal(
-          onPressed: onSignOut,
-          icon: const Text(
-            'K',
-            style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0),
-          ),
-          tooltip: 'Sign out',
-          style: IconButton.styleFrom(
-            backgroundColor: Colors.white.withValues(alpha: 0.82),
-            foregroundColor: const Color(0xFF111827),
-            minimumSize: const Size.square(50),
+        Tooltip(
+          message: strings.settings,
+          child: InkWell(
+            onTap: onSettings,
+            borderRadius: BorderRadius.circular(24),
+            child: const KimjodMascot(size: 64),
           ),
         ),
       ],
@@ -282,6 +290,8 @@ class _BalancePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -306,8 +316,8 @@ class _BalancePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Monthly balance',
+          Text(
+            strings.monthlyBalance,
             style: TextStyle(
               color: Color(0xFF5B7F84),
               fontSize: 13,
@@ -334,7 +344,7 @@ class _BalancePanel extends StatelessWidget {
             children: [
               Expanded(
                 child: _BalanceMetric(
-                  label: 'Income',
+                  label: strings.income,
                   value: _formatMoney(summary.incomeTotal),
                   valueColor: const Color(0xFF1B8F73),
                 ),
@@ -342,7 +352,7 @@ class _BalancePanel extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _BalanceMetric(
-                  label: 'Expense',
+                  label: strings.expense,
                   value: _formatMoney(summary.expenseTotal),
                   valueColor: const Color(0xFFB66A72),
                 ),
@@ -421,11 +431,13 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Row(
       children: [
         Expanded(
           child: _ActionTile(
-            label: '+\nAdd',
+            label: '+\n${strings.add}',
             onTap: onAdd,
             backgroundColor: Colors.white.withValues(alpha: 0.92),
             foregroundColor: const Color(0xFF111827),
@@ -434,7 +446,7 @@ class _QuickActions extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: _ActionTile(
-            label: 'SCAN\nSlip',
+            label: strings.scanSlip,
             onTap: onScan,
             backgroundColor: Colors.white.withValues(alpha: 0.92),
             foregroundColor: const Color(0xFF111827),
@@ -443,7 +455,7 @@ class _QuickActions extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: _ActionTile(
-            label: 'QR\nBank',
+            label: strings.qrBank,
             onTap: onQr,
             backgroundColor: Colors.white.withValues(alpha: 0.92),
             foregroundColor: const Color(0xFF111827),
@@ -622,9 +634,9 @@ class _RecentTransactionsBuilder extends StatelessWidget {
         final transactions = snapshot.data ?? const [];
 
         if (transactions.isEmpty) {
-          return const _EmptyInfoCard(
-            title: 'No transactions yet',
-            message: 'Saved transactions will appear here.',
+          return _EmptyInfoCard(
+            title: context.strings.noTransactionsYet,
+            message: context.strings.savedTransactionsHint,
             icon: Icons.receipt_long_rounded,
           );
         }
@@ -649,9 +661,9 @@ class _RecentTransactionsBuilder extends StatelessWidget {
                     borderRadius: BorderRadius.circular(18),
                   ),
                 ),
-                child: const Text(
-                  'See more',
-                  style: TextStyle(
+                child: Text(
+                  context.strings.seeMore,
+                  style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0,
                   ),
@@ -786,6 +798,8 @@ class _FloatingHomeNavigationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(24, 0, 24, 18),
       child: Container(
@@ -807,22 +821,22 @@ class _FloatingHomeNavigationBar extends StatelessWidget {
           children: [
             _NavItem(
               icon: Icons.home_outlined,
-              label: 'Home',
+              label: strings.home,
               onTap: onHome,
             ),
             _NavItem(
               icon: Icons.crop_square_rounded,
-              label: 'Scan',
+              label: strings.scan,
               onTap: onScan,
             ),
             _NavItem(
               icon: Icons.bar_chart_rounded,
-              label: 'Graph',
+              label: strings.graph,
               onTap: onGraph,
             ),
             _NavItem(
               icon: Icons.settings_rounded,
-              label: 'Settings',
+              label: strings.settings,
               onTap: onSettings,
             ),
           ],

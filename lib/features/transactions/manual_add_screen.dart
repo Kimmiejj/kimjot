@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../app/app_language.dart';
+import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import 'create_transaction_input.dart';
 import 'transaction_repository.dart';
@@ -126,7 +128,7 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save transaction.')),
+        SnackBar(content: Text(context.strings.couldNotSaveTransaction)),
       );
     }
   }
@@ -134,6 +136,7 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final strings = context.strings;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FFFF),
@@ -159,15 +162,24 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
                 children: [
                   _StatusRow(onBack: () => Navigator.of(context).maybePop()),
                   const SizedBox(height: 24),
-                  const Text(
-                    'เพิ่มรายการ',
-                    style: TextStyle(
+                  Text(
+                    strings.addTransaction,
+                    style: const TextStyle(
                       color: Color(0xFF10233F),
                       fontSize: 32,
                       fontWeight: FontWeight.w900,
                       height: 1.15,
                       letterSpacing: 0,
                     ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: KimjodMascot(size: 68),
+                  ),
+                  const SizedBox(height: 12),
+                  MascotTip(
+                    message: strings.addTransactionTip,
                   ),
                   const SizedBox(height: 22),
                   _FormSurface(
@@ -197,8 +209,8 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
                         ),
                         const SizedBox(height: 12),
                         _DateField(
-                          label: 'วันที่',
-                          value: _formatThaiDate(_selectedDate),
+                          label: strings.date,
+                          value: strings.formatDate(_selectedDate),
                           enabled: !_isSaving,
                           onTap: _pickDate,
                         ),
@@ -206,15 +218,15 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
                         _TextFieldBlock(
                           controller: _noteController,
                           enabled: !_isSaving,
-                          label: 'โน้ต',
-                          hint: 'อาหารกลางวัน',
+                          label: strings.note,
+                          hint: strings.noteHint,
                         ),
                         const SizedBox(height: 12),
                         _TextFieldBlock(
                           controller: _detailController,
                           enabled: !_isSaving,
-                          label: 'รายละเอียดเพิ่มเติม',
-                          hint: 'ร้าน / source / merchant',
+                          label: strings.details,
+                          hint: strings.detailsHint,
                         ),
                         const SizedBox(height: 12),
                         _PrimaryButton(
@@ -249,19 +261,9 @@ class _StatusRow extends StatelessWidget {
           onPressed: onBack,
           icon: const Icon(Icons.arrow_back_rounded),
           color: const Color(0xFF10233F),
-          tooltip: 'Back',
+          tooltip: context.strings.back,
           style: IconButton.styleFrom(
             backgroundColor: Colors.white.withValues(alpha: 0.72),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          _formatClock(TimeOfDay.now()),
-          style: const TextStyle(
-            color: Color(0xFF10233F),
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0,
           ),
         ),
       ],
@@ -330,24 +332,24 @@ class _AmountField extends StatelessWidget {
           fontWeight: FontWeight.w500,
           letterSpacing: 0,
         ),
-        decoration: const InputDecoration(
-          labelText: 'จำนวนเงิน',
+        decoration: InputDecoration(
+          labelText: context.strings.amount,
           floatingLabelAlignment: FloatingLabelAlignment.center,
-          prefixText: '฿',
+          prefixText: context.strings.amountPrefix,
           hintText: '0',
           border: InputBorder.none,
-          labelStyle: TextStyle(
+          labelStyle: const TextStyle(
             color: Color(0xFF10233F),
             fontSize: 13,
             fontWeight: FontWeight.w600,
             letterSpacing: 0,
           ),
-          hintStyle: TextStyle(color: Color(0x6610233F)),
+          hintStyle: const TextStyle(color: Color(0x6610233F)),
         ),
         validator: (value) {
           final amount = _tryParseAmount(value);
           if (amount == null || amount <= 0) {
-            return 'กรอกจำนวนเงินมากกว่า 0';
+            return context.strings.amountValidation;
           }
 
           return null;
@@ -380,13 +382,13 @@ class _TypeSelector extends StatelessWidget {
       child: Row(
         children: [
           _Segment(
-            label: 'รายจ่าย',
+            label: context.strings.expense,
             selected: type == TransactionType.expense,
             enabled: enabled,
             onTap: () => onChanged(TransactionType.expense),
           ),
           _Segment(
-            label: 'รายรับ',
+            label: context.strings.income,
             selected: type == TransactionType.income,
             enabled: enabled,
             onTap: () => onChanged(TransactionType.income),
@@ -461,14 +463,14 @@ class _CategoryField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _Field(
-      label: 'หมวดหมู่',
+      label: context.strings.category,
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
         children: [
           for (final category in categories)
             ChoiceChip(
-              label: Text(category.label),
+              label: Text(category.label(context.strings)),
               selected: selected.id == category.id,
               onSelected: enabled ? (_) => onChanged(category) : null,
               showCheckmark: false,
@@ -652,7 +654,7 @@ class _PrimaryButton extends StatelessWidget {
           ),
         ),
         child: Text(
-          isSaving ? 'กำลังบันทึก...' : 'บันทึกรายการ',
+          isSaving ? context.strings.saving : context.strings.saveTransaction,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
@@ -681,9 +683,9 @@ class _SecondaryButton extends StatelessWidget {
         side: const BorderSide(color: Color(0x2E5D81AD)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(21)),
       ),
-      child: const Text(
-        'บันทึกเป็นงวดผ่อน',
-        style: TextStyle(
+      child: Text(
+        context.strings.saveAsInstallment,
+        style: const TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w900,
           letterSpacing: 0,
@@ -696,13 +698,23 @@ class _SecondaryButton extends StatelessWidget {
 class _CategoryOption {
   const _CategoryOption({
     required this.id,
-    required this.label,
     required this.savedName,
   });
 
   final String id;
-  final String label;
   final String savedName;
+
+  String label(AppStrings strings) {
+    return switch (id) {
+      'food' => strings.food,
+      'transport' => strings.transport,
+      'bills' => strings.bills,
+      'salary' => strings.salary,
+      'side_job' => strings.sideJob,
+      'refund' => strings.refund,
+      _ => strings.other,
+    };
+  }
 }
 
 List<_CategoryOption> _categoriesFor(TransactionType type) {
@@ -710,43 +722,18 @@ List<_CategoryOption> _categoriesFor(TransactionType type) {
 }
 
 const _expenseCategories = [
-  _CategoryOption(id: 'food', label: 'อาหาร', savedName: 'Food'),
-  _CategoryOption(id: 'transport', label: 'เดินทาง', savedName: 'Transport'),
-  _CategoryOption(id: 'bills', label: 'บิล', savedName: 'Bills'),
-  _CategoryOption(id: 'other', label: 'อื่น ๆ', savedName: 'Other'),
+  _CategoryOption(id: 'food', savedName: 'Food'),
+  _CategoryOption(id: 'transport', savedName: 'Transport'),
+  _CategoryOption(id: 'bills', savedName: 'Bills'),
+  _CategoryOption(id: 'other', savedName: 'Other'),
 ];
 
 const _incomeCategories = [
-  _CategoryOption(id: 'salary', label: 'เงินเดือน', savedName: 'Salary'),
-  _CategoryOption(id: 'side_job', label: 'งานเสริม', savedName: 'Side Job'),
-  _CategoryOption(id: 'refund', label: 'คืนเงิน', savedName: 'Refund'),
-  _CategoryOption(id: 'other_income', label: 'อื่น ๆ', savedName: 'Other'),
+  _CategoryOption(id: 'salary', savedName: 'Salary'),
+  _CategoryOption(id: 'side_job', savedName: 'Side Job'),
+  _CategoryOption(id: 'refund', savedName: 'Refund'),
+  _CategoryOption(id: 'other_income', savedName: 'Other'),
 ];
-
-String _formatThaiDate(DateTime date) {
-  const months = [
-    'ม.ค.',
-    'ก.พ.',
-    'มี.ค.',
-    'เม.ย.',
-    'พ.ค.',
-    'มิ.ย.',
-    'ก.ค.',
-    'ส.ค.',
-    'ก.ย.',
-    'ต.ค.',
-    'พ.ย.',
-    'ธ.ค.',
-  ];
-
-  return 'วันนี้, ${date.day} ${months[date.month - 1]} ${date.year}';
-}
-
-String _formatClock(TimeOfDay time) {
-  final hour = time.hour.toString().padLeft(2, '0');
-  final minute = time.minute.toString().padLeft(2, '0');
-  return '$hour:$minute';
-}
 
 double _parseAmount(String value) {
   return _tryParseAmount(value)!;

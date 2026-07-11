@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../transactions/home_summary.dart';
 import '../transactions/transaction_record.dart';
@@ -32,6 +33,12 @@ class AnalyticsScreen extends StatelessWidget {
               final summary = snapshot.data ?? const HomeSummary.empty();
               return _SummaryCard(summary: summary);
             },
+          ),
+          const SizedBox(height: 14),
+          const MascotTip(
+            message:
+                'Trends will get friendlier as you add more real transactions.',
+            mood: MascotMood.calm,
           ),
           const SizedBox(height: 14),
           StreamBuilder<List<TransactionRecord>>(

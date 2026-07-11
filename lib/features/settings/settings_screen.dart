@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
 import '../transactions/transaction_repository.dart';
@@ -28,6 +29,11 @@ class SettingsScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ProfileCard(user: user),
+          const SizedBox(height: 14),
+          const MascotTip(
+            message:
+                'Your settings, categories, budgets, and installments live here.',
+          ),
           const SizedBox(height: 14),
           _SettingsCard(
             children: [
@@ -58,7 +64,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           OutlinedButton(
-            onPressed: authService.signOut,
+            onPressed: () => _signOut(context),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(58),
               foregroundColor: const Color(0xFF16345F),
@@ -84,6 +90,16 @@ class SettingsScreen extends StatelessWidget {
 
   void _open(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute(builder: (context) => page));
+  }
+
+  Future<void> _signOut(BuildContext context) async {
+    await authService.signOut();
+
+    if (!context.mounted) {
+      return;
+    }
+
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 }
 

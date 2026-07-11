@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/loading_screen.dart';
 import '../home/home_screen.dart';
 import '../transactions/transaction_repository.dart';
@@ -23,7 +24,7 @@ class AuthGate extends StatelessWidget {
       stream: authService.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingScreen(message: 'Checking sign in...');
+          return LoadingScreen(message: context.strings.checkingSignIn);
         }
 
         final user = snapshot.data;

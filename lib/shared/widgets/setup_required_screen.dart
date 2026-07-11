@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'pastel_kit.dart';
+
 class SetupRequiredScreen extends StatelessWidget {
   const SetupRequiredScreen({required this.error, super.key});
 
@@ -8,18 +10,22 @@ class SetupRequiredScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
+          ),
+        ),
+        child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(
-                Icons.settings_suggest_rounded,
-                color: Color(0xFF3268F6),
-                size: 56,
-              ),
+              const Center(child: KimjodMascot(size: 88, mood: MascotMood.calm)),
               const SizedBox(height: 18),
               Text(
                 'Firebase setup required',
@@ -46,6 +52,7 @@ class SetupRequiredScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }

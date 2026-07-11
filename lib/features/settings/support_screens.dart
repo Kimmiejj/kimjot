@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/pastel_kit.dart';
+
 class BudgetsScreen extends StatelessWidget {
   const BudgetsScreen({super.key});
 
@@ -113,6 +115,12 @@ class _SupportScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(title, style: _pageTitleStyle),
                 const SizedBox(height: 20),
+                const MascotTip(
+                  message:
+                      'This section will use your real saved data as soon as you add it.',
+                  mood: MascotMood.calm,
+                ),
+                const SizedBox(height: 14),
                 Container(
                   padding: const EdgeInsets.all(22),
                   decoration: _darkHeroDecoration(),

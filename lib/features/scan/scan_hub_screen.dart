@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../transactions/transaction_repository.dart';
 import 'slip_review_screen.dart';
@@ -34,18 +35,26 @@ class ScanHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4FBFC),
+      backgroundColor: const Color(0xFFEAFBFF),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF4FBFC),
+        backgroundColor: Colors.transparent,
         title: const Text('Scan Hub'),
         elevation: 0,
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               const Text(
                 'Page 4',
                 style: TextStyle(
@@ -54,6 +63,12 @@ class ScanHubScreen extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0,
                 ),
+              ),
+              const SizedBox(height: 12),
+              const MascotTip(
+                message:
+                    'Pick a slip or QR route. Images stay private and are used only for reading.',
+                mood: MascotMood.calm,
               ),
               const SizedBox(height: 16),
               _ScanOption(
@@ -68,7 +83,8 @@ class ScanHubScreen extends StatelessWidget {
                 title: 'Import from gallery',
                 subtitle: 'Coming next after the save flow is stable.',
               ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -92,7 +108,7 @@ class _ScanOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: Colors.white.withValues(alpha: 0.82),
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         onTap: onTap,

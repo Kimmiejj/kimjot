@@ -2,7 +2,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../app/app_language.dart';
 import '../../shared/widgets/brand_mark.dart';
+import '../../shared/widgets/pastel_kit.dart';
 import 'auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -28,7 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await widget.authService.signInWithGoogle();
     } on FirebaseAuthException catch (error) {
       setState(() {
-        _errorMessage = error.message ?? 'Google sign in failed.';
+        _errorMessage = error.message ?? context.strings.googleSignInFailed;
       });
     } on GoogleSignInException catch (error) {
       setState(() {
@@ -36,7 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
       });
     } catch (error) {
       setState(() {
-        _errorMessage = 'Google sign in failed. Check Firebase setup.';
+        _errorMessage = context.strings.googleSetupFailed;
       });
     } finally {
       if (mounted) {
@@ -51,16 +53,16 @@ class _LoginScreenState extends State<LoginScreen> {
     final description = error.description;
     if (description != null &&
         description.contains('serverClientId must be provided')) {
-      return 'Missing Google Web client ID. Enable Google sign-in in Firebase, then run with --dart-define=GOOGLE_SERVER_CLIENT_ID=<web-client-id>.apps.googleusercontent.com';
+      return context.strings.missingGoogleClientId;
     }
 
-    return description ??
-        'Google sign in failed. Check Android OAuth setup in Firebase.';
+    return description ?? context.strings.androidOauthFailed;
   }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final strings = context.strings;
 
     return Scaffold(
       body: DecoratedBox(
@@ -88,10 +90,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      const Center(child: KimjodMascot(size: 96)),
+                      const SizedBox(height: 14),
                       const BrandMark(),
                       const SizedBox(height: 28),
                       Text(
-                        'Keep money clear\nevery day',
+                        strings.loginHeadline,
                         textAlign: TextAlign.center,
                         style: textTheme.displaySmall?.copyWith(
                           color: const Color(0xFF071844),
@@ -102,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        'Track income, expenses, slip scans, and installments without uploading slip images.',
+                        strings.loginSubtitle,
                         textAlign: TextAlign.center,
                         style: textTheme.bodyLarge?.copyWith(
                           color: const Color(0xFF65748B),
@@ -141,6 +145,8 @@ class _LoginCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -166,7 +172,7 @@ class _LoginCard extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2.4),
                   )
                 : const Icon(Icons.g_mobiledata_rounded, size: 32),
-            label: Text(isSigningIn ? 'Signing in...' : 'Continue with Google'),
+            label: Text(isSigningIn ? strings.signingIn : strings.continueWithGoogle),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(58),
               backgroundColor: Colors.white,
@@ -185,20 +191,20 @@ class _LoginCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          const Row(
+          Row(
             children: [
               Expanded(
                 child: _TrustTile(
                   label: 'OCR',
-                  value: 'On-device',
+                  value: strings.onDevice,
                   icon: Icons.document_scanner_rounded,
                 ),
               ),
-              SizedBox(width: 12),
+              const SizedBox(width: 12),
               Expanded(
                 child: _TrustTile(
-                  label: 'Storage',
-                  value: 'No slip image',
+                  label: strings.storage,
+                  value: strings.noSlipImage,
                   icon: Icons.cloud_off_rounded,
                 ),
               ),
@@ -277,14 +283,14 @@ class _PrivacyNote extends StatelessWidget {
         color: const Color(0xFF0D2353).withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(22),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.lock_outline_rounded, color: Colors.white, size: 20),
-          SizedBox(width: 10),
+          const Icon(Icons.lock_outline_rounded, color: Colors.white, size: 20),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Images are used only for reading data. Slip images are not saved to Firebase Storage.',
-              style: TextStyle(
+              context.strings.privacyNote,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,

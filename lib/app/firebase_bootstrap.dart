@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import '../app/app_language.dart';
 import '../features/auth/auth_gate.dart';
 import '../features/auth/auth_service.dart';
 import '../features/transactions/transaction_repository.dart';
@@ -29,7 +30,7 @@ class FirebaseBootstrap extends StatelessWidget {
         }
 
         if (snapshot.connectionState != ConnectionState.done) {
-          return const LoadingScreen(message: 'Starting kimjod...');
+          return LoadingScreen(message: context.strings.startingKimjod);
         }
 
         return AuthGate(

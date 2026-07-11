@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import 'transaction_record.dart';
 import 'transaction_repository.dart';
@@ -126,6 +127,11 @@ class _TransactionsHeader extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 18),
+        const Align(
+          alignment: Alignment.centerRight,
+          child: KimjodMascot(size: 62, mood: MascotMood.calm),
+        ),
+        const SizedBox(height: 8),
         const Text(
           'History',
           style: TextStyle(
