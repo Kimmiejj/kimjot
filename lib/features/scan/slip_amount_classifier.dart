@@ -151,12 +151,17 @@ class AmountClassifier {
           continue;
         }
 
-        if (_shouldSkipCandidate(line: line, match: match, token: token)) {
+        final value = double.tryParse(token.replaceAll(',', ''));
+        if (value == null || value <= 0 || value >= 10000000) {
           continue;
         }
 
-        final value = double.tryParse(token.replaceAll(',', ''));
-        if (value == null || value <= 0 || value >= 10000000) {
+        if (_shouldSkipCandidate(
+          line: line,
+          match: match,
+          token: token,
+          value: value,
+        )) {
           continue;
         }
 
@@ -178,10 +183,14 @@ class AmountClassifier {
     required String line,
     required RegExpMatch match,
     required String token,
+    required double value,
   }) {
     final lower = line.toLowerCase();
     final hasAmountHint = _hasAmountHint(lower);
 
+    if (_looksLikeBareSmallNoise(line: lower, token: token, value: value)) {
+      return true;
+    }
     if (!hasAmountHint && _looksLikeDateToken(token)) {
       return true;
     }
@@ -198,6 +207,24 @@ class AmountClassifier {
     }
 
     return false;
+  }
+
+  bool _looksLikeBareSmallNoise({
+    required String line,
+    required String token,
+    required double value,
+  }) {
+    if (value >= 10 || token.contains('.')) {
+      return false;
+    }
+    return !_hasCurrencyHint(line);
+  }
+
+  bool _hasCurrencyHint(String lowerLine) {
+    return RegExp(
+      r'฿|baht|thb|à¸šà¸²à¸—|\u0E1A\u0E32\u0E17',
+      caseSensitive: false,
+    ).hasMatch(lowerLine);
   }
 
   bool _hasAmountHint(String lowerLine) {

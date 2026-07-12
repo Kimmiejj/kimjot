@@ -160,6 +160,12 @@ class SlipTextParser {
   }
 
   double? _detectAmount(List<String> lines) {
+    final explicitAmount = _detectAmountFromExplicitAmountText(lines);
+    if (explicitAmount != null) {
+      _lastAmountConfidence = 1;
+      return explicitAmount;
+    }
+
     final labeledAmount = _detectAmountNearLabel(lines);
     if (labeledAmount != null) {
       _lastAmountConfidence = 1;
@@ -190,6 +196,175 @@ class SlipTextParser {
     return contexts.first.value;
   }
 
+  double? _detectAmountFromExplicitAmountText(List<String> lines) {
+    final candidates = <({double value, int score})>[];
+
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (!_hasStrictAmountLabel(line) && !_hasStrictCurrencyHint(line)) {
+        continue;
+      }
+
+      final start = _hasStrictAmountLabel(line) || i == 0 ? i : i - 1;
+      final rawEnd = _hasStrictAmountLabel(line) ? i + 4 : i + 1;
+      final end = rawEnd >= lines.length ? lines.length - 1 : rawEnd;
+
+      for (var j = start; j <= end; j++) {
+        if (j != i && _isStrictNonAmountMetadata(lines[j])) continue;
+        for (final candidate in _strictAmountCandidatesFromLine(lines[j])) {
+          candidates.add((
+            value: candidate.value,
+            score: _strictAmountScore(
+              line: lines[j],
+              previousLine: j > 0 ? lines[j - 1] : null,
+              nextLine: j + 1 < lines.length ? lines[j + 1] : null,
+              anchorLine: line,
+              token: candidate.token,
+              value: candidate.value,
+              lineDistance: (j - i).abs(),
+            ),
+          ));
+        }
+      }
+    }
+
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) => b.score.compareTo(a.score));
+    return candidates.first.value;
+  }
+
+  List<({String token, double value})> _strictAmountCandidatesFromLine(
+    String line,
+  ) {
+    final numberPattern = RegExp(
+      r'(?<![\dA-Za-z])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(?![A-Za-z])',
+    );
+    final candidates = <({String token, double value})>[];
+    for (final match in numberPattern.allMatches(line)) {
+      final token = match.group(0);
+      if (token == null || _looksLikeDateToken(token)) continue;
+      final value = double.tryParse(token.replaceAll(',', ''));
+      if (value == null || value <= 0 || value >= 10000000) continue;
+      candidates.add((token: token, value: value));
+    }
+    return candidates;
+  }
+
+  int _strictAmountScore({
+    required String line,
+    required String? previousLine,
+    required String? nextLine,
+    required String anchorLine,
+    required String token,
+    required double value,
+    required int lineDistance,
+  }) {
+    var score = 0;
+    if (_hasStrictAmountLabel(line)) score += 40;
+    if (_hasStrictAmountLabel(anchorLine)) score += 30;
+    if (_hasStrictCurrencyHint(line)) score += 40;
+    if (nextLine != null && _hasStrictCurrencyHint(nextLine)) score += 24;
+    if (previousLine != null && _hasStrictCurrencyHint(previousLine)) {
+      score += 16;
+    }
+    if (_hasStrictFeeLabel(line)) score -= 160;
+    if (previousLine != null && _hasStrictFeeLabel(previousLine)) {
+      score -= 90;
+    }
+    if (nextLine != null && _hasStrictFeeLabel(nextLine)) score -= 24;
+    if (token.contains('.')) score += 12;
+    if (_strictLineLooksLikeAmountValue(line)) score += 8;
+    if (value >= 10) score += 4;
+    if (value >= 100) score += 2;
+    if (_isStrictNonAmountMetadata(line)) score -= 120;
+    score -= lineDistance * 6;
+    return score;
+  }
+
+  bool _hasStrictAmountLabel(String value) {
+    return RegExp(
+      r'amount|total|paid|payment|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
+      r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19|'
+      r'à¸ˆà¸³à¸™à¸§à¸™à¹€à¸‡à¸´à¸™|'
+      r'à¸ˆà¸³à¸™à¸§à¸™|'
+      r'à¸¢à¸­à¸”à¹€à¸‡à¸´à¸™',
+      caseSensitive: false,
+    ).hasMatch(value);
+  }
+
+  bool _hasStrictCurrencyHint(String value) {
+    return RegExp(
+      r'\u0E3F|\u0E1A\u0E32\u0E17|baht|thb|'
+      r'à¸¿|à¸šà¸²à¸—|Ã Â¸Å¡Ã Â¸Â²Ã Â¸â€”',
+      caseSensitive: false,
+    ).hasMatch(value);
+  }
+
+  bool _hasStrictFeeLabel(String value) {
+    final repaired = repairThaiMojibake(value);
+    return RegExp(
+      r'fee|fees|charge|commission|'
+      r'\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21',
+      caseSensitive: false,
+    ).hasMatch(repaired);
+  }
+
+  bool _strictLineLooksLikeAmountValue(String line) {
+    final stripped = line
+        .replaceAll(
+          RegExp(
+            r'amount|total|paid|payment|'
+            r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
+            r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
+            r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19|'
+            r'\u0E3F|\u0E1A\u0E32\u0E17|baht|thb|'
+            r'à¸¿|à¸šà¸²à¸—|Ã Â¸Å¡Ã Â¸Â²Ã Â¸â€”|[0-9.,\s:-]',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+    return stripped.length <= 3;
+  }
+
+  bool _isStrictNonAmountMetadata(String value) {
+    final rawLower = value.toLowerCase();
+    final repairedLower = repairThaiMojibake(value).toLowerCase();
+    final lower = '$rawLower\n$repairedLower';
+    if (_hasStrictAmountLabel(value)) {
+      return false;
+    }
+    if (_hasStrictFeeLabel(value)) return true;
+    if (_hasStrictCurrencyHint(value)) return false;
+    return lower.contains('reference') ||
+        lower.contains('transaction') ||
+        lower.contains('ref') ||
+        lower.contains('account') ||
+        lower.contains('customer') ||
+        lower.contains('biller') ||
+        lower.contains('merchant') ||
+        lower.contains('\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02') ||
+        lower.contains(
+          '\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32',
+        ) ||
+        lower.contains(
+          '\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07',
+        ) ||
+        lower.contains(
+          '\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23',
+        ) ||
+        lower.contains('\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48') ||
+        lower.contains('\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07') ||
+        lower.contains('\u0E1A\u0E31\u0E0D\u0E0A\u0E35') ||
+        RegExp(r'\d{1,2}:\d{2}').hasMatch(lower) ||
+        RegExp(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}').hasMatch(lower) ||
+        RegExp(r'\d{1,2}\s+[a-z]{3,9}\s+\d{2,4}').hasMatch(lower) ||
+        RegExp(r'\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}').hasMatch(lower) ||
+        _isBankOrAccount(value);
+  }
+
   double? _detectAmountNearLabel(List<String> lines) {
     final amountLabel = RegExp(
       r'amount|total|paid|payment|'
@@ -204,19 +379,77 @@ class SlipTextParser {
 
     for (var i = 0; i < lines.length; i++) {
       if (!amountLabel.hasMatch(lines[i])) continue;
+      final candidates = <({double value, int score})>[];
       for (var j = i; j < lines.length && j <= i + 3; j++) {
         if (_isMetadata(lines[j]) && j != i) continue;
         for (final match in numberPattern.allMatches(lines[j])) {
           final token = match.group(0);
           if (token == null || _looksLikeDateToken(token)) continue;
           final value = double.tryParse(token.replaceAll(',', ''));
-          if (value != null && value > 0 && value < 10000000) {
-            return value;
-          }
+          if (value == null || value <= 0 || value >= 10000000) continue;
+          if (_looksLikeBareSmallNoise(lines[j], token, value)) continue;
+          candidates.add((
+            value: value,
+            score: _amountCandidateScore(
+              line: lines[j],
+              token: token,
+              value: value,
+              lineDistance: j - i,
+            ),
+          ));
         }
+      }
+      if (candidates.isNotEmpty) {
+        candidates.sort((a, b) => b.score.compareTo(a.score));
+        return candidates.first.value;
       }
     }
     return null;
+  }
+
+  int _amountCandidateScore({
+    required String line,
+    required String token,
+    required double value,
+    required int lineDistance,
+  }) {
+    var score = 0;
+    if (token.contains('.')) score += 6;
+    if (_hasCurrencyHint(line)) score += 6;
+    if (_lineLooksLikeAmountValue(line)) score += 4;
+    if (value >= 10) score += 3;
+    if (value >= 100) score += 1;
+    score -= lineDistance;
+    return score;
+  }
+
+  bool _looksLikeBareSmallNoise(String line, String token, double value) {
+    if (value >= 10 || token.contains('.')) return false;
+    return !_hasCurrencyHint(line);
+  }
+
+  bool _hasCurrencyHint(String value) {
+    return RegExp(
+      r'฿|baht|thb|บาท|à¸šà¸²à¸—',
+      caseSensitive: false,
+    ).hasMatch(value);
+  }
+
+  bool _lineLooksLikeAmountValue(String line) {
+    final stripped = line
+        .replaceAll(
+          RegExp(
+            r'amount|total|paid|payment|'
+            r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
+            r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
+            r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19|'
+            r'฿|บาท|baht|thb|à¸šà¸²à¸—|[0-9.,\s:-]',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+    return stripped.length <= 3;
   }
 
   String? _detectBank(String text) {
@@ -387,8 +620,7 @@ class SlipTextParser {
         RegExp(r'\d{1,2}:\d{2}').hasMatch(lower) ||
         RegExp(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}').hasMatch(lower) ||
         RegExp(r'\d{1,2}\s+[a-z]{3,9}\s+\d{2,4}').hasMatch(lower) ||
-        RegExp(r'\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}')
-            .hasMatch(lower);
+        RegExp(r'\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}').hasMatch(lower);
   }
 
   bool _looksLikeDateToken(String token) {

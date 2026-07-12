@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../transactions/category_icons.dart';
 import 'money_settings_store.dart';
 
 class BudgetsScreen extends StatefulWidget {
@@ -63,6 +64,9 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
         future: _settingsFuture,
         builder: (context, snapshot) {
           final budget = snapshot.data?.monthlyBudget;
+          final budgetStatus = budget == null
+              ? strings.noBudgetYet
+              : _formatMoney(budget);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -76,6 +80,26 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
                     'Home will compare this budget with the selected month expense total.',
               ),
               const SizedBox(height: 16),
+              _SupportStatStrip(
+                children: [
+                  _SupportStatCard(
+                    label: 'Current',
+                    value: budgetStatus,
+                    tone: _SupportTone.mint,
+                  ),
+                  _SupportStatCard(
+                    label: 'Categories',
+                    value: '${_expenseCategoryDefinitions.length} ready',
+                    tone: _SupportTone.sky,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const _SectionCaption(
+                title: 'Monthly budget',
+                subtitle: 'Set the total limit here. Category budgets stay separate from installment plans.',
+              ),
+              const SizedBox(height: 10),
               _InputCard(
                 label: strings.totalMonthlyBudget,
                 child: TextField(
@@ -93,7 +117,7 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              FilledButton.icon(
+              _PrimaryActionButton(
                 onPressed: _saving ? null : _save,
                 icon: _saving
                     ? const SizedBox.square(
@@ -101,13 +125,10 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2.2),
                       )
                     : const Icon(Icons.save_rounded),
-                label: Text(_saving ? strings.saving : 'Save budget'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(54),
-                ),
+                label: _saving ? strings.saving : 'Save budget',
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
+              _SecondaryActionButton(
                 onPressed: _saving
                     ? null
                     : () async {
@@ -115,7 +136,27 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
                         await _save();
                       },
                 icon: const Icon(Icons.clear_rounded),
-                label: const Text('Clear budget'),
+                label: 'Clear budget',
+              ),
+              const SizedBox(height: 16),
+              const _SectionCaption(
+                title: 'Category budget view',
+                subtitle: 'Expense categories are ready for budget-level grouping. Installments are managed on their own page.',
+              ),
+              const SizedBox(height: 10),
+              for (final category in _expenseCategoryDefinitions.take(4)) ...[
+                _CategoryUsageTile(
+                  definition: category,
+                  subtitle: 'Available for budget grouping and expense tracking',
+                  tags: const ['Expense', 'Budget'],
+                ),
+                const SizedBox(height: 10),
+              ],
+              _SoftNoteCard(
+                icon: Icons.credit_card_rounded,
+                title: 'Installments stay separate',
+                message:
+                    'Marking an installment as paid creates its own tracked expense flow. It does not overwrite the monthly budget value here.',
               ),
             ],
           );
@@ -178,6 +219,14 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
         future: _settingsFuture,
         builder: (context, snapshot) {
           final plans = snapshot.data?.installments ?? const [];
+          final totalPlanned = plans.fold<double>(
+            0,
+            (sum, plan) => sum + plan.amount,
+          );
+          final totalRemaining = plans.fold<int>(
+            0,
+            (sum, plan) => sum + plan.remainingInstallments,
+          );
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -191,6 +240,31 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
                     'Home shows active plans for the selected month. Marking paid updates the next due count.',
               ),
               const SizedBox(height: 16),
+              _SupportStatStrip(
+                children: [
+                  _SupportStatCard(
+                    label: 'Active',
+                    value: '${plans.length}',
+                    tone: _SupportTone.sky,
+                  ),
+                  _SupportStatCard(
+                    label: 'Monthly load',
+                    value: plans.isEmpty ? 'THB 0' : _formatMoney(totalPlanned),
+                    tone: _SupportTone.rose,
+                  ),
+                  _SupportStatCard(
+                    label: 'Remaining',
+                    value: '$totalRemaining',
+                    tone: _SupportTone.mint,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const _SectionCaption(
+                title: 'Installment plans',
+                subtitle: 'These plans are tracked separately from monthly budget setup.',
+              ),
+              const SizedBox(height: 10),
               if (plans.isEmpty)
                 _SupportRow(
                   icon: Icons.event_available_rounded,
@@ -227,6 +301,8 @@ class CategoriesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final totalCategories =
+        _expenseCategoryDefinitions.length + _incomeCategoryDefinitions.length;
 
     return _SupportScaffold(
       status: 'READY',
@@ -238,33 +314,63 @@ class CategoriesScreen extends StatelessWidget {
           MascotTip(message: strings.categoriesHeroMessage),
           const SizedBox(height: 14),
           _HeroPanel(
-            title: strings.defaultCategoriesReady,
+            title: '$totalCategories present categories',
             message:
-                'These categories are already used by manual entries, slip imports, budgets, and summaries.',
+                'These categories are already used by manual entries and slip imports. Budget and installment usage is separated below.',
           ),
           const SizedBox(height: 16),
-          _SupportRow(
-            icon: Icons.restaurant_rounded,
-            title: strings.food,
-            subtitle: strings.defaultExpense,
+          _SupportStatStrip(
+            children: [
+              _SupportStatCard(
+                label: 'Expense',
+                value: '${_expenseCategoryDefinitions.length}',
+                tone: _SupportTone.sky,
+              ),
+              const _SupportStatCard(
+                label: 'Budget ready',
+                value: 'Expense only',
+                tone: _SupportTone.mint,
+              ),
+              const _SupportStatCard(
+                label: 'Installment ready',
+                value: 'Tracked separately',
+                tone: _SupportTone.rose,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const _SectionCaption(
+            title: 'Expense categories',
+            subtitle: 'These are the present categories used for expense records, budget grouping, and installment payment posts.',
           ),
           const SizedBox(height: 10),
-          _SupportRow(
-            icon: Icons.directions_bus_rounded,
-            title: strings.transport,
-            subtitle: strings.defaultExpense,
+          for (final category in _expenseCategoryDefinitions) ...[
+            _CategoryUsageTile(
+              definition: category,
+              subtitle: strings.defaultExpense,
+              tags: const ['Expense', 'Budget', 'Installment'],
+            ),
+            const SizedBox(height: 10),
+          ],
+          const SizedBox(height: 8),
+          const _SectionCaption(
+            title: 'Income categories',
+            subtitle: 'Kept separate from budget and installments so money-in stays easy to scan.',
           ),
           const SizedBox(height: 10),
-          _SupportRow(
-            icon: Icons.receipt_long_rounded,
-            title: strings.bills,
-            subtitle: strings.defaultExpense,
-          ),
-          const SizedBox(height: 10),
-          _SupportRow(
-            icon: Icons.more_horiz_rounded,
-            title: strings.other,
-            subtitle: strings.defaultCategory,
+          for (final category in _incomeCategoryDefinitions) ...[
+            _CategoryUsageTile(
+              definition: category,
+              subtitle: 'Present income category',
+              tags: const ['Income'],
+            ),
+            const SizedBox(height: 10),
+          ],
+          const _SoftNoteCard(
+            icon: Icons.account_tree_rounded,
+            title: 'Budget vs installment',
+            message:
+                'Budget page controls the limit. Installments page controls payment plans. Categories only label where each record belongs.',
           ),
         ],
       ),
@@ -597,40 +703,84 @@ class _InstallmentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final strings = context.strings;
     final progress = '${plan.paidInstallments}/${plan.totalInstallments}';
+    final ratio = plan.totalInstallments == 0
+        ? 0.0
+        : (plan.paidInstallments / plan.totalInstallments).clamp(0.0, 1.0);
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: _cardDecoration(),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _IconBadge(icon: Icons.credit_card_rounded),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(plan.title, style: _rowTitleStyle),
-                const SizedBox(height: 3),
-                Text(
-                  '${_formatMoney(plan.amount)} - $progress - due day ${plan.dueDay}',
-                  style: _mutedStyle,
+          Row(
+            children: [
+              const _IconBadge(icon: Icons.credit_card_rounded),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(plan.title, style: _rowTitleStyle),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_formatMoney(plan.amount)} per cycle',
+                      style: _mutedStyle,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'edit') onEdit();
-              if (value == 'paid') onPaid();
-              if (value == 'delete') onDelete();
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
-              PopupMenuItem(value: 'paid', child: Text(strings.markAsPaid)),
-              const PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ),
+              _CircleActionButton(
+                icon: Icons.edit_rounded,
+                tooltip: 'Edit installment',
+                onPressed: onEdit,
+              ),
+              const SizedBox(width: 8),
+              _CircleActionButton(
+                icon: Icons.check_rounded,
+                tooltip: 'Mark installment as paid',
+                onPressed: onPaid,
+                palette: _SupportTone.mint,
+              ),
+              const SizedBox(width: 8),
+              _CircleActionButton(
+                icon: Icons.delete_outline_rounded,
+                tooltip: 'Delete installment',
+                onPressed: onDelete,
+                palette: _SupportTone.rose,
+              ),
             ],
+          ),
+          const SizedBox(height: 12),
+          _SupportStatStrip(
+            children: [
+              _SupportStatCard(
+                label: 'Progress',
+                value: progress,
+                tone: _SupportTone.sky,
+              ),
+              _SupportStatCard(
+                label: 'Due day',
+                value: '${plan.dueDay}',
+                tone: _SupportTone.mint,
+              ),
+              _SupportStatCard(
+                label: 'Start',
+                value: _formatMonthShort(plan.startMonth),
+                tone: _SupportTone.rose,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 10,
+              backgroundColor: const Color(0x152F4B73),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFF1FC9DC)),
+            ),
           ),
         ],
       ),
@@ -783,6 +933,188 @@ class _SupportRow extends StatelessWidget {
   }
 }
 
+class _CategoryUsageTile extends StatelessWidget {
+  const _CategoryUsageTile({
+    required this.definition,
+    required this.subtitle,
+    required this.tags,
+  });
+
+  final _CategoryDefinition definition;
+  final String subtitle;
+  final List<String> tags;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _IconBadge(icon: categoryIconData(definition.id)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(definition.label(context.strings), style: _rowTitleStyle),
+                    const SizedBox(height: 3),
+                    Text(subtitle, style: _mutedStyle),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final tag in tags) _TagChip(label: tag),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SupportStatStrip extends StatelessWidget {
+  const _SupportStatStrip({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          Expanded(child: children[i]),
+          if (i != children.length - 1) const SizedBox(width: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _SupportStatCard extends StatelessWidget {
+  const _SupportStatCard({
+    required this.label,
+    required this.value,
+    this.tone = _SupportTone.sky,
+  });
+
+  final String label;
+  final String value;
+  final _SupportTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: tone.gradient),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.76)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: _chipLabelStyle),
+          const SizedBox(height: 6),
+          Text(value, style: _statValueStyle),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionCaption extends StatelessWidget {
+  const _SectionCaption({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: _sectionTitleStyle),
+        const SizedBox(height: 4),
+        Text(subtitle, style: _mutedStyle),
+      ],
+    );
+  }
+}
+
+class _TagChip extends StatelessWidget {
+  const _TagChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F8FF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x255D81AD)),
+      ),
+      child: Text(label, style: _chipLabelStyle),
+    );
+  }
+}
+
+class _SoftNoteCard extends StatelessWidget {
+  const _SoftNoteCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF7FDFF), Color(0xFFFDF8FF)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0x255D81AD)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _IconBadge(icon: icon),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: _rowTitleStyle),
+                const SizedBox(height: 4),
+                Text(message, style: _mutedStyle),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _IconBadge extends StatelessWidget {
   const _IconBadge({required this.icon});
 
@@ -828,6 +1160,125 @@ BoxDecoration _darkHeroDecoration() {
       ),
     ],
   );
+}
+
+class _PrimaryActionButton extends StatelessWidget {
+  const _PrimaryActionButton({
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+  });
+
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1FC9DC), Color(0xFF3268F6)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x2B1FC9DC),
+            blurRadius: 22,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: icon,
+        label: Text(label),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(54),
+          backgroundColor: Colors.transparent,
+          disabledBackgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SecondaryActionButton extends StatelessWidget {
+  const _SecondaryActionButton({
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+  });
+
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: icon,
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(54),
+        foregroundColor: const Color(0xFF16345F),
+        backgroundColor: Colors.white.withValues(alpha: 0.76),
+        side: const BorderSide(color: Color(0x2E5D81AD)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        textStyle: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _CircleActionButton extends StatelessWidget {
+  const _CircleActionButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.palette = _SupportTone.sky,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final _SupportTone palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: palette.gradient),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.76)),
+          ),
+          child: Icon(icon, size: 20, color: palette.foreground),
+        ),
+      ),
+    );
+  }
 }
 
 const _pageTitleStyle = TextStyle(
@@ -877,6 +1328,27 @@ const _heroMessageStyle = TextStyle(
 const _inputStyle = TextStyle(
   color: Color(0xFF10233F),
   fontSize: 18,
+  fontWeight: FontWeight.w900,
+  letterSpacing: 0,
+);
+
+const _sectionTitleStyle = TextStyle(
+  color: Color(0xFF10233F),
+  fontSize: 18,
+  fontWeight: FontWeight.w900,
+  letterSpacing: 0,
+);
+
+const _chipLabelStyle = TextStyle(
+  color: Color(0xFF496582),
+  fontSize: 11,
+  fontWeight: FontWeight.w900,
+  letterSpacing: 0,
+);
+
+const _statValueStyle = TextStyle(
+  color: Color(0xFF10233F),
+  fontSize: 16,
   fontWeight: FontWeight.w900,
   letterSpacing: 0,
 );
@@ -935,3 +1407,113 @@ class _MoneyInputFormatter extends TextInputFormatter {
     );
   }
 }
+
+class _CategoryDefinition {
+  const _CategoryDefinition(this.id);
+
+  final String id;
+
+  String label(AppStrings strings) {
+    return switch (id) {
+      'food' => strings.food,
+      'drink' => strings.drink,
+      'groceries' => strings.groceries,
+      'transport' => strings.transport,
+      'shopping' => strings.shopping,
+      'bills' => strings.bills,
+      'rent' => strings.rent,
+      'health' => strings.health,
+      'education' => strings.education,
+      'entertainment' => strings.entertainment,
+      'travel' => strings.travel,
+      'family' => strings.family,
+      'insurance' => strings.insurance,
+      'tax' => strings.tax,
+      'donation' => strings.donation,
+      'transfer' => strings.transfer,
+      'salary' => strings.salary,
+      'side_job' => strings.sideJob,
+      'business' => strings.business,
+      'bonus' => strings.bonus,
+      'investment' => strings.investment,
+      'interest' => strings.interest,
+      'sale' => strings.sale,
+      'allowance' => strings.allowance,
+      'gift' => strings.gift,
+      'refund' => strings.refund,
+      _ => strings.other,
+    };
+  }
+}
+
+enum _SupportTone {
+  sky(
+    [Color(0xFFEAF7FF), Color(0xFFF6FBFF)],
+    Color(0xFF135B9E),
+  ),
+  mint(
+    [Color(0xFFEAFBF2), Color(0xFFF6FFF9)],
+    Color(0xFF17785E),
+  ),
+  rose(
+    [Color(0xFFFFF1F5), Color(0xFFFFFAFC)],
+    Color(0xFFB5476A),
+  );
+
+  const _SupportTone(this.gradient, this.foreground);
+
+  final List<Color> gradient;
+  final Color foreground;
+}
+
+String _formatMonthShort(DateTime date) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return '${months[date.month - 1]} ${date.year}';
+}
+
+const _expenseCategoryDefinitions = [
+  _CategoryDefinition('food'),
+  _CategoryDefinition('drink'),
+  _CategoryDefinition('groceries'),
+  _CategoryDefinition('transport'),
+  _CategoryDefinition('shopping'),
+  _CategoryDefinition('bills'),
+  _CategoryDefinition('rent'),
+  _CategoryDefinition('health'),
+  _CategoryDefinition('education'),
+  _CategoryDefinition('entertainment'),
+  _CategoryDefinition('travel'),
+  _CategoryDefinition('family'),
+  _CategoryDefinition('insurance'),
+  _CategoryDefinition('tax'),
+  _CategoryDefinition('donation'),
+  _CategoryDefinition('transfer'),
+  _CategoryDefinition('other'),
+];
+
+const _incomeCategoryDefinitions = [
+  _CategoryDefinition('salary'),
+  _CategoryDefinition('side_job'),
+  _CategoryDefinition('business'),
+  _CategoryDefinition('bonus'),
+  _CategoryDefinition('investment'),
+  _CategoryDefinition('interest'),
+  _CategoryDefinition('sale'),
+  _CategoryDefinition('allowance'),
+  _CategoryDefinition('gift'),
+  _CategoryDefinition('refund'),
+  _CategoryDefinition('other_income'),
+];

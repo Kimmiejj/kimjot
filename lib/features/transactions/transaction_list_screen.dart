@@ -391,6 +391,7 @@ List<TransactionRecord> _filterTransactions(
       record.note,
       record.merchantName,
       record.source.firestoreValue,
+      ..._amountSearchTerms(record),
       strings.formatMonthYear(record.transactionDate),
       strings.formatDate(record.transactionDate),
       _formatDateSection(record.transactionDate),
@@ -398,6 +399,34 @@ List<TransactionRecord> _filterTransactions(
 
     return searchableText.contains(query);
   }).toList();
+}
+
+List<String> _amountSearchTerms(TransactionRecord record) {
+  final amount = record.amount.abs();
+  final fixedAmount = amount.toStringAsFixed(2);
+  final wholeAmount = amount.roundToDouble() == amount
+      ? amount.toStringAsFixed(0)
+      : null;
+  final formattedAmount = _formatNumber(amount);
+  final signedAmount = _formatTransferAwareMoney(record);
+  final sign = switch (record.type) {
+    TransactionType.income => '+',
+    TransactionType.expense => '-',
+    TransactionType.internalTransfer => '',
+  };
+
+  return [
+    fixedAmount,
+    wholeAmount,
+    formattedAmount,
+    signedAmount,
+    'THB $fixedAmount',
+    'THB $formattedAmount',
+    '฿$fixedAmount',
+    '฿$formattedAmount',
+    if (sign.isNotEmpty) '$sign$fixedAmount',
+    if (sign.isNotEmpty) '$sign$formattedAmount',
+  ].whereType<String>().toList();
 }
 
 class _MonthControlButton extends StatelessWidget {
@@ -428,11 +457,7 @@ class _MonthControlButton extends StatelessWidget {
 }
 
 class TransactionRow extends StatelessWidget {
-  const TransactionRow({
-    required this.record,
-    this.onTap,
-    super.key,
-  });
+  const TransactionRow({required this.record, this.onTap, super.key});
 
   final TransactionRecord record;
   final VoidCallback? onTap;

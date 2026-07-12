@@ -315,19 +315,141 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                FilledButton.icon(
+                _SaveAllButton(
+                  isSaving: _isSaving,
+                  readyCount: readyCount,
                   onPressed: (_isScanning || _isSaving || readyCount == 0)
                       ? null
                       : _saveAll,
-                  icon: _isSaving
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        )
-                      : const Icon(Icons.save_rounded),
-                  label: Text(_isSaving ? strings.saving : 'Save all'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(54),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SaveAllButton extends StatelessWidget {
+  const _SaveAllButton({
+    required this.isSaving,
+    required this.readyCount,
+    required this.onPressed,
+  });
+
+  final bool isSaving;
+  final int readyCount;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final enabled = onPressed != null;
+    final label = isSaving
+        ? strings.saving
+        : strings.isThai
+        ? 'บันทึกทั้งหมด'
+        : 'Save all';
+    final countLabel = readyCount > 0 ? '$readyCount' : '0';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: enabled
+            ? const LinearGradient(
+                colors: [Color(0xFF1FC9DC), Color(0xFF3268F6)],
+              )
+            : null,
+        color: enabled ? null : Colors.white.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(21),
+        border: Border.all(
+          color: enabled
+              ? Colors.white.withValues(alpha: 0.82)
+              : const Color(0x2E5D81AD),
+        ),
+        boxShadow: enabled
+            ? const [
+                BoxShadow(
+                  color: Color(0x3D1FC9DC),
+                  blurRadius: 32,
+                  offset: Offset(0, 16),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(21),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(21),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 58),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox.square(
+                  dimension: 22,
+                  child: Center(
+                    child: isSaving
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : Icon(
+                            Icons.save_alt_rounded,
+                            color: enabled
+                                ? Colors.white
+                                : const Color(0xFF65748B),
+                            size: 22,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: enabled ? Colors.white : const Color(0xFF65748B),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  constraints: const BoxConstraints(
+                    minWidth: 34,
+                    minHeight: 30,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: enabled
+                        ? Colors.white.withValues(alpha: 0.2)
+                        : const Color(0xFFE7EDF4),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    countLabel,
+                    style: TextStyle(
+                      color: enabled ? Colors.white : const Color(0xFF65748B),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                    ),
                   ),
                 ),
               ],

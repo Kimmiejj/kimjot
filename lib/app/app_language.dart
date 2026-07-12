@@ -162,8 +162,9 @@ class AppStrings {
   String get seeMore => isThai ? 'ดูทั้งหมด' : 'See more';
   String get history => isThai ? 'ประวัติ' : 'History';
   String get allTransactions => isThai ? 'รายการทั้งหมด' : 'All transactions';
-  String get searchPlaceholder =>
-      isThai ? 'ค้นหา / เดือน / หมวดหมู่' : 'Search / month / category';
+  String get searchPlaceholder => isThai
+      ? 'ค้นหา / จำนวนเงิน / เดือน / หมวดหมู่'
+      : 'Search / amount / month / category';
   String get noSavedTransactions =>
       isThai ? 'ยังไม่มีรายการที่บันทึก' : 'No saved transactions yet';
 
@@ -219,8 +220,7 @@ class AppStrings {
       : 'The slip could not be read fully. Please review and enter missing data before saving.';
   String get chooseSlipFromGallery =>
       isThai ? 'เลือกรูปสลิปจากเครื่อง' : 'Choose slip from gallery';
-  String get syncAlbumTitle =>
-      isThai ? 'ซิงก์จากอัลบัม' : 'Sync album';
+  String get syncAlbumTitle => isThai ? 'ซิงก์จากอัลบัม' : 'Sync album';
   String get syncAlbumSubtitle => isThai
       ? 'เลือกทั้งโฟลเดอร์ แล้ว kimjod จะข้ามรูปที่ไม่ใช่สลิปและสลิปที่เคยเพิ่มแล้ว'
       : 'Choose a whole folder. kimjod skips non-payment images and slips already added.';

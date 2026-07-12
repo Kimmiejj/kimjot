@@ -92,6 +92,88 @@ x-4365
     expect(candidates, [26000]);
   });
 
+  test('ignores stray one-digit OCR noise near amount labels', () {
+    final rawText = '''
+K+
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+10 \u0E1E.\u0E04. 69 10:05 \u0E19.
+\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23:
+016130100551AOR01646
+\u0E08\u0E33\u0E19\u0E27\u0E19:
+2
+100.00 \u0E1A\u0E32\u0E17
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 100);
+    expect(candidates, [100]);
+  });
+
+  test('uses SCB bill payment amount row instead of customer numbers', () {
+    final rawText = '''
+SCB
+\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+14 \u0E21\u0E34.\u0E22. 2569 - 20:12
+\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07: 202606142I2Xi0FRo7NnnxPMf
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+MOL Payment2
+\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E23\u0E31\u0E1A\u0E0A\u0E33\u0E23\u0E30 : xxx-xxx879-0
+\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 : 6180547
+\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 : 3782350248
+\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 :
+L260614201233A6STB45
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+100.00
+\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21
+10.00
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 100);
+    expect(candidates, [100]);
+  });
+
+  test(
+    'uses Thai amount and baht text instead of transfer metadata numbers',
+    () {
+      final result = parser.parse('''
+K+
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+10 \u0E1E.\u0E04. 69 10:05 \u0E19.
+\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23:
+016130100551AOR01646
+xxx-x-x0253-x
+x-4365
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 100 \u0E1A\u0E32\u0E17
+''');
+
+      expect(result.amount, 100);
+    },
+  );
+
+  test('uses English amount and THB text instead of ids', () {
+    final result = parser.parse('''
+SCB EASY
+Transaction ID 991234567890
+Merchant ID KB000002203311
+Amount
+396.00 THB
+Reference 202607114iR0mvvXVGOK00Bjl
+''');
+
+    expect(result.amount, 396);
+  });
+
   test('classifies SCB same-name transfer as internal transfer', () {
     final result = parser.parse('''
 SCB

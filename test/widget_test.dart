@@ -9,6 +9,7 @@ import 'package:kimjod/features/auth/auth_user.dart';
 import 'package:kimjod/features/auth/login_screen.dart';
 import 'package:kimjod/features/transactions/create_transaction_input.dart';
 import 'package:kimjod/features/transactions/home_summary.dart';
+import 'package:kimjod/features/transactions/transaction_list_screen.dart';
 import 'package:kimjod/features/transactions/transaction_repository.dart';
 import 'package:kimjod/features/transactions/transaction_record.dart';
 import 'package:kimjod/features/transactions/transaction_type.dart';
@@ -138,6 +139,62 @@ void main() {
     expect(transactionRepository.savedInputs, isEmpty);
 
     authService.dispose();
+  });
+
+  testWidgets('transaction list search matches amounts', (
+    WidgetTester tester,
+  ) async {
+    final transactionRepository = _FakeTransactionRepository();
+    const user = AuthUser(
+      uid: 'test-user',
+      displayName: 'Test User',
+      email: 'test@example.com',
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        TransactionListScreen(
+          user: user,
+          transactionRepository: transactionRepository,
+          initialMonth: DateTime.now(),
+        ),
+      ),
+    );
+
+    await transactionRepository.createManualTransaction(
+      CreateTransactionInput(
+        userId: user.uid,
+        amount: 100,
+        type: TransactionType.expense,
+        categoryId: 'food',
+        categoryName: 'Food',
+        transactionDate: DateTime.now(),
+        transactionDateText: 'Today',
+        note: 'Coffee',
+      ),
+    );
+    await transactionRepository.createManualTransaction(
+      CreateTransactionInput(
+        userId: user.uid,
+        amount: 250,
+        type: TransactionType.expense,
+        categoryId: 'transport',
+        categoryName: 'Transport',
+        transactionDate: DateTime.now(),
+        transactionDateText: 'Today',
+        note: 'Taxi',
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Coffee'), findsOneWidget);
+    expect(find.text('Taxi'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '100');
+    await tester.pump();
+
+    expect(find.text('Coffee'), findsOneWidget);
+    expect(find.text('Taxi'), findsNothing);
   });
 }
 
