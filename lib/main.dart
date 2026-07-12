@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'app/kimjod_app.dart';
 import 'app/app_language.dart';
 import 'features/auth/firebase_auth_service.dart';
+import 'features/scan/album_sync_background_service.dart';
 import 'features/transactions/firebase_transaction_repository.dart';
 import 'firebase_options.dart';
 
@@ -11,6 +12,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final initialLanguage = await AppLanguageController.loadSavedLanguage();
+  await AlbumSyncBackgroundService.initialize();
 
   runApp(
     KimjodApp(

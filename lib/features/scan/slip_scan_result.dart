@@ -33,4 +33,30 @@ class SlipScanResult {
   }
 
   String get bankDisplayName => bankName ?? 'Unknown bank';
+
+  SlipScanResult copyWith({
+    String? rawText,
+    String? bankName,
+    double? amount,
+    String? dateText,
+    String? timeText,
+    String? recipient,
+    String? sender,
+    String? reference,
+    SlipCategory? category,
+    double? amountConfidence,
+  }) {
+    return SlipScanResult(
+      rawText: rawText ?? this.rawText,
+      bankName: bankName ?? this.bankName,
+      amount: amount ?? this.amount,
+      dateText: dateText ?? this.dateText,
+      timeText: timeText ?? this.timeText,
+      recipient: recipient ?? this.recipient,
+      sender: sender ?? this.sender,
+      reference: reference ?? this.reference,
+      category: category ?? this.category,
+      amountConfidence: amountConfidence ?? this.amountConfidence,
+    );
+  }
 }

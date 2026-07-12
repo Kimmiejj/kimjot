@@ -222,15 +222,9 @@ bool partiesLookLikeSamePerson(String? sender, String? recipient) {
 
 bool _rawTextLooksLikeSamePersonParties(String rawText) {
   final repaired = SlipTextParser.repairThaiMojibake(rawText);
-  final lower = repaired.toLowerCase();
-  final hasPartyLabels =
-      lower.contains('\u0E08\u0E32\u0E01') &&
-          lower.contains('\u0E44\u0E1B\u0E22\u0E31\u0E07') ||
-      lower.contains('from') && lower.contains('to') ||
-      lower.contains('sender') && lower.contains('recipient');
-  if (!hasPartyLabels) return false;
-
   final candidates = _personNameCandidatesFromRawText(repaired);
+  if (candidates.length < 2) return false;
+
   for (var i = 0; i < candidates.length; i++) {
     for (var j = i + 1; j < candidates.length; j++) {
       if (partiesLookLikeSamePerson(candidates[i], candidates[j])) {

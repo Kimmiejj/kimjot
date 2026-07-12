@@ -7,6 +7,8 @@ import 'package:kimjod/features/auth/auth_gate.dart';
 import 'package:kimjod/features/auth/auth_service.dart';
 import 'package:kimjod/features/auth/auth_user.dart';
 import 'package:kimjod/features/auth/login_screen.dart';
+import 'package:kimjod/features/scan/album_sync_review_screen.dart';
+import 'package:kimjod/features/scan/slip_scan_result.dart';
 import 'package:kimjod/features/transactions/create_transaction_input.dart';
 import 'package:kimjod/features/transactions/home_summary.dart';
 import 'package:kimjod/features/transactions/manual_transaction_sheet.dart';
@@ -235,6 +237,58 @@ void main() {
 
     await tester.ensureVisible(find.text('Save transaction'));
     await tester.tap(find.text('Save transaction'));
+    await tester.pumpAndSettle();
+
+    expect(transactionRepository.savedInputs, hasLength(1));
+    expect(
+      transactionRepository.savedInputs.single.type,
+      TransactionType.internalTransfer,
+    );
+    expect(
+      transactionRepository.savedInputs.single.categoryId,
+      'internal_transfer',
+    );
+  });
+
+  testWidgets('album save all keeps same-name SCB slip as internal transfer', (
+    WidgetTester tester,
+  ) async {
+    final transactionRepository = _FakeTransactionRepository();
+    const user = AuthUser(
+      uid: 'test-user',
+      displayName: 'Test User',
+      email: 'test@example.com',
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        AlbumSyncReviewScreen(
+          user: user,
+          transactionRepository: transactionRepository,
+          imagePaths: const ['missing-scb-internal-transfer.png'],
+          scanImagePath: (_) async => const SlipScanResult(
+            rawText:
+                'SCB\n'
+                '\u0E19\u0E32\u0E22 \u0E0A\u0E34\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A.\n'
+                'xxx-xxx899-2\n'
+                '\u0E19\u0E32\u0E22 \u0E0A\u0E34\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C\u0E27\u0E23\u0E23\u0E13\u0E30\n'
+                'x-4365\n'
+                '\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 26,000.00',
+            bankName: 'SCB EASY',
+            sender: 'xxx-xxx899-2',
+            recipient: 'x-4365',
+            amount: 26000,
+            reference: '202606250UKVQD6yqY9olW8kK',
+            category: SlipCategory.expense,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.text('Save all'), findsOneWidget);
+
+    await tester.tap(find.text('Save all'));
     await tester.pumpAndSettle();
 
     expect(transactionRepository.savedInputs, hasLength(1));

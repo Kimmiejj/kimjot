@@ -2,6 +2,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:tesseract_ocr/ocr_engine_config.dart';
 import 'package:tesseract_ocr/tesseract_ocr.dart';
 
+import '../transactions/transaction_type.dart';
 import 'external_ai_client.dart';
 import 'slip_amount_classifier.dart';
 import 'slip_scan_result.dart';
@@ -57,9 +58,19 @@ class SlipTextRecognizer {
       return _parser.parse('');
     }
 
+    return parseRawTexts(rawTexts);
+  }
+
+  Future<SlipScanResult> parseRawTexts(Iterable<String> rawTexts) async {
+    final texts = rawTexts
+        .map((rawText) => rawText.trim())
+        .where((rawText) => rawText.isNotEmpty)
+        .toList();
+    if (texts.isEmpty) return _parser.parse('');
+
     SlipScanResult? bestResult;
     var bestScore = -1;
-    for (final rawText in rawTexts) {
+    for (final rawText in texts) {
       final result = await _parseWithSuggestions(rawText);
       final score = _scoreResult(result);
       if (score > bestScore) {
@@ -68,7 +79,33 @@ class SlipTextRecognizer {
       }
     }
 
-    return bestResult ?? _parser.parse(rawTexts.first);
+    final fallback = bestResult ?? _parser.parse(texts.first);
+    if (texts.length <= 1) return fallback;
+
+    final mergedRawText = texts.join('\n');
+    final mergedResult = await _parseWithSuggestions(mergedRawText);
+    return _preferMergedInternalTransfer(fallback, mergedResult);
+  }
+
+  SlipScanResult _preferMergedInternalTransfer(
+    SlipScanResult fallback,
+    SlipScanResult merged,
+  ) {
+    final fallbackDecision = resolveBestEffortSlipDecision(fallback);
+    final mergedDecision = resolveBestEffortSlipDecision(merged);
+    if (mergedDecision?.type != TransactionType.internalTransfer ||
+        fallbackDecision?.type == TransactionType.internalTransfer) {
+      return fallback;
+    }
+
+    return merged.copyWith(
+      amount: fallback.amount ?? merged.amount,
+      amountConfidence: fallback.amountConfidence ?? merged.amountConfidence,
+      bankName: fallback.bankName ?? merged.bankName,
+      dateText: fallback.dateText ?? merged.dateText,
+      timeText: fallback.timeText ?? merged.timeText,
+      reference: fallback.reference ?? merged.reference,
+    );
   }
 
   Future<SlipScanResult> _parseWithSuggestions(String rawText) async {

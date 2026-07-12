@@ -11,6 +11,7 @@ import '../transactions/create_transaction_input.dart';
 import '../transactions/transaction_repository.dart';
 import '../transactions/transaction_source.dart';
 import '../transactions/transaction_type.dart';
+import 'album_sync_background_service.dart';
 import 'external_ai_client.dart';
 import 'slip_date_parser.dart';
 import 'slip_fingerprint.dart';
@@ -23,12 +24,14 @@ class AlbumSyncReviewScreen extends StatefulWidget {
     required this.user,
     required this.transactionRepository,
     required this.imagePaths,
+    this.scanImagePath,
     super.key,
   });
 
   final AuthUser user;
   final TransactionRepository transactionRepository;
   final List<String> imagePaths;
+  final Future<SlipScanResult> Function(String imagePath)? scanImagePath;
 
   @override
   State<AlbumSyncReviewScreen> createState() => _AlbumSyncReviewScreenState();
@@ -37,6 +40,7 @@ class AlbumSyncReviewScreen extends StatefulWidget {
 class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
   final _recognizer = SlipTextRecognizer();
   final _items = <_AlbumReviewItem>[];
+  StreamSubscription<AlbumSyncJobSnapshot>? _jobSubscription;
 
   bool _isScanning = false;
   bool _isSaving = false;
@@ -52,16 +56,82 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.scanImagePath == null &&
+        (Platform.isAndroid || Platform.isIOS)) {
+      _jobSubscription = AlbumSyncBackgroundService.jobUpdates.listen(
+        _applyBackgroundSnapshot,
+        onError: (_) {},
+      );
+    }
     _startScan();
   }
 
   @override
   void dispose() {
+    _jobSubscription?.cancel();
     _recognizer.close();
     super.dispose();
   }
 
   Future<void> _startScan() async {
+    if (widget.scanImagePath == null) {
+      await _startBackgroundScan();
+      return;
+    }
+
+    await _startLocalScan();
+  }
+
+  Future<void> _startBackgroundScan() async {
+    if (_isScanning) {
+      return;
+    }
+
+    final existingSnapshot = await AlbumSyncBackgroundService.loadJob();
+    if (existingSnapshot != null &&
+        existingSnapshot.userId == widget.user.uid &&
+        (widget.imagePaths.isEmpty ||
+            _sameImagePaths(existingSnapshot.imagePaths, widget.imagePaths))) {
+      _applyBackgroundSnapshot(existingSnapshot);
+      if (existingSnapshot.items.isNotEmpty) {
+        return;
+      }
+    }
+
+    if (widget.imagePaths.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isScanning = true;
+      _items
+        ..clear()
+        ..addAll(
+          widget.imagePaths.map(
+            (path) => _AlbumReviewItem(
+              path: path,
+              status: _AlbumReviewStatus.reading,
+            ),
+          ),
+        );
+    });
+
+    final activeFingerprints = await widget.transactionRepository
+        .loadActiveSlipFingerprints(widget.user.uid);
+    final snapshot = await AlbumSyncBackgroundService.requestStart(
+      userId: widget.user.uid,
+      imagePaths: widget.imagePaths,
+      activeFingerprints: activeFingerprints,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    _applyBackgroundSnapshot(snapshot);
+  }
+
+  Future<void> _startLocalScan() async {
     if (_isScanning) {
       return;
     }
@@ -86,7 +156,10 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
     for (var i = 0; i < _items.length; i++) {
       final item = _items[i];
       try {
-        final result = await _recognizer.scanImagePath(item.path);
+        final scanImagePath = widget.scanImagePath;
+        final result = await (scanImagePath == null
+            ? _recognizer.scanImagePath(item.path)
+            : scanImagePath(item.path));
         final fingerprint = await buildSlipFingerprint(
           imagePath: item.path,
           result: result,
@@ -132,6 +205,53 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
     setState(() {
       _isScanning = false;
     });
+  }
+
+  void _applyBackgroundSnapshot(AlbumSyncJobSnapshot snapshot) {
+    if (!mounted || snapshot.userId != widget.user.uid) {
+      return;
+    }
+
+    if (widget.imagePaths.isNotEmpty &&
+        !_sameImagePaths(snapshot.imagePaths, widget.imagePaths)) {
+      return;
+    }
+
+    setState(() {
+      _isScanning = snapshot.isScanning;
+      _items
+        ..clear()
+        ..addAll(snapshot.items.map(_itemFromBackgroundSnapshot));
+    });
+  }
+
+  bool _sameImagePaths(List<String> left, List<String> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+
+    for (var i = 0; i < left.length; i++) {
+      if (left[i] != right[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  _AlbumReviewItem _itemFromBackgroundSnapshot(AlbumSyncItemSnapshot item) {
+    return _AlbumReviewItem(
+      path: item.path,
+      status: switch (item.status) {
+        AlbumSyncItemStatus.reading => _AlbumReviewStatus.reading,
+        AlbumSyncItemStatus.ready => _AlbumReviewStatus.ready,
+        AlbumSyncItemStatus.duplicate => _AlbumReviewStatus.duplicate,
+        AlbumSyncItemStatus.failed => _AlbumReviewStatus.failed,
+      },
+      result: item.result,
+      fingerprint: item.fingerprint,
+      amount: item.amount,
+      decision: item.decision,
+    );
   }
 
   Future<SlipTransactionDecision?> _resolveDecision(
@@ -203,12 +323,17 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
     var savedCount = 0;
     for (final item in readyItems) {
       try {
-        final decision = item.decision!;
+        final result = item.result!;
+        var decision = item.decision!;
+        final localDecision = resolveBestEffortSlipDecision(result);
+        if (localDecision?.type == TransactionType.internalTransfer) {
+          decision = localDecision!;
+        }
         final transactionDate = parseTransactionDateFrom(
-          dateText: item.result!.dateText,
-          timeText: item.result!.timeText,
-          referenceText: item.result!.reference,
-          rawText: item.result!.rawText,
+          dateText: result.dateText,
+          timeText: result.timeText,
+          referenceText: result.reference,
+          rawText: result.rawText,
           fallbackDate: _fallbackImageDate(item.path),
         );
 
@@ -230,7 +355,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
             source: TransactionSource.gallerySlip,
             note: decision.note,
             slipFingerprint: item.fingerprint,
-            slipReference: item.result!.reference,
+            slipReference: result.reference,
           ),
         );
         savedCount++;
@@ -248,6 +373,10 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
     });
 
     if (savedCount > 0) {
+      await AlbumSyncBackgroundService.clearFinishedJob();
+      if (!mounted) {
+        return;
+      }
       Navigator.of(context).pop(true);
       return;
     }

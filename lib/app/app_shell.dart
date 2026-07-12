@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../features/analytics/analytics_screen.dart';
 import '../features/auth/auth_service.dart';
 import '../features/auth/auth_user.dart';
 import '../features/home/home_screen.dart';
+import '../features/scan/album_sync_background_service.dart';
+import '../features/scan/album_sync_review_screen.dart';
 import '../features/scan/scan_hub_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/transactions/transaction_repository.dart';
@@ -29,6 +33,30 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   var _selectedTab = AppShellTab.home;
+  StreamSubscription<void>? _albumSyncOpenSubscription;
+  bool _isOpeningAlbumSync = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _albumSyncOpenSubscription = AlbumSyncBackgroundService.openRequests.listen(
+      (_) {
+        AlbumSyncBackgroundService.consumeOpenRequest();
+        unawaited(_openAlbumSyncFromNotification());
+      },
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (AlbumSyncBackgroundService.consumeOpenRequest()) {
+        unawaited(_openAlbumSyncFromNotification());
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _albumSyncOpenSubscription?.cancel();
+    super.dispose();
+  }
 
   void _selectTab(AppShellTab tab) {
     if (_selectedTab == tab) {
@@ -38,6 +66,39 @@ class _AppShellState extends State<AppShell> {
     setState(() {
       _selectedTab = tab;
     });
+  }
+
+  Future<void> _openAlbumSyncFromNotification() async {
+    if (_isOpeningAlbumSync || !mounted) {
+      return;
+    }
+
+    final job = await AlbumSyncBackgroundService.loadJob();
+    if (job == null || job.userId != widget.user.uid || !mounted) {
+      return;
+    }
+
+    _isOpeningAlbumSync = true;
+    setState(() {
+      _selectedTab = AppShellTab.scan;
+    });
+
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => AlbumSyncReviewScreen(
+          user: widget.user,
+          transactionRepository: widget.transactionRepository,
+          imagePaths: job.imagePaths,
+        ),
+      ),
+    );
+
+    _isOpeningAlbumSync = false;
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.strings.transactionSaved)));
+    }
   }
 
   @override
