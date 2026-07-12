@@ -27,6 +27,8 @@ class TransactionListScreen extends StatefulWidget {
 
 class _TransactionListScreenState extends State<TransactionListScreen> {
   late DateTime _selectedMonth;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -42,6 +44,23 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         _selectedMonth.month + delta,
       );
     });
+  }
+
+  void _setSearchQuery(String value) {
+    setState(() {
+      _searchQuery = value.trim().toLowerCase();
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _setSearchQuery('');
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -64,8 +83,12 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                 sliver: SliverToBoxAdapter(
                   child: _TransactionsHeader(
                     selectedMonth: _selectedMonth,
+                    searchController: _searchController,
+                    searchQuery: _searchQuery,
                     onPreviousMonth: () => _changeMonth(-1),
                     onNextMonth: () => _changeMonth(1),
+                    onSearchChanged: _setSearchQuery,
+                    onClearSearch: _clearSearch,
                     onBack: () => Navigator.of(context).maybePop(),
                   ),
                 ),
@@ -73,12 +96,21 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
                 sliver: StreamBuilder<List<TransactionRecord>>(
-                  stream: widget.transactionRepository.watchMonthTransactions(
-                    widget.user.uid,
-                    _selectedMonth,
-                  ),
+                  stream: _searchQuery.isEmpty
+                      ? widget.transactionRepository.watchMonthTransactions(
+                          widget.user.uid,
+                          _selectedMonth,
+                        )
+                      : widget.transactionRepository.watchTransactions(
+                          widget.user.uid,
+                        ),
                   builder: (context, snapshot) {
-                    final transactions = snapshot.data ?? const [];
+                    final records = snapshot.data ?? const [];
+                    final transactions = _filterTransactions(
+                      context,
+                      records,
+                      _searchQuery,
+                    );
 
                     if (transactions.isEmpty) {
                       return const SliverToBoxAdapter(
@@ -126,14 +158,22 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
 class _TransactionsHeader extends StatelessWidget {
   const _TransactionsHeader({
     required this.selectedMonth,
+    required this.searchController,
+    required this.searchQuery,
     required this.onPreviousMonth,
     required this.onNextMonth,
+    required this.onSearchChanged,
+    required this.onClearSearch,
     required this.onBack,
   });
 
   final DateTime selectedMonth;
+  final TextEditingController searchController;
+  final String searchQuery;
   final VoidCallback onPreviousMonth;
   final VoidCallback onNextMonth;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onClearSearch;
   final VoidCallback onBack;
 
   @override
@@ -222,34 +262,104 @@ class _TransactionsHeader extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0x2E7092BE)),
+        TextField(
+          controller: searchController,
+          onChanged: onSearchChanged,
+          textInputAction: TextInputAction.search,
+          style: const TextStyle(
+            color: Color(0xFF10233F),
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0,
           ),
-          child: Row(
-            children: [
-              const Icon(Icons.search_rounded, color: Color(0xFF65748B)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  context.strings.searchPlaceholder,
-                  style: const TextStyle(
-                    color: Color(0xFF65748B),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0,
+          decoration: InputDecoration(
+            hintText: context.strings.searchPlaceholder,
+            hintStyle: const TextStyle(
+              color: Color(0xFF65748B),
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              color: Color(0xFF65748B),
+            ),
+            suffixIcon: searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    onPressed: onClearSearch,
+                    icon: const Icon(Icons.close_rounded),
+                    color: const Color(0xFF65748B),
+                    tooltip: context.strings.isThai
+                        ? 'ล้างการค้นหา'
+                        : 'Clear search',
                   ),
-                ),
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: 0.78),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 15,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: const BorderSide(color: Color(0x2E7092BE)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: const BorderSide(color: Color(0x2E7092BE)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: const BorderSide(
+                color: Color(0x803268F6),
+                width: 1.2,
               ),
-            ],
+            ),
           ),
         ),
       ],
     );
   }
+}
+
+List<TransactionRecord> _filterTransactions(
+  BuildContext context,
+  List<TransactionRecord> records,
+  String query,
+) {
+  if (query.isEmpty) {
+    return records;
+  }
+
+  final strings = context.strings;
+  return records.where((record) {
+    final categoryName = localizedCategoryName(
+      strings: strings,
+      categoryId: record.categoryId,
+      fallbackName: record.categoryName,
+    );
+    final title = localizedTransactionTitle(
+      strings: strings,
+      categoryId: record.categoryId,
+      categoryName: record.categoryName,
+      note: record.note,
+      merchantName: record.merchantName,
+    );
+    final searchableText = [
+      title,
+      categoryName,
+      record.categoryId,
+      record.categoryName,
+      record.note,
+      record.merchantName,
+      record.source.firestoreValue,
+      strings.formatMonthYear(record.transactionDate),
+      strings.formatDate(record.transactionDate),
+      _formatDateSection(record.transactionDate),
+    ].whereType<String>().join(' ').toLowerCase();
+
+    return searchableText.contains(query);
+  }).toList();
 }
 
 class _MonthControlButton extends StatelessWidget {
