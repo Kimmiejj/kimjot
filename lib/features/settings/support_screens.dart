@@ -52,6 +52,12 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
     ).showSnackBar(const SnackBar(content: Text('Budget saved.')));
   }
 
+  void _setBudget(double amount) {
+    setState(() {
+      _budgetController.text = _formatAmount(amount);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
@@ -97,7 +103,8 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
               const SizedBox(height: 16),
               const _SectionCaption(
                 title: 'Monthly budget',
-                subtitle: 'Set the total limit here. Category budgets stay separate from installment plans.',
+                subtitle:
+                    'Set the total limit here. Category budgets stay separate from installment plans.',
               ),
               const SizedBox(height: 10),
               _InputCard(
@@ -115,6 +122,18 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
                   ),
                   style: _inputStyle,
                 ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final amount in const [5000, 10000, 15000, 20000, 30000])
+                    _QuickValueChip(
+                      label: _formatMoney(amount.toDouble()),
+                      onTap: () => _setBudget(amount.toDouble()),
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               _PrimaryActionButton(
@@ -141,13 +160,15 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
               const SizedBox(height: 16),
               const _SectionCaption(
                 title: 'Category budget view',
-                subtitle: 'Expense categories are ready for budget-level grouping. Installments are managed on their own page.',
+                subtitle:
+                    'Expense categories are ready for budget-level grouping. Installments are managed on their own page.',
               ),
               const SizedBox(height: 10),
               for (final category in _expenseCategoryDefinitions.take(4)) ...[
                 _CategoryUsageTile(
                   definition: category,
-                  subtitle: 'Available for budget grouping and expense tracking',
+                  subtitle:
+                      'Available for budget grouping and expense tracking',
                   tags: const ['Expense', 'Budget'],
                 ),
                 const SizedBox(height: 10),
@@ -262,7 +283,8 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
               const SizedBox(height: 16),
               const _SectionCaption(
                 title: 'Installment plans',
-                subtitle: 'These plans are tracked separately from monthly budget setup.',
+                subtitle:
+                    'These plans are tracked separately from monthly budget setup.',
               ),
               const SizedBox(height: 10),
               if (plans.isEmpty)
@@ -341,7 +363,8 @@ class CategoriesScreen extends StatelessWidget {
           const SizedBox(height: 16),
           const _SectionCaption(
             title: 'Expense categories',
-            subtitle: 'These are the present categories used for expense records, budget grouping, and installment payment posts.',
+            subtitle:
+                'These are the present categories used for expense records, budget grouping, and installment payment posts.',
           ),
           const SizedBox(height: 10),
           for (final category in _expenseCategoryDefinitions) ...[
@@ -355,7 +378,8 @@ class CategoriesScreen extends StatelessWidget {
           const SizedBox(height: 8),
           const _SectionCaption(
             title: 'Income categories',
-            subtitle: 'Kept separate from budget and installments so money-in stays easy to scan.',
+            subtitle:
+                'Kept separate from budget and installments so money-in stays easy to scan.',
           ),
           const SizedBox(height: 10),
           for (final category in _incomeCategoryDefinitions) ...[
@@ -432,6 +456,18 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
     if (picked == null || !mounted) return;
     setState(() {
       _startMonth = DateTime(picked.year, picked.month);
+    });
+  }
+
+  void _setAmount(double amount) {
+    setState(() {
+      _amountController.text = _formatAmount(amount);
+    });
+  }
+
+  void _setNumber(TextEditingController controller, int value) {
+    setState(() {
+      controller.text = '$value';
     });
   }
 
@@ -569,6 +605,18 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                       ),
                     ),
                     const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final amount in const [500, 1000, 2000, 5000])
+                          _QuickValueChip(
+                            label: _formatMoney(amount.toDouble()),
+                            onTap: () => _setAmount(amount.toDouble()),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
@@ -613,6 +661,40 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                       ],
                     ),
                     const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final total in const [
+                          3,
+                          6,
+                          10,
+                          12,
+                          24,
+                          36,
+                          48,
+                          60,
+                        ])
+                          _QuickValueChip(
+                            label: '$total months',
+                            onTap: () => _setNumber(_totalController, total),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final years in const [5, 10, 15, 20, 25, 30])
+                          _QuickValueChip(
+                            label: '$years years',
+                            onTap: () =>
+                                _setNumber(_totalController, years * 12),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
@@ -654,6 +736,18 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                             ),
                           ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final day in const [1, 5, 15, 25])
+                          _QuickValueChip(
+                            label: 'Day $day',
+                            onTap: () => _setNumber(_dueDayController, day),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -960,7 +1054,10 @@ class _CategoryUsageTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(definition.label(context.strings), style: _rowTitleStyle),
+                    Text(
+                      definition.label(context.strings),
+                      style: _rowTitleStyle,
+                    ),
                     const SizedBox(height: 3),
                     Text(subtitle, style: _mutedStyle),
                   ],
@@ -972,9 +1069,7 @@ class _CategoryUsageTile extends StatelessWidget {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [
-              for (final tag in tags) _TagChip(label: tag),
-            ],
+            children: [for (final tag in tags) _TagChip(label: tag)],
           ),
         ],
       ),
@@ -1066,6 +1161,37 @@ class _TagChip extends StatelessWidget {
         border: Border.all(color: const Color(0x255D81AD)),
       ),
       child: Text(label, style: _chipLabelStyle),
+    );
+  }
+}
+
+class _QuickValueChip extends StatelessWidget {
+  const _QuickValueChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0F8FF),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0x255D81AD)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.add_rounded, size: 17, color: Color(0xFF145CC8)),
+            const SizedBox(width: 6),
+            Text(label, style: _chipLabelStyle),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1447,18 +1573,9 @@ class _CategoryDefinition {
 }
 
 enum _SupportTone {
-  sky(
-    [Color(0xFFEAF7FF), Color(0xFFF6FBFF)],
-    Color(0xFF135B9E),
-  ),
-  mint(
-    [Color(0xFFEAFBF2), Color(0xFFF6FFF9)],
-    Color(0xFF17785E),
-  ),
-  rose(
-    [Color(0xFFFFF1F5), Color(0xFFFFFAFC)],
-    Color(0xFFB5476A),
-  );
+  sky([Color(0xFFEAF7FF), Color(0xFFF6FBFF)], Color(0xFF135B9E)),
+  mint([Color(0xFFEAFBF2), Color(0xFFF6FFF9)], Color(0xFF17785E)),
+  rose([Color(0xFFFFF1F5), Color(0xFFFFFAFC)], Color(0xFFB5476A));
 
   const _SupportTone(this.gradient, this.foreground);
 

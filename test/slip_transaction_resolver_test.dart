@@ -84,6 +84,33 @@ void main() {
     },
   );
 
+  test(
+    'uses repeated Thai person names in raw text when parsed parties are accounts',
+    () {
+      final result = SlipScanResult(
+        rawText:
+            'SCB\n'
+            '\u0E08\u0E32\u0E01\n'
+            '\u0E19\u0E32\u0E22 \u0E0A\u0E34\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A.\n'
+            'xxx-xxx899-2\n'
+            '\u0E44\u0E1B\u0E22\u0E31\u0E07\n'
+            '\u0E19\u0E32\u0E22 \u0E0A\u0E34\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C\u0E27\u0E23\u0E23\u0E13\u0E30\n'
+            'x-4365\n'
+            '\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 26,000.00',
+        bankName: 'SCB EASY',
+        sender: 'xxx-xxx899-2',
+        recipient: 'x-4365',
+        amount: 26000,
+        category: SlipCategory.expense,
+      );
+
+      final decision = resolveBestEffortSlipDecision(result);
+
+      expect(decision?.type, TransactionType.internalTransfer);
+      expect(decision?.categoryId, 'internal_transfer');
+    },
+  );
+
   test('does not treat biller recipient as internal transfer', () {
     final result = SlipScanResult(
       rawText: 'SCB จ่ายบิลสำเร็จ FOOD PATIO รหัสอ้างอิง 20260711',

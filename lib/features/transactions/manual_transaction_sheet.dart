@@ -159,6 +159,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
   void didUpdateWidget(covariant ManualTransactionForm oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.existingRecord?.id != widget.existingRecord?.id ||
+        oldWidget.initialType != widget.initialType ||
         oldWidget.initialAmount != widget.initialAmount ||
         oldWidget.initialNote != widget.initialNote ||
         oldWidget.initialDate != widget.initialDate) {

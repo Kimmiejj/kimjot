@@ -4,6 +4,7 @@ import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../settings/money_settings_store.dart';
+import '../settings/support_screens.dart';
 import '../transactions/category_icons.dart';
 import '../transactions/category_localization.dart';
 import '../transactions/home_summary.dart';
@@ -57,6 +58,14 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text(context.strings.transactionSaved)));
     }
+  }
+
+  Future<void> _openMoneySettings(Widget page) async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (context) => page));
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _changeMonth(int delta) {
@@ -163,6 +172,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     userId: widget.user.uid,
                     month: _selectedMonth,
                     transactionRepository: widget.transactionRepository,
+                    onManageBudget: () =>
+                        _openMoneySettings(const BudgetsScreen()),
                   ),
                 ),
               ),
@@ -175,7 +186,11 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
                 sliver: SliverToBoxAdapter(
-                  child: _InstallmentStatusBuilder(month: _selectedMonth),
+                  child: _InstallmentStatusBuilder(
+                    month: _selectedMonth,
+                    onManageInstallments: () =>
+                        _openMoneySettings(const InstallmentsScreen()),
+                  ),
                 ),
               ),
               SliverPadding(
@@ -215,11 +230,13 @@ class _BudgetStatusBuilder extends StatelessWidget {
     required this.userId,
     required this.month,
     required this.transactionRepository,
+    required this.onManageBudget,
   });
 
   final String userId;
   final DateTime month;
   final TransactionRepository transactionRepository;
+  final VoidCallback onManageBudget;
 
   @override
   Widget build(BuildContext context) {
@@ -231,6 +248,9 @@ class _BudgetStatusBuilder extends StatelessWidget {
             title: context.strings.budget,
             message: context.strings.noBudget,
             icon: Icons.account_balance_wallet_rounded,
+            actionLabel: 'Set',
+            actionIcon: Icons.tune_rounded,
+            onAction: onManageBudget,
           );
         }
 
@@ -238,8 +258,11 @@ class _BudgetStatusBuilder extends StatelessWidget {
           userId: userId,
           month: month,
           transactionRepository: transactionRepository,
-          builder: (summary) =>
-              _BudgetProgressCard(budget: budget, spent: summary.expenseTotal),
+          builder: (summary) => _BudgetProgressCard(
+            budget: budget,
+            spent: summary.expenseTotal,
+            onEdit: onManageBudget,
+          ),
         );
       },
     );
@@ -247,9 +270,13 @@ class _BudgetStatusBuilder extends StatelessWidget {
 }
 
 class _InstallmentStatusBuilder extends StatelessWidget {
-  const _InstallmentStatusBuilder({required this.month});
+  const _InstallmentStatusBuilder({
+    required this.month,
+    required this.onManageInstallments,
+  });
 
   final DateTime month;
+  final VoidCallback onManageInstallments;
 
   @override
   Widget build(BuildContext context) {
@@ -261,9 +288,16 @@ class _InstallmentStatusBuilder extends StatelessWidget {
             title: context.strings.noDueInstallment,
             message: context.strings.installmentHint,
             icon: Icons.event_available_rounded,
+            actionLabel: 'Add',
+            actionIcon: Icons.add_rounded,
+            onAction: onManageInstallments,
           );
         }
-        return _InstallmentDueCard(plans: duePlans, month: month);
+        return _InstallmentDueCard(
+          plans: duePlans,
+          month: month,
+          onManage: onManageInstallments,
+        );
       },
     );
   }
@@ -908,11 +942,17 @@ class _EmptyInfoCard extends StatelessWidget {
     required this.title,
     required this.message,
     required this.icon,
+    this.actionLabel,
+    this.actionIcon,
+    this.onAction,
   });
 
   final String title;
   final String message;
   final IconData icon;
+  final String? actionLabel;
+  final IconData? actionIcon;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -968,6 +1008,14 @@ class _EmptyInfoCard extends StatelessWidget {
               ],
             ),
           ),
+          if (onAction != null && actionLabel != null) ...[
+            const SizedBox(width: 12),
+            _MiniActionButton(
+              icon: actionIcon ?? Icons.chevron_right_rounded,
+              label: actionLabel!,
+              onPressed: onAction!,
+            ),
+          ],
         ],
       ),
     );
@@ -975,10 +1023,15 @@ class _EmptyInfoCard extends StatelessWidget {
 }
 
 class _BudgetProgressCard extends StatelessWidget {
-  const _BudgetProgressCard({required this.budget, required this.spent});
+  const _BudgetProgressCard({
+    required this.budget,
+    required this.spent,
+    required this.onEdit,
+  });
 
   final double budget;
   final double spent;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -1060,6 +1113,17 @@ class _BudgetProgressCard extends StatelessWidget {
                   letterSpacing: 0,
                 ),
               ),
+              const SizedBox(width: 10),
+              IconButton(
+                tooltip: 'Edit budget',
+                onPressed: onEdit,
+                icon: const Icon(Icons.tune_rounded),
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFFE8F8F8),
+                  foregroundColor: const Color(0xFF0C8C8C),
+                  fixedSize: const Size.square(42),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -1091,10 +1155,15 @@ class _BudgetProgressCard extends StatelessWidget {
 }
 
 class _InstallmentDueCard extends StatelessWidget {
-  const _InstallmentDueCard({required this.plans, required this.month});
+  const _InstallmentDueCard({
+    required this.plans,
+    required this.month,
+    required this.onManage,
+  });
 
   final List<InstallmentPlan> plans;
   final DateTime month;
+  final VoidCallback onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1162,7 +1231,51 @@ class _InstallmentDueCard extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'Manage installments',
+            onPressed: onManage,
+            icon: const Icon(Icons.add_rounded),
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFE7EDF4),
+              foregroundColor: const Color(0xFF475569),
+              fixedSize: const Size.square(42),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _MiniActionButton extends StatelessWidget {
+  const _MiniActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, 42),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        backgroundColor: const Color(0xFF10233F),
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        textStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
       ),
     );
   }

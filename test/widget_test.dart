@@ -9,9 +9,11 @@ import 'package:kimjod/features/auth/auth_user.dart';
 import 'package:kimjod/features/auth/login_screen.dart';
 import 'package:kimjod/features/transactions/create_transaction_input.dart';
 import 'package:kimjod/features/transactions/home_summary.dart';
+import 'package:kimjod/features/transactions/manual_transaction_sheet.dart';
 import 'package:kimjod/features/transactions/transaction_list_screen.dart';
 import 'package:kimjod/features/transactions/transaction_repository.dart';
 import 'package:kimjod/features/transactions/transaction_record.dart';
+import 'package:kimjod/features/transactions/transaction_source.dart';
 import 'package:kimjod/features/transactions/transaction_type.dart';
 import 'package:kimjod/features/transactions/update_transaction_input.dart';
 
@@ -195,6 +197,55 @@ void main() {
 
     expect(find.text('Coffee'), findsOneWidget);
     expect(find.text('Taxi'), findsNothing);
+  });
+
+  testWidgets('slip form updates to internal transfer after OCR decision', (
+    WidgetTester tester,
+  ) async {
+    final transactionRepository = _FakeTransactionRepository();
+    const user = AuthUser(
+      uid: 'test-user',
+      displayName: 'Test User',
+      email: 'test@example.com',
+    );
+
+    Widget form(TransactionType type) {
+      return _buildTestApp(
+        Scaffold(
+          body: SingleChildScrollView(
+            child: ManualTransactionForm(
+              user: user,
+              transactionRepository: transactionRepository,
+              source: TransactionSource.gallerySlip,
+              title: 'Review slip',
+              initialType: type,
+              initialAmount: 26000,
+              initialNote: 'SCB transfer',
+            ),
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(form(TransactionType.expense));
+    expect(find.text('Expense'), findsOneWidget);
+
+    await tester.pumpWidget(form(TransactionType.internalTransfer));
+    await tester.pump();
+
+    await tester.ensureVisible(find.text('Save transaction'));
+    await tester.tap(find.text('Save transaction'));
+    await tester.pumpAndSettle();
+
+    expect(transactionRepository.savedInputs, hasLength(1));
+    expect(
+      transactionRepository.savedInputs.single.type,
+      TransactionType.internalTransfer,
+    );
+    expect(
+      transactionRepository.savedInputs.single.categoryId,
+      'internal_transfer',
+    );
   });
 }
 

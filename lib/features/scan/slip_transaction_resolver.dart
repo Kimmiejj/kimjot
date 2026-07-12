@@ -69,7 +69,8 @@ String savedCategoryNameForId(String categoryId) => switch (categoryId) {
 };
 
 TransactionType? resolveTransactionTypeFromSlip(SlipScanResult result) {
-  if (partiesLookLikeSamePerson(result.sender, result.recipient)) {
+  if (partiesLookLikeSamePerson(result.sender, result.recipient) ||
+      _rawTextLooksLikeSamePersonParties(result.rawText)) {
     return TransactionType.internalTransfer;
   }
   if (result.category == SlipCategory.expense ||
@@ -217,6 +218,38 @@ bool partiesLookLikeSamePerson(String? sender, String? recipient) {
   return normalizedSenderTokens
       .intersection(normalizedRecipientTokens)
       .isNotEmpty;
+}
+
+bool _rawTextLooksLikeSamePersonParties(String rawText) {
+  final repaired = SlipTextParser.repairThaiMojibake(rawText);
+  final lower = repaired.toLowerCase();
+  final hasPartyLabels =
+      lower.contains('\u0E08\u0E32\u0E01') &&
+          lower.contains('\u0E44\u0E1B\u0E22\u0E31\u0E07') ||
+      lower.contains('from') && lower.contains('to') ||
+      lower.contains('sender') && lower.contains('recipient');
+  if (!hasPartyLabels) return false;
+
+  final candidates = _personNameCandidatesFromRawText(repaired);
+  for (var i = 0; i < candidates.length; i++) {
+    for (var j = i + 1; j < candidates.length; j++) {
+      if (partiesLookLikeSamePerson(candidates[i], candidates[j])) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+List<String> _personNameCandidatesFromRawText(String rawText) {
+  final candidates = <String>{};
+  final personName = RegExp(
+    r'(?:\u0E19\u0E32\u0E22|\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27|\u0E19\u0E32\u0E07|\u0E04\u0E38\u0E13)\s*[\u0E00-\u0E7F.]{2,}(?:\s+[\u0E00-\u0E7F.]{1,})?',
+  );
+  for (final match in personName.allMatches(rawText)) {
+    candidates.add(match.group(0)!.replaceAll(RegExp(r'\s+'), ' ').trim());
+  }
+  return candidates.toList(growable: false);
 }
 
 String? _withoutThaiTitles(String? value) {
