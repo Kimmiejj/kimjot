@@ -558,7 +558,12 @@ class _MonthChoiceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor = isSelected ? Colors.white : const Color(0xFF111827);
+    const currentMonthColor = Color(0xFF006699);
+    final textColor = isSelected
+        ? Colors.white
+        : isCurrent
+        ? currentMonthColor
+        : const Color(0xFF111827);
 
     return InkWell(
       onTap: onTap,
@@ -573,8 +578,8 @@ class _MonthChoiceButton extends StatelessWidget {
           color: isSelected ? null : Colors.white.withValues(alpha: 0.76),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: isCurrent ? const Color(0xFF22C8D7) : const Color(0x245D81AD),
-            width: isCurrent ? 1.4 : 1,
+            color: isCurrent ? currentMonthColor : const Color(0x245D81AD),
+            width: isCurrent ? 1.6 : 1,
           ),
         ),
         child: Center(
