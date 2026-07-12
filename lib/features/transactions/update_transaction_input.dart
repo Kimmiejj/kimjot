@@ -1,8 +1,9 @@
-import 'transaction_type.dart';
 import 'transaction_source.dart';
+import 'transaction_type.dart';
 
-class CreateTransactionInput {
-  const CreateTransactionInput({
+class UpdateTransactionInput {
+  const UpdateTransactionInput({
+    required this.transactionId,
     required this.userId,
     required this.amount,
     required this.type,
@@ -10,12 +11,13 @@ class CreateTransactionInput {
     required this.categoryName,
     required this.transactionDate,
     this.transactionDateText,
-    this.source = TransactionSource.manual,
+    required this.source,
     this.note,
     this.slipFingerprint,
     this.slipReference,
   });
 
+  final String transactionId;
   final String userId;
   final double amount;
   final TransactionType type;

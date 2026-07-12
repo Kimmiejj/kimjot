@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,24 +8,29 @@ import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../transactions/create_transaction_input.dart';
+import '../transactions/category_localization.dart';
 import '../transactions/transaction_repository.dart';
 import '../transactions/transaction_source.dart';
 import '../transactions/transaction_type.dart';
+import 'album_sync_review_screen.dart';
 import 'slip_fingerprint.dart';
 import 'slip_scan_result.dart';
 import 'slip_review_screen.dart';
 import 'slip_text_recognizer.dart';
+import 'slip_date_parser.dart';
 import 'slip_amount_classifier.dart';
 
 class ScanHubScreen extends StatefulWidget {
   const ScanHubScreen({
     required this.user,
     required this.transactionRepository,
+    this.showBackButton = true,
     super.key,
   });
 
   final AuthUser user;
   final TransactionRepository transactionRepository;
+  final bool showBackButton;
 
   @override
   State<ScanHubScreen> createState() => _ScanHubScreenState();
@@ -40,6 +47,14 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
 
   bool _isSyncing = false;
 
+  DateTime? _fallbackImageDate(String imagePath) {
+    try {
+      return File(imagePath).lastModifiedSync();
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void dispose() {
     _recognizer.close();
@@ -49,21 +64,24 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
   Future<void> _openSlipReview(
     BuildContext context, {
     required String imagePath,
+    List<String>? imagePaths,
   }) async {
+    final strings = context.strings;
+    final messenger = ScaffoldMessenger.of(context);
+
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => SlipReviewScreen(
           user: widget.user,
           transactionRepository: widget.transactionRepository,
           imagePath: imagePath,
+          imagePaths: imagePaths,
         ),
       ),
     );
 
     if (saved == true && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.strings.transactionSaved)));
+      messenger.showSnackBar(SnackBar(content: Text(strings.transactionSaved)));
     }
   }
 
@@ -74,6 +92,9 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
     }
 
     XFile? image;
+
+    final strings = context.strings;
+    final messenger = ScaffoldMessenger.of(context);
 
     try {
       final picker = ImagePicker();
@@ -86,9 +107,7 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.strings.galleryPermissionDenied)),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(strings.galleryPermissionDenied)));
       return;
     }
 
@@ -104,6 +123,9 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
     if (!hasPermission || !context.mounted) {
       return;
     }
+
+    final strings = context.strings;
+    final messenger = ScaffoldMessenger.of(context);
 
     try {
       final imagePaths = await _galleryPermissionChannel
@@ -127,6 +149,28 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
               (image) => MapEntry(image.path, _SlipSyncStatus.pending),
             ),
           );
+      });
+
+      final saved = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (context) => AlbumSyncReviewScreen(
+            user: widget.user,
+            transactionRepository: widget.transactionRepository,
+            imagePaths: images.map((image) => image.path).toList(),
+          ),
+        ),
+      );
+
+
+      if (!mounted) return;
+
+      if (saved == true) {
+        messenger.showSnackBar(SnackBar(content: Text(strings.transactionSaved)));
+      }
+
+      setState(() {
+        _selectedImages.clear();
+        _statusByPath.clear();
       });
     } on PlatformException {
       if (!context.mounted) {
@@ -220,14 +264,32 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
           txType = TransactionType.expense;
         }
 
+        // ✅ Resolve category from AI analysis
+        final (categoryId: categoryId, categoryName: categoryName) = _resolveCategoryFromAI(result);
+        // ✅ Parse transaction date from slip
+        final transactionDate = parseTransactionDateFrom(
+          dateText: result.dateText,
+          timeText: result.timeText,
+          referenceText: result.reference,
+          rawText: result.rawText,
+          fallbackDate: _fallbackImageDate(image.path),
+        );
+
+        final localizedCategory = localizedCategoryName(
+          strings: strings,
+          categoryId: categoryId,
+          fallbackName: categoryName,
+        );
+
         await widget.transactionRepository.createManualTransaction(
           CreateTransactionInput(
             userId: widget.user.uid,
             amount: amount,
             type: txType,
-            categoryId: 'transfer',
-            categoryName: 'Transfer',
-            transactionDate: DateTime.now(),
+            categoryId: categoryId,
+            categoryName: localizedCategory,
+            transactionDate: transactionDate,
+            transactionDateText: strings.formatDate(transactionDate),
             source: TransactionSource.gallerySlip,
             note: _noteFromScan(result),
             slipFingerprint: fingerprint,
@@ -329,6 +391,63 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
         text.contains('จำนวนเงิน');
   }
 
+  ({String categoryId, String categoryName}) _resolveCategoryFromAI(SlipScanResult result) {
+    final type = result.category == SlipCategory.income 
+        ? TransactionType.income 
+        : TransactionType.expense;
+    final text = result.rawText.toLowerCase();
+    
+    if (type == TransactionType.income) {
+      if (text.contains('salary') || text.contains('เงินเดือน')) {
+        return (categoryId: 'salary', categoryName: 'Salary');
+      }
+      if (text.contains('bonus') || text.contains('โบนัส')) {
+        return (categoryId: 'bonus', categoryName: 'Bonus');
+      }
+      if (text.contains('interest') || text.contains('ดอกเบี้ย')) {
+        return (categoryId: 'interest', categoryName: 'Interest / Dividend');
+      }
+      return (categoryId: 'salary', categoryName: 'Salary');
+    }
+    
+    if (type == TransactionType.expense) {
+      if (_looksLikePaymentSlip(result) || result.reference != null) {
+        return (categoryId: 'transfer', categoryName: 'Transfer');
+      }
+      if (text.contains('food') || text.contains('restaurant') || text.contains('อาหาร')) {
+        return (categoryId: 'food', categoryName: 'Food');
+      }
+      if (text.contains('transport') || text.contains('taxi') || text.contains('grab')) {
+        return (categoryId: 'transport', categoryName: 'Transport');
+      }
+      if (text.contains('health') || text.contains('hospital') || text.contains('โรงพยาบาล')) {
+        return (categoryId: 'health', categoryName: 'Health');
+      }
+      if (text.contains('education') || text.contains('school') || text.contains('โรงเรียน')) {
+        return (categoryId: 'education', categoryName: 'Education');
+      }
+      if (text.contains('entertainment') || text.contains('movie') || text.contains('บันเทิง')) {
+        return (categoryId: 'entertainment', categoryName: 'Entertainment');
+      }
+      if (text.contains('travel') || text.contains('hotel') || text.contains('ท่องเที่ยว')) {
+        return (categoryId: 'travel', categoryName: 'Travel');
+      }
+      if (text.contains('bill') || text.contains('electricity') || text.contains('ค่า')) {
+        return (categoryId: 'bills', categoryName: 'Bills');
+      }
+      if (text.contains('rent') || text.contains('apartment') || text.contains('เช่า')) {
+        return (categoryId: 'rent', categoryName: 'Rent / Home');
+      }
+      return (categoryId: 'shopping', categoryName: 'Shopping');
+    }
+    
+    return (categoryId: 'other', categoryName: 'Other');
+  }
+
+  // Replaced by shared parser in slip_date_parser.dart
+
+  // Date parsing is centralized in `slip_date_parser.dart` (parseTransactionDateFrom)
+
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
@@ -337,6 +456,7 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
       backgroundColor: const Color(0xFFEAFBFF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
+        automaticallyImplyLeading: widget.showBackButton,
         title: Text(strings.scanHub),
         elevation: 0,
       ),
@@ -483,20 +603,21 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
             .where((l) => l.isNotEmpty)
             .toList();
 
-        final candidates = AmountClassifier.instance.extractCandidates(
+        final contexts = AmountClassifier.instance.extractCandidateContexts(
           result.rawText,
+          lines: lines,
         );
-        if (candidates.isEmpty) {
+        if (contexts.isEmpty) {
           setState(() {
             _statusByPath[image.path] = _SlipSyncStatus.failed;
           });
           continue;
         }
 
-        await AmountClassifier.instance.trainOnLabeledText(
+        await AmountClassifier.instance.trainOnLabeledContexts(
           rawText: result.rawText,
           lines: lines,
-          candidates: candidates,
+          contexts: contexts,
           expectedAmount: amounts[i],
         );
 
@@ -578,38 +699,36 @@ class _AlbumSyncPanel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-          ],
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: isSyncing ? null : onSync,
-                  icon: isSyncing
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        )
-                      : const Icon(Icons.sync_rounded),
-                  label: Text(
-                    isSyncing ? strings.syncingAlbum : strings.syncAlbum,
-                  ),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (onTrain != null)
-                FilledButton.icon(
-                  onPressed: isSyncing ? null : onTrain,
-                  icon: const Icon(Icons.school_rounded),
-                  label: Text(strings.isThai ? 'ฝึก' : 'Train'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52),
-                  ),
-                ),
-            ],
-          ),
+           ],
+           const SizedBox(height: 8),
+           SizedBox(
+             height: 52,
+             child: Row(
+               children: [
+                 Expanded(
+                   child: FilledButton.icon(
+                     onPressed: isSyncing ? null : onSync,
+                     icon: isSyncing
+                         ? const SizedBox.square(
+                             dimension: 18,
+                             child: CircularProgressIndicator(strokeWidth: 2.2),
+                           )
+                         : const Icon(Icons.sync_rounded),
+                     label: Text(
+                       isSyncing ? strings.syncingAlbum : strings.syncAlbum,
+                     ),
+                   ),
+                 ),
+                 const SizedBox(width: 8),
+                 if (onTrain != null)
+                   FilledButton.icon(
+                     onPressed: isSyncing ? null : onTrain,
+                     icon: const Icon(Icons.school_rounded),
+                     label: Text(strings.isThai ? 'ฝึก' : 'Train'),
+                   ),
+               ],
+             ),
+           ),
         ],
       ),
     );

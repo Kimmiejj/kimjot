@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../transactions/transaction_type.dart';
+import 'slip_scan_result.dart';
+
 /// External AI client helper.
 ///
 /// This supports two modes:
@@ -20,6 +23,28 @@ class ExternalAiClient {
   final _provider = const String.fromEnvironment('EXTERNAL_AI_PROVIDER');
   final _key = const String.fromEnvironment('EXTERNAL_AI_KEY');
   final _url = const String.fromEnvironment('EXTERNAL_AI_URL');
+
+  Future<ExternalSlipAnalysis?> analyzeSlip({
+    required SlipScanResult result,
+    required List<String> allowedCategoryIds,
+  }) async {
+    if (_key.isEmpty && _url.isEmpty) {
+      return null;
+    }
+
+    try {
+      if (_provider == 'openai' && _key.isNotEmpty) {
+        return await _callOpenAiSlipAnalysis(
+          result: result,
+          allowedCategoryIds: allowedCategoryIds,
+        );
+      }
+    } catch (_) {
+      // Ignore errors and let caller fall back to local heuristics.
+    }
+
+    return null;
+  }
 
   Future<ExternalPrediction?> analyzeAmounts({
     required String rawText,
@@ -135,10 +160,129 @@ If none of the candidates seem correct, return {"chosen": null, "confidence": 0.
 
     return null;
   }
+
+  Future<ExternalSlipAnalysis?> _callOpenAiSlipAnalysis({
+    required SlipScanResult result,
+    required List<String> allowedCategoryIds,
+  }) async {
+    final openAiUrl = 'https://api.openai.com/v1/chat/completions';
+    final model = const String.fromEnvironment(
+      'OPENAI_MODEL',
+      defaultValue: 'gpt-3.5-turbo',
+    );
+
+    final system =
+        '''You classify transaction slips from OCR text.
+Return JSON only with this shape:
+{"type":"expense|income|internal_transfer","categoryId":"one of the allowed category ids","note":"short optional note or null","confidence":0.0}
+Rules:
+- Choose exactly one categoryId from the allowed list.
+- Use "internal_transfer" when the sender and recipient appear to be the same person moving money between their own accounts.
+- Keep note short and factual, preferably merchant/bank/reference style.
+- If uncertain, still choose the best option and lower confidence.
+''';
+
+    final user =
+        '''OCR_TEXT:
+${result.rawText}
+
+EXTRACTED_FIELDS:
+- bankName: ${result.bankName ?? 'null'}
+- amount: ${result.amount?.toStringAsFixed(2) ?? 'null'}
+- dateText: ${result.dateText ?? 'null'}
+- timeText: ${result.timeText ?? 'null'}
+- recipient: ${result.recipient ?? 'null'}
+- sender: ${result.sender ?? 'null'}
+- reference: ${result.reference ?? 'null'}
+
+ALLOWED_CATEGORY_IDS:
+${allowedCategoryIds.join(', ')}
+
+Return the JSON object only.''';
+
+    final body = {
+      'model': model,
+      'messages': [
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': user},
+      ],
+      'temperature': 0.0,
+      'max_tokens': 300,
+    };
+
+    final resp = await http.post(
+      Uri.parse(openAiUrl),
+      headers: {
+        'content-type': 'application/json',
+        'authorization': 'Bearer $_key',
+      },
+      body: jsonEncode(body),
+    );
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      return null;
+    }
+
+    final json = jsonDecode(resp.body) as Map<String, dynamic>;
+    final choices = json['choices'] as List<dynamic>?;
+    if (choices == null || choices.isEmpty) {
+      return null;
+    }
+
+    final text = (choices.first['message']?['content'])?.toString();
+    if (text == null) {
+      return null;
+    }
+
+    try {
+      final parsed = jsonDecode(text) as Map<String, dynamic>;
+      final typeValue = parsed['type']?.toString().trim().toLowerCase();
+      final categoryId = parsed['categoryId']?.toString().trim();
+      final note = parsed['note']?.toString().trim();
+      final confidence = parsed['confidence'];
+
+      final type = switch (typeValue) {
+        'income' => TransactionType.income,
+        'expense' => TransactionType.expense,
+        'internal_transfer' => TransactionType.internalTransfer,
+        _ => null,
+      };
+
+      if (type == null ||
+          categoryId == null ||
+          categoryId.isEmpty ||
+          !allowedCategoryIds.contains(categoryId)) {
+        return null;
+      }
+
+      return ExternalSlipAnalysis(
+        type: type,
+        categoryId: categoryId,
+        note: (note == null || note.isEmpty || note == 'null') ? null : note,
+        confidence: confidence is num ? confidence.toDouble() : null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 class ExternalPrediction {
   ExternalPrediction(this.chosenAmount, this.confidence);
   final double? chosenAmount;
+  final double? confidence;
+}
+
+class ExternalSlipAnalysis {
+  const ExternalSlipAnalysis({
+    required this.type,
+    required this.categoryId,
+    this.note,
+    this.confidence,
+  });
+
+  final TransactionType type;
+  final String categoryId;
+  final String? note;
   final double? confidence;
 }

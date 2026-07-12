@@ -111,6 +111,8 @@ class AppStrings {
       isThai ? 'ยอดคงเหลือเดือนนี้' : 'Monthly balance';
   String get income => isThai ? 'รายรับ' : 'Income';
   String get expense => isThai ? 'รายจ่าย' : 'Expense';
+  String get internalTransfer =>
+      isThai ? 'โอนย้ายระหว่างบัญชี' : 'Internal Transfer';
   String get add => isThai ? 'เพิ่ม' : 'Add';
   String get scan => isThai ? 'สลิป' : 'Slip';
   String get scanSlip => isThai ? 'สลิป\nแกลเลอรี' : 'Slip\nGallery';
@@ -193,7 +195,7 @@ class AppStrings {
   String get chooseSlipFromGallery =>
       isThai ? 'เลือกรูปสลิปจากเครื่อง' : 'Choose slip from gallery';
   String get syncAlbumTitle =>
-      isThai ? 'ซิงก์จากโฟลเดอร์เก่า' : 'Sync old folder';
+      isThai ? 'ซิงก์จากอัลบัม' : 'Sync album';
   String get syncAlbumSubtitle => isThai
       ? 'เลือกทั้งโฟลเดอร์ แล้ว kimjod จะข้ามรูปที่ไม่ใช่สลิปและสลิปที่เคยเพิ่มแล้ว'
       : 'Choose a whole folder. kimjod skips non-payment images and slips already added.';
@@ -270,7 +272,7 @@ class AppStrings {
   String get signOut => isThai ? 'ออกจากระบบ' : 'Sign out';
   String get analytics => isThai ? 'วิเคราะห์' : 'Analytics';
   String get analyticsTitle =>
-      isThai ? 'วิเคราะห์เดือนนี้' : 'This month analytics';
+      isThai ? 'วิเคราะห์การรายจ่าย' : 'Expense Analysis';
   String get fromSummary => isThai ? 'จากสรุป' : 'FROM SUMMARY';
   String get analyticsTip => isThai
       ? 'เมื่อเพิ่มรายการจริงมากขึ้น แนวโน้มจะอ่านง่ายขึ้น'
@@ -346,7 +348,8 @@ class AppStrings {
           ];
     final today = DateUtils.isSameDay(date, DateTime.now());
     final prefix = today ? (isThai ? 'วันนี้, ' : 'Today, ') : '';
-    return '$prefix${date.day} ${months[date.month - 1]} ${date.year}';
+    final year = isThai ? date.year + 543 : date.year;
+    return '$prefix${date.day} ${months[date.month - 1]} $year';
   }
 
   String formatMonthYear(DateTime date) {
@@ -379,6 +382,7 @@ class AppStrings {
             'November',
             'December',
           ];
-    return '${months[date.month - 1]} ${date.year}';
+    final year = isThai ? date.year + 543 : date.year;
+    return '${months[date.month - 1]} $year';
   }
 }

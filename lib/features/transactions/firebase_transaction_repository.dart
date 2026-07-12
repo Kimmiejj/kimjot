@@ -8,6 +8,7 @@ import 'transaction_record.dart';
 import 'transaction_repository.dart';
 import 'transaction_source.dart';
 import 'transaction_type.dart';
+import 'update_transaction_input.dart';
 
 class FirebaseTransactionRepository implements TransactionRepository {
   FirebaseTransactionRepository({FirebaseFirestore? firestore})
@@ -36,6 +37,7 @@ class FirebaseTransactionRepository implements TransactionRepository {
       'categoryName': input.categoryName,
       'note': note == null || note.isEmpty ? null : note,
       'transactionDate': Timestamp.fromDate(input.transactionDate),
+      'transactionDateText': input.transactionDateText,
       'source': input.source.firestoreValue,
       'slipFingerprint': input.slipFingerprint,
       'slipReference': input.slipReference,
@@ -50,6 +52,41 @@ class FirebaseTransactionRepository implements TransactionRepository {
         // so saving a transaction never looks frozen while the network is gone.
       },
     );
+  }
+
+  @override
+  Future<void> updateTransaction(UpdateTransactionInput input) async {
+    final note = input.note?.trim();
+    final document = _userTransactionsCollection(
+      input.userId,
+    ).doc(input.transactionId);
+
+    final write = document.update({
+      'amount': input.amount,
+      'type': input.type.firestoreValue,
+      'categoryId': input.categoryId,
+      'categoryName': input.categoryName,
+      'note': note == null || note.isEmpty ? null : note,
+      'transactionDate': Timestamp.fromDate(input.transactionDate),
+      'transactionDateText': input.transactionDateText,
+      'source': input.source.firestoreValue,
+      'slipFingerprint': input.slipFingerprint,
+      'slipReference': input.slipReference,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await write.timeout(
+      const Duration(seconds: 4),
+      onTimeout: () {},
+    );
+  }
+
+  @override
+  Future<void> deleteTransaction({
+    required String userId,
+    required String transactionId,
+  }) {
+    return _userTransactionsCollection(userId).doc(transactionId).delete();
   }
 
   @override
@@ -205,7 +242,12 @@ class FirebaseTransactionRepository implements TransactionRepository {
   }
 
   TransactionType _typeFromFirestore(String? value) {
-    return value == 'income' ? TransactionType.income : TransactionType.expense;
+    return switch (value) {
+      'income' => TransactionType.income,
+      'internalTransfer' || 'internal_transfer' =>
+        TransactionType.internalTransfer,
+      _ => TransactionType.expense,
+    };
   }
 
   TransactionSource _sourceFromFirestore(String? value) {

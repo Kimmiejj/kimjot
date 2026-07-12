@@ -5,26 +5,31 @@ import 'package:flutter/material.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
+import '../transactions/category_localization.dart';
 import '../transactions/create_transaction_input.dart';
 import '../transactions/manual_transaction_sheet.dart';
 import '../transactions/transaction_repository.dart';
 import '../transactions/transaction_source.dart';
 import '../transactions/transaction_type.dart';
+import 'slip_date_parser.dart';
 import 'slip_fingerprint.dart';
 import 'slip_scan_result.dart';
 import 'slip_text_recognizer.dart';
+import 'slip_transaction_resolver.dart';
 
 class SlipReviewScreen extends StatefulWidget {
   const SlipReviewScreen({
     required this.user,
     required this.transactionRepository,
     this.imagePath,
+    this.imagePaths,
     super.key,
   });
 
   final AuthUser user;
   final TransactionRepository transactionRepository;
   final String? imagePath;
+  final List<String>? imagePaths;
 
   @override
   State<SlipReviewScreen> createState() => _SlipReviewScreenState();
@@ -33,15 +38,36 @@ class SlipReviewScreen extends StatefulWidget {
 class _SlipReviewScreenState extends State<SlipReviewScreen> {
   final _recognizer = SlipTextRecognizer();
 
+  int _currentIndex = 0;
   SlipScanResult? _scanResult;
   String? _slipFingerprint;
   bool _isReading = false;
   String? _scanError;
 
+  List<String> get _imagePaths {
+    final imagePaths = widget.imagePaths;
+    if (imagePaths != null && imagePaths.isNotEmpty) {
+      return imagePaths;
+    }
+
+    final imagePath = widget.imagePath;
+    return imagePath == null ? const [] : [imagePath];
+  }
+
+  String? get _currentImagePath {
+    final paths = _imagePaths;
+    if (paths.isEmpty || _currentIndex < 0 || _currentIndex >= paths.length) {
+      return null;
+    }
+    return paths[_currentIndex];
+  }
+
+  bool get _hasMultipleImages => _imagePaths.length > 1;
+
   @override
   void initState() {
     super.initState();
-    final imagePath = widget.imagePath;
+    final imagePath = _currentImagePath;
     if (imagePath != null) {
       _scanSlip(imagePath);
     }
@@ -55,6 +81,8 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
 
   Future<void> _scanSlip(String imagePath) async {
     setState(() {
+      _scanResult = null;
+      _slipFingerprint = null;
       _isReading = true;
       _scanError = null;
     });
@@ -65,9 +93,7 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
         imagePath: imagePath,
         result: result,
       );
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _scanResult = result;
@@ -75,9 +101,7 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
         _isReading = false;
       });
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _scanError = context.strings.noSlipDataFound;
@@ -86,16 +110,120 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
     }
   }
 
+  Future<void> _moveToImage(int index) async {
+    if (index < 0 || index >= _imagePaths.length || index == _currentIndex) {
+      return;
+    }
+
+    setState(() {
+      _currentIndex = index;
+    });
+    final imagePath = _currentImagePath;
+    if (imagePath != null) await _scanSlip(imagePath);
+  }
+
+  Future<void> _handleSaved() async {
+    if (_currentIndex < _imagePaths.length - 1) {
+      await _moveToImage(_currentIndex + 1);
+      return;
+    }
+
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  DateTime? _fallbackImageDate(String? imagePath) {
+    if (imagePath == null) {
+      return null;
+    }
+
+    try {
+      return File(imagePath).lastModifiedSync();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _autoAcceptTransaction(SlipScanResult result) async {
+    final imagePath = _currentImagePath;
+    if (!mounted || imagePath == null) return;
+    final fingerprint = await buildSlipFingerprint(
+      imagePath: imagePath,
+      result: result,
+    );
+    if (!mounted) return;
+
+    final decision = resolveLocalSlipDecision(result);
+    if (decision == null) {
+      return;
+    }
+
+    try {
+      final transactionDate = parseTransactionDateFrom(
+        dateText: result.dateText,
+        timeText: result.timeText,
+        referenceText: result.reference,
+        rawText: result.rawText,
+        fallbackDate: _fallbackImageDate(imagePath),
+      );
+
+      final localizedCategory = localizedCategoryName(
+        strings: context.strings,
+        categoryId: decision.categoryId,
+        fallbackName: decision.categoryName,
+      );
+
+      await widget.transactionRepository.createManualTransaction(
+        CreateTransactionInput(
+          userId: widget.user.uid,
+          amount: result.amount ?? 0,
+          type: decision.type,
+          categoryId: decision.categoryId,
+          categoryName: localizedCategory,
+          transactionDate: transactionDate,
+          transactionDateText: context.strings.formatDate(transactionDate),
+          source: TransactionSource.gallerySlip,
+          note: decision.note,
+          slipFingerprint: fingerprint,
+          slipReference: result.reference,
+        ),
+      );
+
+      if (mounted) await _handleSaved();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.strings.couldNotSaveTransaction)),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
     final scanResult = _scanResult;
+    final currentImagePath = _currentImagePath;
+    final decision = scanResult == null
+        ? null
+        : resolveLocalSlipDecision(scanResult);
+
+    final parsedDate = parseTransactionDateFrom(
+      dateText: scanResult?.dateText,
+      timeText: scanResult?.timeText,
+      referenceText: scanResult?.reference,
+      rawText: scanResult?.rawText,
+      fallbackDate: _fallbackImageDate(currentImagePath),
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFEAFBFF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: Text(strings.slipReview),
+        title: Text(
+          _hasMultipleImages
+              ? '${strings.slipReview} ${_currentIndex + 1}/${_imagePaths.length}'
+              : strings.slipReview,
+        ),
         elevation: 0,
       ),
       body: DecoratedBox(
@@ -117,13 +245,23 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                MascotTip(
-                  message: strings.slipReviewTip,
-                  mood: MascotMood.calm,
-                ),
-                if (widget.imagePath != null) ...[
+                MascotTip(message: strings.slipReviewTip, mood: MascotMood.calm),
+                if (currentImagePath != null) ...[
                   const SizedBox(height: 14),
-                  _SlipImagePreview(imagePath: widget.imagePath!),
+                  _SlipImagePreview(imagePath: currentImagePath),
+                  const SizedBox(height: 14),
+                ],
+                if (_hasMultipleImages) ...[
+                  _ReviewQueueCard(
+                    currentIndex: _currentIndex,
+                    totalCount: _imagePaths.length,
+                    onPrevious: _currentIndex > 0
+                        ? () => _moveToImage(_currentIndex - 1)
+                        : null,
+                    onNext: _currentIndex < _imagePaths.length - 1
+                        ? () => _moveToImage(_currentIndex + 1)
+                        : null,
+                  ),
                   const SizedBox(height: 14),
                 ],
                 if (_isReading) ...[
@@ -133,31 +271,38 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
                   _SlipSummaryCard(result: scanResult),
                   const SizedBox(height: 14),
                   if (scanResult.amountConfidence != null &&
-                      scanResult.amountConfidence! > 0.85)
+                      scanResult.amountConfidence! > 0.85 &&
+                      decision != null)
                     _HighConfidenceCard(
                       amount: scanResult.amount,
                       confidence: scanResult.amountConfidence!,
                       onAutoAccept: () => _autoAcceptTransaction(scanResult),
                     ),
                   if (scanResult.amountConfidence != null &&
-                      scanResult.amountConfidence! > 0.85)
+                      scanResult.amountConfidence! > 0.85 &&
+                      decision != null)
                     const SizedBox(height: 14),
                 ] else if (_scanError != null) ...[
                   _ReadingCard(message: _scanError!),
                   const SizedBox(height: 14),
                 ],
                 ManualTransactionForm(
+                  key: ValueKey(currentImagePath),
                   user: widget.user,
                   transactionRepository: widget.transactionRepository,
                   source: TransactionSource.gallerySlip,
                   title: strings.reviewSlip,
                   description: strings.slipReviewDescription,
-                  initialType: TransactionType.expense,
+                  initialType: decision?.type ?? TransactionType.expense,
                   initialAmount: scanResult?.amount,
-                  initialNote: _noteFromScan(scanResult),
+                  initialNote: scanResult == null
+                      ? null
+                      : (decision?.note ?? buildSlipNote(scanResult)),
+                  initialDate: parsedDate,
+                  initialDateText: context.strings.formatDate(parsedDate),
                   slipFingerprint: _slipFingerprint,
                   slipReference: scanResult?.reference,
-                  onSaved: () => Navigator.of(context).pop(true),
+                  onSaved: _handleSaved,
                 ),
               ],
             ),
@@ -166,55 +311,52 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
       ),
     );
   }
+}
 
-  String? _noteFromScan(SlipScanResult? result) {
-    if (result == null) {
-      return null;
-    }
+class _ReviewQueueCard extends StatelessWidget {
+  const _ReviewQueueCard({
+    required this.currentIndex,
+    required this.totalCount,
+    this.onPrevious,
+    this.onNext,
+  });
 
-    final values = [
-      result.bankName,
-      result.recipient,
-      result.reference,
-    ].whereType<String>().where((value) => value.trim().isNotEmpty);
-    final note = values.join(' / ');
-    return note.isEmpty ? null : note;
-  }
+  final int currentIndex;
+  final int totalCount;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
 
-  Future<void> _autoAcceptTransaction(SlipScanResult result) async {
-    if (!mounted || widget.imagePath == null) return;
-    final fingerprint = await buildSlipFingerprint(
-      imagePath: widget.imagePath!,
-      result: result,
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: _summaryDecoration(),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onPrevious,
+            icon: const Icon(Icons.chevron_left_rounded),
+            tooltip: strings.previousMonth,
+          ),
+          Expanded(
+            child: Text(
+              strings.isThai
+                  ? 'à¸ªà¸¥à¸´à¸› ${currentIndex + 1} à¸ˆà¸²à¸ $totalCount'
+                  : 'Slip ${currentIndex + 1} of $totalCount',
+              textAlign: TextAlign.center,
+              style: _summaryValueStyle,
+            ),
+          ),
+          IconButton(
+            onPressed: onNext,
+            icon: const Icon(Icons.chevron_right_rounded),
+            tooltip: strings.nextMonth,
+          ),
+        ],
+      ),
     );
-    if (!mounted) return;
-    try {
-      await widget.transactionRepository.createManualTransaction(
-        CreateTransactionInput(
-          userId: widget.user.uid,
-          amount: result.amount ?? 0,
-          type: result.category == SlipCategory.income
-              ? TransactionType.income
-              : TransactionType.expense,
-          categoryId: 'transfer',
-          categoryName: 'Transfer',
-          transactionDate: DateTime.now(),
-          source: TransactionSource.gallerySlip,
-          note: _noteFromScan(result),
-          slipFingerprint: fingerprint,
-          slipReference: result.reference,
-        ),
-      );
-      if (mounted) {
-        Navigator.of(context).pop(true);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.strings.couldNotSaveTransaction)),
-        );
-      }
-    }
   }
 }
 
@@ -322,11 +464,18 @@ class _SummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 94, child: Text(label, style: _summaryLabelStyle)),
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: _summaryValueStyle.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 8),
           Expanded(child: Text(value, style: _summaryValueStyle)),
         ],
       ),
@@ -336,37 +485,35 @@ class _SummaryRow extends StatelessWidget {
 
 BoxDecoration _summaryDecoration() {
   return BoxDecoration(
-    color: Colors.white.withValues(alpha: 0.82),
+    color: Colors.white,
     borderRadius: BorderRadius.circular(24),
-    border: Border.all(color: const Color(0x2E5D81AD)),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.04),
+        blurRadius: 20,
+        offset: const Offset(0, 6),
+      ),
+    ],
   );
 }
 
-String _formatMoneyValue(double amount) {
-  return amount.toStringAsFixed(amount == amount.roundToDouble() ? 0 : 2);
-}
-
-const _summaryTitleStyle = TextStyle(
-  color: Color(0xFF071844),
-  fontSize: 18,
-  fontWeight: FontWeight.w900,
-  letterSpacing: 0,
-);
-
-const _summaryLabelStyle = TextStyle(
-  color: Color(0xFF65748B),
-  fontSize: 13,
-  fontWeight: FontWeight.w800,
-  letterSpacing: 0,
-);
-
-const _summaryValueStyle = TextStyle(
+const TextStyle _summaryValueStyle = TextStyle(
   color: Color(0xFF10233F),
   fontSize: 14,
   fontWeight: FontWeight.w800,
   height: 1.35,
   letterSpacing: 0,
 );
+
+const TextStyle _summaryTitleStyle = TextStyle(
+  color: Color(0xFF10233F),
+  fontSize: 16,
+  fontWeight: FontWeight.w900,
+);
+
+String _formatMoneyValue(double value) {
+  return value.toStringAsFixed(2);
+}
 
 class _HighConfidenceCard extends StatelessWidget {
   const _HighConfidenceCard({
@@ -395,7 +542,7 @@ class _HighConfidenceCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            strings.isThai ? 'AI มั่นใจสูง' : 'High Confidence',
+            strings.isThai ? 'AI à¸¡à¸±à¹ˆà¸™à¹ƒà¸ˆà¸ªà¸¹à¸‡' : 'High Confidence',
             style: const TextStyle(
               color: Color(0xFF1B8F73),
               fontSize: 16,
@@ -405,8 +552,8 @@ class _HighConfidenceCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             strings.isThai
-                ? 'ระบบอ่านสลิปได้ $confidencePercent% — สามารถบันทึกอัตโนมัติได้'
-                : 'AI detected amount with $confidencePercent% confidence — auto-save available',
+                ? 'à¸£à¸°à¸šà¸šà¸­à¹ˆà¸²à¸™à¸ªà¸¥à¸´à¸›à¹„à¸”à¹‰ $confidencePercent% â€” à¸ªà¸²à¸¡à¸²à¸£à¸–à¸šà¸±à¸™à¸—à¸¶à¸à¸­à¸±à¸•à¹‚à¸™à¸¡à¸±à¸•à¸´à¹„à¸”à¹‰'
+                : 'AI detected amount with $confidencePercent% confidence â€” auto-save available',
             style: const TextStyle(
               color: Color(0xFF10233F),
               fontSize: 13,
@@ -417,7 +564,9 @@ class _HighConfidenceCard extends StatelessWidget {
           FilledButton.icon(
             onPressed: onAutoAccept,
             icon: const Icon(Icons.check_rounded),
-            label: Text(strings.isThai ? 'ยอมรับ & บันทึก' : 'Accept & Save'),
+            label: Text(
+              strings.isThai ? 'à¸¢à¸­à¸¡à¸£à¸±à¸š & à¸šà¸±à¸™à¸—à¸¶à¸' : 'Accept & Save',
+            ),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.green,
               minimumSize: const Size.fromHeight(48),

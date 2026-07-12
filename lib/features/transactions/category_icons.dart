@@ -18,6 +18,7 @@ IconData categoryIconData(String categoryId) {
     'tax' => Icons.account_balance_rounded,
     'donation' => Icons.volunteer_activism_rounded,
     'transfer' => Icons.swap_horiz_rounded,
+    'internal_transfer' => Icons.compare_arrows_rounded,
     'salary' => Icons.payments_rounded,
     'side_job' => Icons.work_history_rounded,
     'business' => Icons.storefront_rounded,

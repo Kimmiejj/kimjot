@@ -1,10 +1,9 @@
-import 'slip_scan_result.dart';
 import 'slip_amount_classifier.dart';
+import 'slip_scan_result.dart';
 
 class SlipTextParser {
   SlipTextParser();
 
-  // Temporary storage for the last amount confidence computed during parse
   double? _lastAmountConfidence;
 
   SlipScanResult parse(
@@ -57,7 +56,6 @@ class SlipTextParser {
           : _lastAmountConfidence,
     );
 
-    // clear temporary confidence after use
     _lastAmountConfidence = null;
     return result;
   }
@@ -71,7 +69,6 @@ class SlipTextParser {
   ) {
     final lower = rawText.toLowerCase();
 
-    // Income-like keywords
     final incomeKeywords = [
       'income',
       'credit',
@@ -85,8 +82,6 @@ class SlipTextParser {
       'รับเงิน',
       'เครดิต',
     ];
-
-    // Expense-like keywords
     final expenseKeywords = [
       'payment',
       'paid',
@@ -104,29 +99,26 @@ class SlipTextParser {
       'ยอดเงิน',
     ];
 
-    for (final k in incomeKeywords) {
-      if (lower.contains(k)) {
+    for (final keyword in incomeKeywords) {
+      if (lower.contains(keyword)) {
         return SlipCategory.income;
       }
     }
 
-    for (final k in expenseKeywords) {
-      if (lower.contains(k)) {
+    for (final keyword in expenseKeywords) {
+      if (lower.contains(keyword)) {
         return SlipCategory.expense;
       }
     }
 
-    // Heuristic: if we detect a sender (someone who sent money) and recipient is null -> likely income
     if (sender != null && recipient == null) {
       return SlipCategory.income;
     }
 
-    // If recipient present but sender absent, likely expense (we are sender)
     if (recipient != null && sender == null) {
       return SlipCategory.expense;
     }
 
-    // Fallback: if amount is present and text includes words like 'transfer' or 'to' close to amount, treat as expense
     if (amount != null) {
       final nearby = lines.join(' ');
       if (nearby.contains('to') || nearby.contains('ไปยัง')) {
@@ -157,107 +149,43 @@ class SlipTextParser {
   }
 
   double? _detectAmount(List<String> lines) {
-    final amountWords = RegExp(
-      r'(amount|total|จำนวนเงิน|ยอดเงิน|บาท|baht|thb)',
-      caseSensitive: false,
+    final rawText = lines.join('\n');
+    final contexts = AmountClassifier.instance.extractCandidateContexts(
+      rawText,
+      lines: lines,
     );
-    final candidates = <_AmountCandidate>[];
-
-    for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final nearby = [
-        if (i > 0) lines[i - 1],
-        line,
-        if (i + 1 < lines.length) lines[i + 1],
-      ].join(' ');
-
-      final bahtValue = _moneyBeforeBaht(nearby);
-      if (bahtValue != null) {
-        candidates.add(_AmountCandidate(bahtValue, 120));
-      }
-
-      if (amountWords.hasMatch(line)) {
-        final value = _bestMoneyValue(nearby);
-        if (value != null) {
-          candidates.add(_AmountCandidate(value, 100));
-        }
-      }
-
-      final value = _bestMoneyValue(line);
-      if (value != null) {
-        candidates.add(_AmountCandidate(value, 10));
-      }
+    if (contexts.isEmpty) {
+      return null;
     }
 
-    candidates.sort((a, b) {
-      final scoreCompare = b.score.compareTo(a.score);
-      if (scoreCompare != 0) {
-        return scoreCompare;
-      }
+    if (contexts.length == 1) {
+      _lastAmountConfidence = 1.0;
+      return contexts.first.value;
+    }
 
-      return b.value.compareTo(a.value);
-    });
-    if (candidates.isEmpty) return null;
-
-    final values = candidates.map((c) => c.value).toList();
-    if (values.length == 1) return values.first;
-
-    // Use local classifier to pick best candidate when multiple found.
     try {
-      final pred = AmountClassifier.instance.predict(
-        rawText: lines.join('\n'),
+      final prediction = AmountClassifier.instance.predictFromContexts(
+        rawText: rawText,
         lines: lines,
-        candidates: values,
+        contexts: contexts,
       );
-      if (pred.index >= 0 && pred.index < values.length) {
-        // store confidence somewhere? parser returns only amount here; we'll
-        // set confidence via an additional field in SlipScanResult higher up.
-        _lastAmountConfidence = pred.confidence;
-        return values[pred.index];
+      if (prediction.index >= 0 && prediction.index < contexts.length) {
+        _lastAmountConfidence = prediction.confidence;
+        return contexts[prediction.index].value;
       }
     } catch (_) {
-      // ignore and fallback
+      // Ignore and use the first extracted amount as a fallback.
     }
 
-    _lastAmountConfidence = null;
-    return candidates.first.value;
-  }
-
-  double? _moneyBeforeBaht(String text) {
-    final match = RegExp(
-      r'(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(?:บาท|baht|thb)',
-      caseSensitive: false,
-    ).firstMatch(text);
-    if (match == null) {
-      return null;
-    }
-
-    return double.tryParse(match.group(0)!.replaceAll(RegExp(r'[^0-9.]'), ''));
-  }
-
-  double? _bestMoneyValue(String text) {
-    final matches = RegExp(r'(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?')
-        .allMatches(text)
-        .map((match) => match.group(0))
-        .whereType<String>()
-        .map((value) => double.tryParse(value.replaceAll(',', '')))
-        .whereType<double>()
-        .where((value) => value > 0 && value < 1000000)
-        .toList();
-
-    if (matches.isEmpty) {
-      return null;
-    }
-
-    matches.sort();
-    return matches.last;
+    _lastAmountConfidence = 0.0;
+    return contexts.first.value;
   }
 
   String? _detectDate(String text) {
     final patterns = [
       RegExp(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'),
       RegExp(r'\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}'),
-      RegExp(r'\d{1,2}\s+[ก-๙.]{2,8}\s+\d{2,4}'),
+      RegExp(r'\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}'),
     ];
 
     for (final pattern in patterns) {
@@ -314,7 +242,7 @@ class SlipTextParser {
 
       final match = RegExp(r'[A-Z0-9]{6,}', caseSensitive: false)
           .allMatches(lines[i])
-          .map((match) => match.group(0))
+          .map((item) => item.group(0))
           .whereType<String>()
           .lastOrNull;
       if (match != null) {
@@ -346,11 +274,4 @@ class SlipTextParser {
 
     return true;
   }
-}
-
-class _AmountCandidate {
-  const _AmountCandidate(this.value, this.score);
-
-  final double value;
-  final int score;
 }

@@ -13,12 +13,14 @@ class SettingsScreen extends StatelessWidget {
     required this.user,
     required this.authService,
     required this.transactionRepository,
+    this.onBack,
     super.key,
   });
 
   final AuthUser user;
   final AuthService authService;
   final TransactionRepository transactionRepository;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,7 @@ class SettingsScreen extends StatelessWidget {
       title: strings.settings,
       smallLabel: strings.settings,
       status: strings.privateData,
-      onBack: () => Navigator.of(context).maybePop(),
+      onBack: onBack,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -297,7 +299,7 @@ class _SettingsScaffold extends StatelessWidget {
   final String smallLabel;
   final String status;
   final Widget child;
-  final VoidCallback onBack;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -319,14 +321,15 @@ class _SettingsScaffold extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    IconButton(
-                      onPressed: onBack,
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.72),
-                        foregroundColor: const Color(0xFF10233F),
+                    if (onBack != null)
+                      IconButton(
+                        onPressed: onBack,
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.72),
+                          foregroundColor: const Color(0xFF10233F),
+                        ),
                       ),
-                    ),
                     const Spacer(),
                     Text(status, style: _statusStyle),
                   ],

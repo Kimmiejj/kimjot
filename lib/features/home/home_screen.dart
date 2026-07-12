@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
-import '../analytics/analytics_screen.dart';
-import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
-import '../scan/scan_hub_screen.dart';
-import '../settings/settings_screen.dart';
 import '../transactions/category_icons.dart';
 import '../transactions/category_localization.dart';
 import '../transactions/home_summary.dart';
@@ -19,14 +15,16 @@ import '../transactions/transaction_type.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     required this.user,
-    required this.authService,
     required this.transactionRepository,
+    required this.onOpenScan,
+    required this.onOpenSettings,
     super.key,
   });
 
   final AuthUser user;
-  final AuthService authService;
   final TransactionRepository transactionRepository;
+  final VoidCallback onOpenScan;
+  final VoidCallback onOpenSettings;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -104,33 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final strings = context.strings;
 
     return Scaffold(
-      extendBody: true,
       backgroundColor: const Color(0xFFF3FAFB),
-      bottomNavigationBar: _FloatingHomeNavigationBar(
-        onHome: _resetToCurrentMonth,
-        onScan: () => _openPage(
-          context,
-          ScanHubScreen(
-            user: widget.user,
-            transactionRepository: widget.transactionRepository,
-          ),
-        ),
-        onGraph: () => _openPage(
-          context,
-          AnalyticsScreen(
-            user: widget.user,
-            transactionRepository: widget.transactionRepository,
-          ),
-        ),
-        onSettings: () => _openPage(
-          context,
-          SettingsScreen(
-            user: widget.user,
-            authService: widget.authService,
-            transactionRepository: widget.transactionRepository,
-          ),
-        ),
-      ),
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -151,14 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onPreviousMonth: () => _changeMonth(-1),
                     onNextMonth: () => _changeMonth(1),
                     onSelectMonth: _selectMonth,
-                    onSettings: () => _openPage(
-                      context,
-                      SettingsScreen(
-                        user: widget.user,
-                        authService: widget.authService,
-                        transactionRepository: widget.transactionRepository,
-                      ),
-                    ),
+                    onSettings: widget.onOpenSettings,
                   ),
                 ),
               ),
@@ -184,13 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         transactionRepository: widget.transactionRepository,
                       ),
                     ),
-                    onScan: () => _openPage(
-                      context,
-                      ScanHubScreen(
-                        user: widget.user,
-                        transactionRepository: widget.transactionRepository,
-                      ),
-                    ),
+                    onScan: widget.onOpenScan,
                   ),
                 ),
               ),
@@ -1026,7 +985,6 @@ class _TransactionListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isIncome = record.type == TransactionType.income;
     final categoryName = localizedCategoryName(
       strings: context.strings,
       categoryId: record.categoryId,
@@ -1044,8 +1002,8 @@ class _TransactionListTile extends StatelessWidget {
       categoryIcon: categoryIconData(record.categoryId),
       title: title,
       subtitle: '${record.source.firestoreValue} · $categoryName',
-      amount: '${isIncome ? '+' : '-'}${_formatMoney(record.amount)}',
-      amountColor: isIncome ? const Color(0xFF589F76) : const Color(0xFFB66A72),
+      amount: '${_transactionPrefix(record.type)}${_formatMoney(record.amount)}',
+      amountColor: _transactionColor(record.type),
     );
   }
 }
@@ -1132,115 +1090,26 @@ class _ListTileCard extends StatelessWidget {
   }
 }
 
-class _FloatingHomeNavigationBar extends StatelessWidget {
-  const _FloatingHomeNavigationBar({
-    required this.onHome,
-    required this.onScan,
-    required this.onGraph,
-    required this.onSettings,
-  });
-
-  final VoidCallback onHome;
-  final VoidCallback onScan;
-  final VoidCallback onGraph;
-  final VoidCallback onSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final strings = context.strings;
-
-    return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(24, 0, 24, 18),
-      child: Container(
-        height: 70,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.94),
-          borderRadius: BorderRadius.circular(26),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x26305472),
-              blurRadius: 24,
-              offset: Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _NavItem(
-              icon: Icons.home_outlined,
-              label: strings.home,
-              onTap: onHome,
-            ),
-            _NavItem(
-              icon: Icons.crop_square_rounded,
-              label: strings.scan,
-              onTap: onScan,
-            ),
-            _NavItem(
-              icon: Icons.bar_chart_rounded,
-              label: strings.graph,
-              onTap: onGraph,
-            ),
-            _NavItem(
-              icon: Icons.settings_rounded,
-              label: strings.settings,
-              onTap: onSettings,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    const color = Color(0xFF64748B);
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: SizedBox(
-        width: 72,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 String _formatMoney(double amount) {
   final sign = amount < 0 ? '-' : '';
   return '${sign}THB ${_formatNumber(amount.abs())}';
+}
+
+String _transactionPrefix(TransactionType type) {
+  return switch (type) {
+    TransactionType.income => '+',
+    TransactionType.expense => '-',
+    TransactionType.internalTransfer => '↔',
+  };
+}
+
+Color _transactionColor(TransactionType type) {
+  return switch (type) {
+    TransactionType.income => const Color(0xFF589F76),
+    TransactionType.expense => const Color(0xFFB66A72),
+    TransactionType.internalTransfer => const Color(0xFF168AA6),
+  };
 }
 
 String _formatNumber(double amount) {

@@ -30,7 +30,7 @@ class TransactionRecord {
   final String? slipFingerprint;
   final String? slipReference;
 
-  bool get isIncome => type == TransactionType.income;
+  bool get isIncome => type.isIncome;
 
   String get displayTitle {
     final trimmedMerchant = merchantName?.trim();

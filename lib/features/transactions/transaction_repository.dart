@@ -1,9 +1,17 @@
 import 'create_transaction_input.dart';
 import 'home_summary.dart';
 import 'transaction_record.dart';
+import 'update_transaction_input.dart';
 
 abstract class TransactionRepository {
   Future<void> createManualTransaction(CreateTransactionInput input);
+
+  Future<void> updateTransaction(UpdateTransactionInput input);
+
+  Future<void> deleteTransaction({
+    required String userId,
+    required String transactionId,
+  });
 
   Future<Set<String>> loadActiveSlipFingerprints(String userId);
 

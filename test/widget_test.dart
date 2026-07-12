@@ -12,6 +12,7 @@ import 'package:kimjod/features/transactions/home_summary.dart';
 import 'package:kimjod/features/transactions/transaction_repository.dart';
 import 'package:kimjod/features/transactions/transaction_record.dart';
 import 'package:kimjod/features/transactions/transaction_type.dart';
+import 'package:kimjod/features/transactions/update_transaction_input.dart';
 
 void main() {
   testWidgets('shows the kimjod login screen', (WidgetTester tester) async {
@@ -192,6 +193,15 @@ class _FakeTransactionRepository implements TransactionRepository {
     _summaryController.add(_buildSummary(DateTime.now()));
     _transactionsController.add(_buildTransactions());
   }
+
+  @override
+  Future<void> updateTransaction(UpdateTransactionInput input) async {}
+
+  @override
+  Future<void> deleteTransaction({
+    required String userId,
+    required String transactionId,
+  }) async {}
 
   @override
   Future<Set<String>> loadActiveSlipFingerprints(String userId) async {

@@ -22,6 +22,7 @@ String localizedCategoryName({
     'tax' => strings.tax,
     'donation' => strings.donation,
     'transfer' => strings.transfer,
+    'internal_transfer' => strings.internalTransfer,
     'salary' => strings.salary,
     'side_job' => strings.sideJob,
     'business' => strings.business,

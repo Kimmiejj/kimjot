@@ -9,29 +9,80 @@ import '../transactions/transaction_record.dart';
 import '../transactions/transaction_repository.dart';
 import '../transactions/transaction_type.dart';
 
-class AnalyticsScreen extends StatelessWidget {
+class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({
     required this.user,
     required this.transactionRepository,
+    this.onBack,
     super.key,
   });
 
   final AuthUser user;
   final TransactionRepository transactionRepository;
+  final VoidCallback? onBack;
+
+  @override
+  State<AnalyticsScreen> createState() => _AnalyticsScreenState();
+}
+
+class _AnalyticsScreenState extends State<AnalyticsScreen> {
+  late DateTime _selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMonth = _currentMonth();
+  }
+
+  DateTime _currentMonth() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month);
+  }
+
+  void _changeMonth(int delta) {
+    setState(() {
+      _selectedMonth = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month + delta,
+      );
+    });
+  }
+
+  Future<void> _selectMonth() async {
+    final selected = await showDialog<DateTime>(
+      context: context,
+      builder: (context) =>
+          _MonthYearPickerDialog(initialMonth: _selectedMonth),
+    );
+
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedMonth = selected;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
-    final month = DateTime(DateTime.now().year, DateTime.now().month);
+    final month = _selectedMonth;
 
     return _DesignScaffold(
       status: strings.fromSummary,
       smallLabel: strings.analytics,
       title: strings.analyticsTitle,
-      onBack: () => Navigator.of(context).maybePop(),
-      headerBadge: const _HeaderBadge(label: '7'),
+      onBack: widget.onBack,
+      selectedMonth: month,
+      onPreviousMonth: () => _changeMonth(-1),
+      onNextMonth: () => _changeMonth(1),
+      onSelectMonth: _selectMonth,
       child: StreamBuilder<List<TransactionRecord>>(
-        stream: transactionRepository.watchMonthTransactions(user.uid, month),
+        stream: widget.transactionRepository.watchMonthTransactions(
+          widget.user.uid,
+          month,
+        ),
         builder: (context, snapshot) {
           final transactions = snapshot.data ?? const <TransactionRecord>[];
           final analytics = _MonthlyAnalytics.fromRecords(
@@ -181,7 +232,8 @@ class _CategoryDonutCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
-    final centerLabel = analytics.topCategoryLabel ??
+    final centerLabel =
+        analytics.topCategoryLabel ??
         (strings.isThai ? 'ยังไม่มีข้อมูล' : 'No data');
     final centerValue = analytics.topCategoryPercent <= 0
         ? ''
@@ -252,6 +304,56 @@ class _CategoryDonutCard extends StatelessWidget {
               ],
             ),
           ),
+          if (analytics.topCategories.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Column(
+              children: [
+                for (final category in analytics.topCategories)
+                  _CategoryLegendRow(category: category),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryLegendRow extends StatelessWidget {
+  const _CategoryLegendRow({required this.category});
+
+  final _TopCategory category;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: category.color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              category.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF123052),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text('${category.percent.round()}%', style: _smallAccentStyle),
         ],
       ),
     );
@@ -297,28 +399,312 @@ class _MiniMetricCard extends StatelessWidget {
   }
 }
 
-class _HeaderBadge extends StatelessWidget {
-  const _HeaderBadge({required this.label});
+class _MonthSelector extends StatelessWidget {
+  const _MonthSelector({
+    required this.selectedMonth,
+    required this.onPreviousMonth,
+    required this.onNextMonth,
+    required this.onSelectMonth,
+  });
 
-  final String label;
+  final DateTime selectedMonth;
+  final VoidCallback onPreviousMonth;
+  final VoidCallback onNextMonth;
+  final VoidCallback onSelectMonth;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF3FBFF),
-        shape: BoxShape.circle,
+    final strings = context.strings;
+
+    return Row(
+      children: [
+        _MonthArrowButton(
+          icon: Icons.chevron_left_rounded,
+          tooltip: strings.previousMonth,
+          onTap: onPreviousMonth,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Tooltip(
+            message: strings.isThai
+                ? 'à¹€à¸¥à¸·à¸­à¸à¹€à¸”à¸·à¸­à¸™à¹à¸¥à¸°à¸›à¸µ'
+                : 'Choose month and year',
+            child: InkWell(
+              onTap: onSelectMonth,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0x2E5D81AD)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          strings.formatMonthYear(selectedMonth),
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: Color(0xFF111827),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: Color(0xFF3268F6),
+                      size: 22,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _MonthArrowButton(
+          icon: Icons.chevron_right_rounded,
+          tooltip: strings.nextMonth,
+          onTap: onNextMonth,
+        ),
+      ],
+    );
+  }
+}
+
+class _MonthYearPickerDialog extends StatefulWidget {
+  const _MonthYearPickerDialog({required this.initialMonth});
+
+  final DateTime initialMonth;
+
+  @override
+  State<_MonthYearPickerDialog> createState() => _MonthYearPickerDialogState();
+}
+
+class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
+  late int _year;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.initialMonth.year;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFFFFF), Color(0xFFEAFBFF), Color(0xFFF1FFF8)],
+          ),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x26305472),
+              blurRadius: 28,
+              offset: Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text(
+                  strings.isThai
+                      ? 'à¹€à¸¥à¸·à¸­à¸à¹€à¸”à¸·à¸­à¸™'
+                      : 'Select month',
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                  color: const Color(0xFF64748B),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0x245D81AD)),
+              ),
+              child: Row(
+                children: [
+                  _MonthArrowButton(
+                    icon: Icons.chevron_left_rounded,
+                    tooltip: strings.isThai
+                        ? 'à¸›à¸µà¸à¹ˆà¸­à¸™à¸«à¸™à¹‰à¸²'
+                        : 'Previous year',
+                    onTap: () => setState(() => _year--),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '$_year',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF111827),
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                  _MonthArrowButton(
+                    icon: Icons.chevron_right_rounded,
+                    tooltip: strings.isThai
+                        ? 'à¸›à¸µà¸–à¸±à¸”à¹„à¸›'
+                        : 'Next year',
+                    onTap: () => setState(() => _year++),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 12,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 2.05,
+              ),
+              itemBuilder: (context, index) {
+                final month = index + 1;
+                final isSelected =
+                    widget.initialMonth.year == _year &&
+                    widget.initialMonth.month == month;
+
+                return _MonthChoiceButton(
+                  label: _monthLabel(context, month),
+                  isSelected: isSelected,
+                  onTap: () =>
+                      Navigator.of(context).pop(DateTime(_year, month)),
+                );
+              },
+            ),
+          ],
+        ),
       ),
-      alignment: Alignment.center,
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Color(0xFF21406E),
-          fontSize: 24,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0,
+    );
+  }
+}
+
+class _MonthChoiceButton extends StatelessWidget {
+  const _MonthChoiceButton({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const selectedBorderColor = Color(0xFF0C8C8C);
+    final textColor = isSelected
+        ? const Color(0xFF145A5A)
+        : const Color(0xFF111827);
+    final borderColor = isSelected
+        ? selectedBorderColor
+        : const Color(0x245D81AD);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Ink(
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFFE8F8F8)
+              : Colors.white.withValues(alpha: 0.76),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor, width: isSelected ? 2.2 : 1),
+          boxShadow: isSelected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x1A0C8C8C),
+                    blurRadius: 12,
+                    offset: Offset(0, 5),
+                  ),
+                ]
+              : null,
+        ),
+        child: Center(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MonthArrowButton extends StatelessWidget {
+  const _MonthArrowButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x2E5D81AD)),
+          ),
+          child: Icon(icon, color: const Color(0xFF3268F6), size: 24),
         ),
       ),
     );
@@ -332,15 +718,21 @@ class _DesignScaffold extends StatelessWidget {
     required this.title,
     required this.child,
     required this.onBack,
-    this.headerBadge,
+    required this.selectedMonth,
+    required this.onPreviousMonth,
+    required this.onNextMonth,
+    required this.onSelectMonth,
   });
 
   final String status;
   final String smallLabel;
   final String title;
   final Widget child;
-  final VoidCallback onBack;
-  final Widget? headerBadge;
+  final VoidCallback? onBack;
+  final DateTime selectedMonth;
+  final VoidCallback onPreviousMonth;
+  final VoidCallback onNextMonth;
+  final VoidCallback onSelectMonth;
 
   @override
   Widget build(BuildContext context) {
@@ -362,14 +754,15 @@ class _DesignScaffold extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    IconButton(
-                      onPressed: onBack,
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.72),
-                        foregroundColor: const Color(0xFF10233F),
+                    if (onBack != null)
+                      IconButton(
+                        onPressed: onBack,
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.72),
+                          foregroundColor: const Color(0xFF10233F),
+                        ),
                       ),
-                    ),
                     const Spacer(),
                     Text(status, style: _statusStyle),
                   ],
@@ -385,13 +778,16 @@ class _DesignScaffold extends StatelessWidget {
                           Text(smallLabel, style: _mutedStyle),
                           const SizedBox(height: 4),
                           Text(title, style: _pageTitleStyle),
+                          const SizedBox(height: 12),
+                          _MonthSelector(
+                            selectedMonth: selectedMonth,
+                            onPreviousMonth: onPreviousMonth,
+                            onNextMonth: onNextMonth,
+                            onSelectMonth: onSelectMonth,
+                          ),
                         ],
                       ),
                     ),
-                    if (headerBadge != null) ...[
-                      const SizedBox(width: 16),
-                      headerBadge!,
-                    ],
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -463,6 +859,7 @@ class _MonthlyAnalytics {
     required this.balance,
     required this.topCategoryLabel,
     required this.topCategoryPercent,
+    required this.topCategories,
     required this.donutSegments,
   });
 
@@ -473,6 +870,7 @@ class _MonthlyAnalytics {
   final double balance;
   final String? topCategoryLabel;
   final double topCategoryPercent;
+  final List<_TopCategory> topCategories;
   final List<_DonutSegment> donutSegments;
 
   factory _MonthlyAnalytics.fromRecords({
@@ -494,7 +892,11 @@ class _MonthlyAnalytics {
     final dayTotals = <int, double>{};
     for (final record in expenseRecords) {
       final day = record.transactionDate.day;
-      dayTotals.update(day, (value) => value + record.amount, ifAbsent: () => record.amount);
+      dayTotals.update(
+        day,
+        (value) => value + record.amount,
+        ifAbsent: () => record.amount,
+      );
     }
 
     final monthEndDay = _isSameMonth(month, DateTime.now())
@@ -530,7 +932,9 @@ class _MonthlyAnalytics {
       0.0,
       (sum, entry) => sum + entry.value,
     );
-    final topCategoryLabel = sortedCategories.isEmpty ? null : sortedCategories.first.key;
+    final topCategoryLabel = sortedCategories.isEmpty
+        ? null
+        : sortedCategories.first.key;
     final topCategoryPercent = sortedCategories.isEmpty || totalExpense <= 0
         ? 0.0
         : ((sortedCategories.first.value / totalExpense) * 100).toDouble();
@@ -544,12 +948,21 @@ class _MonthlyAnalytics {
 
     final donutSource = sortedCategories.take(4).toList();
     final donutSegments = <_DonutSegment>[];
+    final topCategories = <_TopCategory>[];
     for (var i = 0; i < donutSource.length; i++) {
       final entry = donutSource[i];
+      final color = palette[i % palette.length];
       donutSegments.add(
         _DonutSegment(
-          color: palette[i % palette.length],
+          color: color,
           fraction: totalExpense <= 0 ? 0 : entry.value / totalExpense,
+        ),
+      );
+      topCategories.add(
+        _TopCategory(
+          color: color,
+          label: entry.key,
+          percent: totalExpense <= 0 ? 0 : (entry.value / totalExpense) * 100,
         ),
       );
     }
@@ -562,6 +975,7 @@ class _MonthlyAnalytics {
       balance: incomeTotal - expenseTotal,
       topCategoryLabel: topCategoryLabel,
       topCategoryPercent: topCategoryPercent,
+      topCategories: topCategories,
       donutSegments: donutSegments,
     );
   }
@@ -579,6 +993,18 @@ class _DonutSegment {
 
   final Color color;
   final double fraction;
+}
+
+class _TopCategory {
+  const _TopCategory({
+    required this.color,
+    required this.label,
+    required this.percent,
+  });
+
+  final Color color;
+  final String label;
+  final double percent;
 }
 
 BoxDecoration _cardDecoration() {
@@ -655,6 +1081,11 @@ String _formatNumber(double amount) {
     }
   }
   return buffer.toString();
+}
+
+String _monthLabel(BuildContext context, int month) {
+  final monthText = context.strings.formatMonthYear(DateTime(2000, month));
+  return monthText.replaceFirst(' 2000', '');
 }
 
 bool _isSameMonth(DateTime left, DateTime right) {

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_shell.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/loading_screen.dart';
-import '../home/home_screen.dart';
 import '../transactions/transaction_repository.dart';
 import 'auth_service.dart';
 import 'auth_user.dart';
@@ -32,7 +32,7 @@ class AuthGate extends StatelessWidget {
           return LoginScreen(authService: authService);
         }
 
-        return HomeScreen(
+        return AppShell(
           user: user,
           authService: authService,
           transactionRepository: transactionRepository,

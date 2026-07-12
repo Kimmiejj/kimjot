@@ -1,62 +1,110 @@
 import 'dart:convert';
-// math is needed for log10 calculation
 import 'dart:math' as math;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Prediction result with chosen index and confidence (0..1)
 class PredictResult {
   PredictResult(this.index, this.confidence);
+
   final int index;
   final double confidence;
 }
 
-/// A very small perceptron-style scorer for choosing the correct amount among
-/// candidate numeric values extracted from OCR text.
-///
-/// It computes a small set of features for each candidate and learns a
-/// weight vector via a simple perceptron update. We persist weights using
-/// SharedPreferences so training is local to the device.
+class AmountCandidateContext {
+  const AmountCandidateContext({
+    required this.value,
+    required this.lineIndex,
+    required this.lineText,
+    required this.tokenText,
+  });
+
+  final double value;
+  final int lineIndex;
+  final String lineText;
+  final String tokenText;
+}
+
 class AmountClassifier {
   AmountClassifier._();
 
   static final AmountClassifier instance = AmountClassifier._();
 
-  // weight names used in features
+  static const _amountKeywordPattern =
+      r'amount|total|paid|payment|bill|transfer|promptpay|qr|'
+      r'à¸ˆà¸³à¸™à¸§à¸™à¹€à¸‡à¸´à¸™|à¸¢à¸­à¸”à¹€à¸‡à¸´à¸™|à¸ˆà¹ˆà¸²à¸¢à¸šà¸´à¸¥|'
+      r'à¸ˆà¹ˆà¸²à¸¢|à¸Šà¸³à¸£à¸°|à¸£à¸§à¸¡';
+  static const _referenceKeywordPattern =
+      r'ref|reference|transaction|account|biller|merchant|invoice|order|'
+      r'id|à¹€à¸¥à¸‚à¸—à¸µà¹ˆ|à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡|à¸šà¸±à¸à¸Šà¸µ|à¸£à¹‰à¸²à¸™à¸„à¹‰à¸²|à¸˜à¸¸à¸£à¸à¸£à¸£à¸¡';
+  static const _feeKeywordPattern =
+      r'fee|service charge|à¸„à¹ˆà¸²à¸˜à¸£à¸£à¸¡à¹€à¸™à¸µà¸¢à¸¡';
+  static const _dateTimePattern =
+      r'(\d{1,2}:\d{2})|(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4})';
+
   final List<String> _featureNames = [
     'bias',
-    'hasBaht',
-    'nearAmountKeyword',
+    'hasBahtOnLine',
+    'keywordOnLine',
+    'keywordNearby',
+    'lineLooksLikeAmount',
+    'hasDecimals',
     'positionScore',
     'logValue',
+    'penaltyReferenceLine',
+    'penaltyFeeLine',
+    'penaltyDateTimeLine',
   ];
 
   final Map<String, double> _weights = {};
-
   bool _loaded = false;
 
   Future<void> load() async {
-    if (_loaded) return;
+    if (_loaded) {
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('amount_classifier_weights');
     if (raw != null) {
       try {
         final map = jsonDecode(raw) as Map<String, dynamic>;
         for (final name in _featureNames) {
-          final v = map[name];
-          _weights[name] = (v is num) ? v.toDouble() : 0.0;
+          final value = map[name];
+          _weights[name] = (value is num)
+              ? value.toDouble()
+              : _defaultWeightFor(name);
         }
       } catch (_) {
-        for (final name in _featureNames) {
-          _weights[name] = 0.0;
-        }
+        _resetWeightsToDefaults();
       }
     } else {
-      for (final name in _featureNames) {
-        _weights[name] = 0.0;
-      }
+      _resetWeightsToDefaults();
     }
+
     _loaded = true;
+  }
+
+  void _resetWeightsToDefaults() {
+    for (final name in _featureNames) {
+      _weights[name] = _defaultWeightFor(name);
+    }
+  }
+
+  double _defaultWeightFor(String name) {
+    return switch (name) {
+      'bias' => 0.0,
+      'hasBahtOnLine' => 2.8,
+      'keywordOnLine' => 4.2,
+      'keywordNearby' => 2.1,
+      'lineLooksLikeAmount' => 3.4,
+      'hasDecimals' => 0.8,
+      'positionScore' => 0.5,
+      'logValue' => 0.15,
+      'penaltyReferenceLine' => -5.2,
+      'penaltyFeeLine' => -4.0,
+      'penaltyDateTimeLine' => -6.0,
+      _ => 0.0,
+    };
   }
 
   Future<void> save() async {
@@ -64,87 +112,201 @@ class AmountClassifier {
     await prefs.setString('amount_classifier_weights', jsonEncode(_weights));
   }
 
+  List<AmountCandidateContext> extractCandidateContexts(
+    String rawText, {
+    List<String>? lines,
+  }) {
+    final normalizedLines =
+        lines ??
+        rawText
+            .split(RegExp(r'\r?\n'))
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty)
+            .toList();
+    final contexts = <AmountCandidateContext>[];
+    final numberPattern = RegExp(
+      r'(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?',
+    );
+
+    for (var lineIndex = 0; lineIndex < normalizedLines.length; lineIndex++) {
+      final line = normalizedLines[lineIndex];
+      for (final match in numberPattern.allMatches(line)) {
+        final token = match.group(0);
+        if (token == null) {
+          continue;
+        }
+
+        final value = double.tryParse(token.replaceAll(',', ''));
+        if (value == null || value <= 0 || value >= 10000000) {
+          continue;
+        }
+
+        contexts.add(
+          AmountCandidateContext(
+            value: value,
+            lineIndex: lineIndex,
+            lineText: line,
+            tokenText: token,
+          ),
+        );
+      }
+    }
+
+    return contexts;
+  }
+
   Map<String, double> _featuresForCandidate({
     required String rawText,
     required List<String> lines,
-    required double value,
-    required int candidateIndex,
+    required AmountCandidateContext context,
   }) {
-    final lower = rawText.toLowerCase();
+    final lineLower = context.lineText.toLowerCase();
+    final nearbyLower = [
+      if (context.lineIndex > 0) lines[context.lineIndex - 1],
+      context.lineText,
+      if (context.lineIndex + 1 < lines.length) lines[context.lineIndex + 1],
+    ].join(' ').toLowerCase();
 
-    // has currency word near candidate value? (baht, บาท, thb)
-    final hasBaht = RegExp(r'บาท|baht|thb').hasMatch(lower) ? 1.0 : 0.0;
-
-    // near keywords like 'amount', 'total', 'จำนวนเงิน', 'pay' etc.
-    final nearAmountKeyword =
-        RegExp(
-          r'amount|total|จำนวนเงิน|ยอดเงิน|toTal|payment|จ่าย|ชำระ|จำนวนเงินที่ชำระ',
-          caseSensitive: false,
-        ).hasMatch(lower)
+    final hasBahtOnLine =
+        RegExp(r'à¸šà¸²à¸—|baht|thb', caseSensitive: false).hasMatch(lineLower)
         ? 1.0
         : 0.0;
-
-    // position score: attempt to estimate how near to bottom/top the value is by candidateIndex
-    final posScore = 1.0 - (candidateIndex / (lines.length + 1));
-
-    // magnitude feature (log10 scale)
-    final logValue = value > 0
-        ? (value <= 1 ? 0.0 : (math.log(value) / math.log(10)))
+    final keywordOnLine =
+        RegExp(_amountKeywordPattern, caseSensitive: false).hasMatch(lineLower)
+        ? 1.0
+        : 0.0;
+    final keywordNearby =
+        RegExp(
+          _amountKeywordPattern,
+          caseSensitive: false,
+        ).hasMatch(nearbyLower)
+        ? 1.0
+        : 0.0;
+    final lineLooksLikeAmount = _lineLooksLikeAmount(context.lineText)
+        ? 1.0
+        : 0.0;
+    final hasDecimals = context.tokenText.contains('.') ? 1.0 : 0.0;
+    final positionScore = lines.length <= 1
+        ? 1.0
+        : 1.0 - (context.lineIndex / (lines.length - 1));
+    final logValue = context.value <= 1
+        ? 0.0
+        : math.log(context.value) / math.log(10);
+    final penaltyReferenceLine =
+        RegExp(
+          _referenceKeywordPattern,
+          caseSensitive: false,
+        ).hasMatch(lineLower)
+        ? 1.0
+        : 0.0;
+    final penaltyFeeLine =
+        RegExp(_feeKeywordPattern, caseSensitive: false).hasMatch(lineLower)
+        ? 1.0
+        : 0.0;
+    final penaltyDateTimeLine =
+        RegExp(_dateTimePattern, caseSensitive: false).hasMatch(lineLower) ||
+            _looksLikeDateToken(context.tokenText)
+        ? 1.0
         : 0.0;
 
     return {
       'bias': 1.0,
-      'hasBaht': hasBaht,
-      'nearAmountKeyword': nearAmountKeyword,
-      'positionScore': posScore,
+      'hasBahtOnLine': hasBahtOnLine,
+      'keywordOnLine': keywordOnLine,
+      'keywordNearby': keywordNearby,
+      'lineLooksLikeAmount': lineLooksLikeAmount,
+      'hasDecimals': hasDecimals,
+      'positionScore': positionScore,
       'logValue': logValue,
+      'penaltyReferenceLine': penaltyReferenceLine,
+      'penaltyFeeLine': penaltyFeeLine,
+      'penaltyDateTimeLine': penaltyDateTimeLine,
     };
   }
 
-  double _dot(Map<String, double> features) {
-    var s = 0.0;
-    for (final e in features.entries) {
-      s += (_weights[e.key] ?? 0.0) * e.value;
-    }
-    return s;
+  bool _lineLooksLikeAmount(String line) {
+    final normalized = line.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final stripped = normalized.replaceAll(
+      RegExp(
+        '$_amountKeywordPattern|à¸šà¸²à¸—|baht|thb|[0-9.,\\s:-]',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    return normalized.isNotEmpty && stripped.length <= 3;
   }
 
-  /// Predict the best candidate and return a confidence score (softmax probability).
+  bool _looksLikeDateToken(String token) {
+    if (token.length != 4) {
+      return false;
+    }
+
+    final year = int.tryParse(token);
+    return year != null && year >= 1900 && year <= 2600;
+  }
+
+  double _dot(Map<String, double> features) {
+    var score = 0.0;
+    for (final entry in features.entries) {
+      score += (_weights[entry.key] ?? 0.0) * entry.value;
+    }
+    return score;
+  }
+
   PredictResult predict({
     required String rawText,
     required List<String> lines,
     required List<double> candidates,
   }) {
-    if (candidates.isEmpty) return PredictResult(-1, 0.0);
-    final scores = <double>[];
-    final featuresList = <Map<String, double>>[];
-    for (var i = 0; i < candidates.length; i++) {
-      final f = _featuresForCandidate(
-        rawText: rawText,
-        lines: lines,
-        value: candidates[i],
-        candidateIndex: i,
-      );
-      featuresList.add(f);
-      scores.add(_dot(f));
-    }
-
-    // softmax
-    final maxScore = scores.reduce((a, b) => a > b ? a : b);
-    final exps = scores.map((s) => math.exp(s - maxScore)).toList();
-    final sumExp = exps.fold<double>(0.0, (p, e) => p + e);
-    final probs = exps.map((e) => e / (sumExp == 0 ? 1 : sumExp)).toList();
-    var best = 0;
-    for (var i = 1; i < probs.length; i++) {
-      if (probs[i] > probs[best]) best = i;
-    }
-    return PredictResult(best, probs[best]);
+    final contexts = extractCandidateContexts(
+      rawText,
+      lines: lines,
+    ).where((context) => candidates.contains(context.value)).toList();
+    return predictFromContexts(
+      rawText: rawText,
+      lines: lines,
+      contexts: contexts,
+    );
   }
 
-  /// Train using raw OCR text and the expected amount value. We find the
-  /// candidate that best matches the expected amount (closest numeric) and
-  /// run a perceptron-style update so the true candidate's features are
-  /// reinforced and the predicted candidate's features are penalized.
+  PredictResult predictFromContexts({
+    required String rawText,
+    required List<String> lines,
+    required List<AmountCandidateContext> contexts,
+  }) {
+    if (contexts.isEmpty) {
+      return PredictResult(-1, 0.0);
+    }
+
+    final scores = <double>[];
+    final featuresList = <Map<String, double>>[];
+    for (final context in contexts) {
+      final features = _featuresForCandidate(
+        rawText: rawText,
+        lines: lines,
+        context: context,
+      );
+      featuresList.add(features);
+      scores.add(_dot(features));
+    }
+
+    final maxScore = scores.reduce((a, b) => a > b ? a : b);
+    final exps = scores.map((score) => math.exp(score - maxScore)).toList();
+    final sumExp = exps.fold<double>(0.0, (sum, value) => sum + value);
+    final probs = exps
+        .map((value) => value / (sumExp == 0 ? 1.0 : sumExp))
+        .toList();
+
+    var bestIndex = 0;
+    for (var i = 1; i < probs.length; i++) {
+      if (probs[i] > probs[bestIndex]) {
+        bestIndex = i;
+      }
+    }
+
+    return PredictResult(bestIndex, probs[bestIndex]);
+  }
+
   Future<void> trainOnLabeledText({
     required String rawText,
     required List<String> lines,
@@ -152,65 +314,79 @@ class AmountClassifier {
     required double expectedAmount,
     double learningRate = 0.5,
   }) async {
-    await load();
-    if (candidates.isEmpty) return;
+    final contexts = extractCandidateContexts(
+      rawText,
+      lines: lines,
+    ).where((context) => candidates.contains(context.value)).toList();
+    await trainOnLabeledContexts(
+      rawText: rawText,
+      lines: lines,
+      contexts: contexts,
+      expectedAmount: expectedAmount,
+      learningRate: learningRate,
+    );
+  }
 
-    // find index of candidate closest to expectedAmount
-    var bestIdx = -1;
+  Future<void> trainOnLabeledContexts({
+    required String rawText,
+    required List<String> lines,
+    required List<AmountCandidateContext> contexts,
+    required double expectedAmount,
+    double learningRate = 0.5,
+  }) async {
+    await load();
+    if (contexts.isEmpty) {
+      return;
+    }
+
+    var bestIndex = -1;
     var bestDiff = double.infinity;
-    for (var i = 0; i < candidates.length; i++) {
-      final d = (candidates[i] - expectedAmount).abs();
-      if (d < bestDiff) {
-        bestDiff = d;
-        bestIdx = i;
+    for (var i = 0; i < contexts.length; i++) {
+      final diff = (contexts[i].value - expectedAmount).abs();
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIndex = i;
       }
     }
-    if (bestIdx < 0) return;
+    if (bestIndex < 0) {
+      return;
+    }
 
-    // Build features and current probabilities for candidates
     final featuresList = <Map<String, double>>[];
     final scores = <double>[];
-    for (var i = 0; i < candidates.length; i++) {
-      final f = _featuresForCandidate(
+    for (final context in contexts) {
+      final features = _featuresForCandidate(
         rawText: rawText,
         lines: lines,
-        value: candidates[i],
-        candidateIndex: i,
+        context: context,
       );
-      featuresList.add(f);
-      scores.add(_dot(f));
+      featuresList.add(features);
+      scores.add(_dot(features));
     }
 
     final maxScore = scores.reduce((a, b) => a > b ? a : b);
-    final exps = scores.map((s) => math.exp(s - maxScore)).toList();
-    final sumExp = exps.fold<double>(0.0, (p, e) => p + e);
-    final probs = exps.map((e) => e / (sumExp == 0 ? 1 : sumExp)).toList();
+    final exps = scores.map((score) => math.exp(score - maxScore)).toList();
+    final sumExp = exps.fold<double>(0.0, (sum, value) => sum + value);
+    final probs = exps
+        .map((value) => value / (sumExp == 0 ? 1.0 : sumExp))
+        .toList();
 
-    // update weights with gradient of cross-entropy: w += lr * sum_i (y_i - p_i) * feat_i
     for (final name in _featureNames) {
-      var grad = 0.0;
+      var gradient = 0.0;
       for (var i = 0; i < featuresList.length; i++) {
-        final y = (i == bestIdx) ? 1.0 : 0.0;
-        final featVal = featuresList[i][name] ?? 0.0;
-        grad += (y - probs[i]) * featVal;
+        final expected = i == bestIndex ? 1.0 : 0.0;
+        final featureValue = featuresList[i][name] ?? 0.0;
+        gradient += (expected - probs[i]) * featureValue;
       }
-      _weights[name] = (_weights[name] ?? 0.0) + learningRate * grad;
+      _weights[name] = (_weights[name] ?? 0.0) + learningRate * gradient;
     }
 
     await save();
   }
 
-  /// Utility: create candidate features by scanning raw text for numeric tokens.
-  /// This is a helper used by the parser; kept here to avoid duplication.
   List<double> extractCandidates(String rawText) {
-    final matches = RegExp(r'(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?')
-        .allMatches(rawText)
-        .map((m) => m.group(0))
-        .whereType<String>()
-        .map((s) => double.tryParse(s.replaceAll(',', '')))
-        .whereType<double>()
-        .where((v) => v > 0 && v < 10000000)
-        .toList();
-    return matches;
+    return extractCandidateContexts(
+      rawText,
+    ).map((context) => context.value).toList();
   }
 }

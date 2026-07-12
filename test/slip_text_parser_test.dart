@@ -26,4 +26,15 @@ Transaction ID 123456789012
 
     expect(result.amount, 200);
   });
+
+  test('detects Thai slip dates like SCB receipt headers', () {
+    final result = parser.parse('''
+SCB
+11 ก.ค. 2569 - 14:39
+รหัสอ้างอิง: 2026071114
+''');
+
+    expect(result.dateText, '11 ก.ค. 2569');
+    expect(result.timeText, '14:39');
+  });
 }
