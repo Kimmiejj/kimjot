@@ -345,16 +345,19 @@ class _HomeHeader extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Flexible(
-                                child: Text(
-                                  strings.formatMonthYear(selectedMonth),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Color(0xFF111827),
-                                    fontSize: 30,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0,
+                              Expanded(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    strings.formatMonthYear(selectedMonth),
+                                    maxLines: 1,
+                                    style: const TextStyle(
+                                      color: Color(0xFF111827),
+                                      fontSize: 30,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0,
+                                    ),
                                   ),
                                 ),
                               ),
