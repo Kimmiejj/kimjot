@@ -562,27 +562,26 @@ class _MonthChoiceButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const currentMonthColor = Color(0xFF006699);
-    final textColor = isSelected
-        ? Colors.white
+    const selectedBorderColor = Color(0xFF8EDCF2);
+    final textColor = isCurrent ? currentMonthColor : const Color(0xFF111827);
+    final borderColor = isSelected
+        ? selectedBorderColor
         : isCurrent
         ? currentMonthColor
-        : const Color(0xFF111827);
+        : const Color(0x245D81AD);
 
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Ink(
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? const LinearGradient(
-                  colors: [Color(0xFF22C8D7), Color(0xFF3268F6)],
-                )
-              : null,
-          color: isSelected ? null : Colors.white.withValues(alpha: 0.76),
+          color: isSelected
+              ? const Color(0xFFEAFBFF)
+              : Colors.white.withValues(alpha: 0.76),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: isCurrent ? currentMonthColor : const Color(0x245D81AD),
-            width: isCurrent ? 1.6 : 1,
+            color: borderColor,
+            width: isSelected || isCurrent ? 1.8 : 1,
           ),
         ),
         child: Center(
