@@ -38,8 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _selectedMonth = DateTime(now.year, now.month);
+    _selectedMonth = _currentMonth();
   }
 
   Future<void> _openPage(BuildContext context, Widget page) async {
@@ -47,7 +46,13 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
     ).push<bool>(MaterialPageRoute(builder: (context) => page));
 
-    if (saved == true && context.mounted) {
+    if (!context.mounted) {
+      return;
+    }
+
+    _resetToCurrentMonth();
+
+    if (saved == true) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(context.strings.transactionSaved)));
@@ -63,6 +68,37 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  DateTime _currentMonth() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month);
+  }
+
+  void _resetToCurrentMonth() {
+    final currentMonth = _currentMonth();
+    if (_isSameMonth(_selectedMonth, currentMonth)) {
+      return;
+    }
+
+    setState(() {
+      _selectedMonth = currentMonth;
+    });
+  }
+
+  Future<void> _selectMonth() async {
+    final selected = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => _MonthYearPickerDialog(initialMonth: _selectedMonth),
+    );
+
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedMonth = selected;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
@@ -71,7 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
       extendBody: true,
       backgroundColor: const Color(0xFFF3FAFB),
       bottomNavigationBar: _FloatingHomeNavigationBar(
-        onHome: () {},
+        onHome: _resetToCurrentMonth,
         onScan: () => _openPage(
           context,
           ScanHubScreen(
@@ -114,6 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     selectedMonth: _selectedMonth,
                     onPreviousMonth: () => _changeMonth(-1),
                     onNextMonth: () => _changeMonth(1),
+                    onSelectMonth: _selectMonth,
                     onSettings: () => _openPage(
                       context,
                       SettingsScreen(
@@ -245,6 +282,7 @@ class _HomeHeader extends StatelessWidget {
     required this.selectedMonth,
     required this.onPreviousMonth,
     required this.onNextMonth,
+    required this.onSelectMonth,
     required this.onSettings,
   });
 
@@ -252,6 +290,7 @@ class _HomeHeader extends StatelessWidget {
   final DateTime selectedMonth;
   final VoidCallback onPreviousMonth;
   final VoidCallback onNextMonth;
+  final VoidCallback onSelectMonth;
   final VoidCallback onSettings;
 
   @override
@@ -294,15 +333,40 @@ class _HomeHeader extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      strings.formatMonthYear(selectedMonth),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF111827),
-                        fontSize: 30,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0,
+                    child: Tooltip(
+                      message: strings.isThai
+                          ? 'เลือกเดือนและปี'
+                          : 'Choose month and year',
+                      child: InkWell(
+                        onTap: onSelectMonth,
+                        borderRadius: BorderRadius.circular(16),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  strings.formatMonthYear(selectedMonth),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF111827),
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: Color(0xFF3268F6),
+                                size: 24,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -338,6 +402,195 @@ class _HomeHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _MonthYearPickerDialog extends StatefulWidget {
+  const _MonthYearPickerDialog({required this.initialMonth});
+
+  final DateTime initialMonth;
+
+  @override
+  State<_MonthYearPickerDialog> createState() => _MonthYearPickerDialogState();
+}
+
+class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
+  late int _year;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.initialMonth.year;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final currentMonth = DateTime.now();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFFFFF), Color(0xFFEAFBFF), Color(0xFFF1FFF8)],
+          ),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x26305472),
+              blurRadius: 28,
+              offset: Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text(
+                  strings.isThai ? 'เลือกเดือน' : 'Select month',
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                  color: const Color(0xFF64748B),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0x245D81AD)),
+              ),
+              child: Row(
+                children: [
+                  _MonthArrowButton(
+                    icon: Icons.chevron_left_rounded,
+                    tooltip: strings.isThai ? 'ปีก่อนหน้า' : 'Previous year',
+                    onTap: () => setState(() => _year--),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '$_year',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF111827),
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                  _MonthArrowButton(
+                    icon: Icons.chevron_right_rounded,
+                    tooltip: strings.isThai ? 'ปีถัดไป' : 'Next year',
+                    onTap: () => setState(() => _year++),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 12,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 2.05,
+              ),
+              itemBuilder: (context, index) {
+                final month = index + 1;
+                final isSelected =
+                    widget.initialMonth.year == _year &&
+                    widget.initialMonth.month == month;
+                final isCurrent =
+                    currentMonth.year == _year && currentMonth.month == month;
+
+                return _MonthChoiceButton(
+                  label: _monthLabel(context, month),
+                  isSelected: isSelected,
+                  isCurrent: isCurrent,
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pop(DateTime(_year, month)),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MonthChoiceButton extends StatelessWidget {
+  const _MonthChoiceButton({
+    required this.label,
+    required this.isSelected,
+    required this.isCurrent,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final bool isCurrent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = isSelected ? Colors.white : const Color(0xFF111827);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? const LinearGradient(
+                  colors: [Color(0xFF22C8D7), Color(0xFF3268F6)],
+                )
+              : null,
+          color: isSelected ? null : Colors.white.withValues(alpha: 0.76),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isCurrent ? const Color(0xFF22C8D7) : const Color(0x245D81AD),
+            width: isCurrent ? 1.4 : 1,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -992,6 +1245,11 @@ String _formatNumber(double amount) {
     }
   }
   return buffer.toString();
+}
+
+String _monthLabel(BuildContext context, int month) {
+  final monthText = context.strings.formatMonthYear(DateTime(2000, month));
+  return monthText.replaceFirst(' 2000', '');
 }
 
 bool _isSameMonth(DateTime left, DateTime right) {
