@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
+import '../transactions/category_localization.dart';
 import '../transactions/home_summary.dart';
 import '../transactions/transaction_record.dart';
 import '../transactions/transaction_repository.dart';
@@ -38,16 +39,16 @@ class AnalyticsScreen extends StatelessWidget {
             },
           ),
           const SizedBox(height: 14),
-          MascotTip(
-            message: strings.analyticsTip,
-            mood: MascotMood.calm,
-          ),
+          MascotTip(message: strings.analyticsTip, mood: MascotMood.calm),
           const SizedBox(height: 14),
           StreamBuilder<List<TransactionRecord>>(
             stream: transactionRepository.watchTransactions(user.uid),
             builder: (context, snapshot) {
               final transactions = snapshot.data ?? const [];
-              final categoryTotals = _expenseTotalsByCategory(transactions);
+              final categoryTotals = _expenseTotalsByCategory(
+                context.strings,
+                transactions,
+              );
 
               if (categoryTotals.isEmpty) {
                 return _EmptyCard(
@@ -91,16 +92,25 @@ class _SummaryCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _Metric(label: context.strings.income, value: _formatMoney(summary.incomeTotal)),
+                child: _Metric(
+                  label: context.strings.income,
+                  value: _formatMoney(summary.incomeTotal),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _Metric(label: context.strings.expense, value: _formatMoney(summary.expenseTotal)),
+                child: _Metric(
+                  label: context.strings.expense,
+                  value: _formatMoney(summary.expenseTotal),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          _Metric(label: context.strings.balance, value: _formatMoney(summary.balance)),
+          _Metric(
+            label: context.strings.balance,
+            value: _formatMoney(summary.balance),
+          ),
         ],
       ),
     );
@@ -327,12 +337,20 @@ class _DesignScaffold extends StatelessWidget {
   }
 }
 
-Map<String, double> _expenseTotalsByCategory(List<TransactionRecord> records) {
+Map<String, double> _expenseTotalsByCategory(
+  AppStrings strings,
+  List<TransactionRecord> records,
+) {
   final totals = <String, double>{};
   for (final record in records) {
     if (record.type == TransactionType.expense) {
+      final categoryName = localizedCategoryName(
+        strings: strings,
+        categoryId: record.categoryId,
+        fallbackName: record.categoryName,
+      );
       totals.update(
-        record.categoryName,
+        categoryName,
         (value) => value + record.amount,
         ifAbsent: () => record.amount,
       );

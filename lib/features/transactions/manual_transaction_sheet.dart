@@ -64,6 +64,10 @@ class ManualTransactionForm extends StatefulWidget {
     required this.title,
     required this.initialType,
     this.description,
+    this.initialAmount,
+    this.initialNote,
+    this.slipFingerprint,
+    this.slipReference,
     this.onSaved,
     super.key,
   });
@@ -74,6 +78,10 @@ class ManualTransactionForm extends StatefulWidget {
   final String title;
   final String? description;
   final TransactionType initialType;
+  final double? initialAmount;
+  final String? initialNote;
+  final String? slipFingerprint;
+  final String? slipReference;
   final VoidCallback? onSaved;
 
   @override
@@ -100,6 +108,16 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
     super.initState();
     _type = widget.initialType;
     _category = _categories.first;
+    _applyInitialValues();
+  }
+
+  @override
+  void didUpdateWidget(covariant ManualTransactionForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialAmount != widget.initialAmount ||
+        oldWidget.initialNote != widget.initialNote) {
+      _applyInitialValues();
+    }
   }
 
   @override
@@ -131,6 +149,8 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
           transactionDate: DateTime.now(),
           source: widget.source,
           note: _noteController.text,
+          slipFingerprint: widget.slipFingerprint,
+          slipReference: widget.slipReference,
         ),
       );
 
@@ -150,6 +170,20 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
     }
   }
 
+  void _applyInitialValues() {
+    final initialAmount = widget.initialAmount;
+    if (initialAmount != null && _amountController.text.trim().isEmpty) {
+      _amountController.text = _formatInitialAmount(initialAmount);
+    }
+
+    final initialNote = widget.initialNote;
+    if (initialNote != null &&
+        initialNote.trim().isNotEmpty &&
+        _noteController.text.trim().isEmpty) {
+      _noteController.text = initialNote.trim();
+    }
+  }
+
   void _setType(TransactionType type) {
     setState(() {
       _type = type;
@@ -164,122 +198,126 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
     return Form(
       key: _formKey,
       child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  widget.title,
-                  style: const TextStyle(
-                    color: Color(0xFF071844),
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
-                  ),
-                ),
-                if (widget.description != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    widget.description!,
-                    style: const TextStyle(
-                      color: Color(0xFF65748B),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 18),
-                SegmentedButton<TransactionType>(
-                  segments: [
-                    ButtonSegment(
-                      value: TransactionType.expense,
-                      label: Text(strings.expense),
-                      icon: const Icon(Icons.arrow_upward_rounded),
-                    ),
-                    ButtonSegment(
-                      value: TransactionType.income,
-                      label: Text(strings.income),
-                      icon: const Icon(Icons.arrow_downward_rounded),
-                    ),
-                  ],
-                  selected: {_type},
-                  onSelectionChanged: _isSaving
-                      ? null
-                      : (selection) => _setType(selection.first),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _amountController,
-                  autofocus: true,
-                  enabled: !_isSaving,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: strings.amount,
-                    prefixText: strings.amountPrefix,
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) {
-                    final amount = double.tryParse(value?.trim() ?? '');
-                    if (amount == null || amount <= 0) {
-                      return strings.amountValidation;
-                    }
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            widget.title,
+            style: const TextStyle(
+              color: Color(0xFF071844),
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+          if (widget.description != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              widget.description!,
+              style: const TextStyle(
+                color: Color(0xFF65748B),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+                letterSpacing: 0,
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          SegmentedButton<TransactionType>(
+            segments: [
+              ButtonSegment(
+                value: TransactionType.expense,
+                label: Text(strings.expense),
+                icon: const Icon(Icons.arrow_upward_rounded),
+              ),
+              ButtonSegment(
+                value: TransactionType.income,
+                label: Text(strings.income),
+                icon: const Icon(Icons.arrow_downward_rounded),
+              ),
+            ],
+            selected: {_type},
+            onSelectionChanged: _isSaving
+                ? null
+                : (selection) => _setType(selection.first),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _amountController,
+            autofocus: true,
+            enabled: !_isSaving,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: strings.amount,
+              prefixText: strings.amountPrefix,
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) {
+              final amount = double.tryParse(value?.trim() ?? '');
+              if (amount == null || amount <= 0) {
+                return strings.amountValidation;
+              }
 
-                    return null;
-                  },
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final category in _categories)
+                ChoiceChip(
+                  label: Text(category.label(strings)),
+                  selected: _category.id == category.id,
+                  onSelected: _isSaving
+                      ? null
+                      : (_) {
+                          setState(() {
+                            _category = category;
+                          });
+                        },
                 ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final category in _categories)
-                      ChoiceChip(
-                        label: Text(category.label(strings)),
-                        selected: _category.id == category.id,
-                        onSelected: _isSaving
-                            ? null
-                            : (_) {
-                                setState(() {
-                                  _category = category;
-                                });
-                              },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _noteController,
-                  enabled: !_isSaving,
-                  minLines: 1,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    labelText: strings.note,
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: _isSaving ? null : _save,
-                  icon: _isSaving
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        )
-                      : const Icon(Icons.save_rounded),
-                  label: Text(
-                    _isSaving ? strings.saving : strings.saveTransaction,
-                  ),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(54),
-                  ),
-                ),
-              ],
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _noteController,
+            enabled: !_isSaving,
+            minLines: 1,
+            maxLines: 3,
+            decoration: InputDecoration(
+              labelText: strings.note,
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: _isSaving ? null : _save,
+            icon: _isSaving
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  )
+                : const Icon(Icons.save_rounded),
+            label: Text(_isSaving ? strings.saving : strings.saveTransaction),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+String _formatInitialAmount(double amount) {
+  if (amount == amount.roundToDouble()) {
+    return amount.toStringAsFixed(0);
+  }
+
+  return amount.toStringAsFixed(2);
 }
 
 class _CategoryOption {
@@ -291,12 +329,29 @@ class _CategoryOption {
   String label(AppStrings strings) {
     return switch (id) {
       'food' => strings.food,
+      'drink' => strings.drink,
+      'groceries' => strings.groceries,
       'transport' => strings.transport,
       'shopping' => strings.shopping,
       'bills' => strings.bills,
+      'rent' => strings.rent,
+      'health' => strings.health,
+      'education' => strings.education,
+      'entertainment' => strings.entertainment,
+      'travel' => strings.travel,
+      'family' => strings.family,
+      'insurance' => strings.insurance,
+      'tax' => strings.tax,
+      'donation' => strings.donation,
       'transfer' => strings.transfer,
       'salary' => strings.salary,
       'side_job' => strings.sideJob,
+      'business' => strings.business,
+      'bonus' => strings.bonus,
+      'investment' => strings.investment,
+      'interest' => strings.interest,
+      'sale' => strings.sale,
+      'allowance' => strings.allowance,
       'gift' => strings.gift,
       'refund' => strings.refund,
       _ => strings.other,
@@ -306,9 +361,20 @@ class _CategoryOption {
 
 const _expenseCategories = [
   _CategoryOption(id: 'food', name: 'Food'),
+  _CategoryOption(id: 'drink', name: 'Drinks'),
+  _CategoryOption(id: 'groceries', name: 'Groceries'),
   _CategoryOption(id: 'transport', name: 'Transport'),
   _CategoryOption(id: 'shopping', name: 'Shopping'),
   _CategoryOption(id: 'bills', name: 'Bills'),
+  _CategoryOption(id: 'rent', name: 'Rent / Home'),
+  _CategoryOption(id: 'health', name: 'Health'),
+  _CategoryOption(id: 'education', name: 'Education'),
+  _CategoryOption(id: 'entertainment', name: 'Entertainment'),
+  _CategoryOption(id: 'travel', name: 'Travel'),
+  _CategoryOption(id: 'family', name: 'Family'),
+  _CategoryOption(id: 'insurance', name: 'Insurance'),
+  _CategoryOption(id: 'tax', name: 'Tax / Fees'),
+  _CategoryOption(id: 'donation', name: 'Donation'),
   _CategoryOption(id: 'transfer', name: 'Transfer'),
   _CategoryOption(id: 'other', name: 'Other'),
 ];
@@ -316,6 +382,12 @@ const _expenseCategories = [
 const _incomeCategories = [
   _CategoryOption(id: 'salary', name: 'Salary'),
   _CategoryOption(id: 'side_job', name: 'Side Job'),
+  _CategoryOption(id: 'business', name: 'Business'),
+  _CategoryOption(id: 'bonus', name: 'Bonus'),
+  _CategoryOption(id: 'investment', name: 'Investment'),
+  _CategoryOption(id: 'interest', name: 'Interest / Dividend'),
+  _CategoryOption(id: 'sale', name: 'Sale'),
+  _CategoryOption(id: 'allowance', name: 'Allowance'),
   _CategoryOption(id: 'gift', name: 'Gift'),
   _CategoryOption(id: 'refund', name: 'Refund'),
   _CategoryOption(id: 'other_income', name: 'Other'),

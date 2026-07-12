@@ -17,8 +17,16 @@ class BudgetsScreen extends StatelessWidget {
       heroTitle: strings.noBudgetYet,
       heroMessage: strings.budgetHeroMessage,
       rows: [
-        _SupportRowData(icon: 'TT', title: strings.totalMonthlyBudget, subtitle: strings.notSet),
-        _SupportRowData(icon: 'CT', title: strings.categoryBudget, subtitle: strings.notSet),
+        _SupportRowData(
+          icon: 'TT',
+          title: strings.totalMonthlyBudget,
+          subtitle: strings.notSet,
+        ),
+        _SupportRowData(
+          icon: 'CT',
+          title: strings.categoryBudget,
+          subtitle: strings.notSet,
+        ),
       ],
     );
   }
@@ -38,8 +46,16 @@ class InstallmentsScreen extends StatelessWidget {
       heroTitle: strings.noInstallmentsYet,
       heroMessage: strings.installmentsHeroMessage,
       rows: [
-        _SupportRowData(icon: 'AC', title: strings.activePlans, subtitle: strings.zeroItems),
-        _SupportRowData(icon: 'PA', title: strings.markAsPaid, subtitle: strings.waitingInstallments),
+        _SupportRowData(
+          icon: 'AC',
+          title: strings.activePlans,
+          subtitle: strings.zeroItems,
+        ),
+        _SupportRowData(
+          icon: 'PA',
+          title: strings.markAsPaid,
+          subtitle: strings.waitingInstallments,
+        ),
       ],
     );
   }
@@ -59,10 +75,26 @@ class CategoriesScreen extends StatelessWidget {
       heroTitle: strings.defaultCategoriesReady,
       heroMessage: strings.categoriesHeroMessage,
       rows: [
-        _SupportRowData(icon: 'FD', title: strings.food, subtitle: strings.defaultExpense),
-        _SupportRowData(icon: 'TR', title: strings.transport, subtitle: strings.defaultExpense),
-        _SupportRowData(icon: 'BL', title: strings.bills, subtitle: strings.defaultExpense),
-        _SupportRowData(icon: 'OT', title: strings.other, subtitle: strings.defaultCategory),
+        _SupportRowData(
+          icon: 'FD',
+          title: strings.food,
+          subtitle: strings.defaultExpense,
+        ),
+        _SupportRowData(
+          icon: 'TR',
+          title: strings.transport,
+          subtitle: strings.defaultExpense,
+        ),
+        _SupportRowData(
+          icon: 'BL',
+          title: strings.bills,
+          subtitle: strings.defaultExpense,
+        ),
+        _SupportRowData(
+          icon: 'OT',
+          title: strings.other,
+          subtitle: strings.defaultCategory,
+        ),
       ],
     );
   }

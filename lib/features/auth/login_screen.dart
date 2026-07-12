@@ -70,11 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFD7FFF0),
-              Color(0xFFE7FBFF),
-              Color(0xFFF4F0FF),
-            ],
+            colors: [Color(0xFFD7FFF0), Color(0xFFE7FBFF), Color(0xFFF4F0FF)],
           ),
         ),
         child: SafeArea(
@@ -172,7 +168,9 @@ class _LoginCard extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2.4),
                   )
                 : const Icon(Icons.g_mobiledata_rounded, size: 32),
-            label: Text(isSigningIn ? strings.signingIn : strings.continueWithGoogle),
+            label: Text(
+              isSigningIn ? strings.signingIn : strings.continueWithGoogle,
+            ),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(58),
               backgroundColor: Colors.white,

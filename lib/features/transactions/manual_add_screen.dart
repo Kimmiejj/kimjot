@@ -145,11 +145,7 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFE7FFF4),
-              Color(0xFFEAFBFF),
-              Color(0xFFF7F4FF),
-            ],
+            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
           ),
         ),
         child: SafeArea(
@@ -178,9 +174,7 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
                     child: KimjodMascot(size: 68),
                   ),
                   const SizedBox(height: 12),
-                  MascotTip(
-                    message: strings.addTransactionTip,
-                  ),
+                  MascotTip(message: strings.addTransactionTip),
                   const SizedBox(height: 22),
                   _FormSurface(
                     child: Column(
@@ -229,10 +223,7 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
                           hint: strings.detailsHint,
                         ),
                         const SizedBox(height: 12),
-                        _PrimaryButton(
-                          isSaving: _isSaving,
-                          onPressed: _save,
-                        ),
+                        _PrimaryButton(isSaving: _isSaving, onPressed: _save),
                         const SizedBox(height: 12),
                         _SecondaryButton(enabled: !_isSaving),
                       ],
@@ -280,9 +271,7 @@ class _FormSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.zero,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(28)),
       child: child,
     );
   }
@@ -303,10 +292,7 @@ class _AmountField extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0x291FC9DC),
-            Color(0x1F6A4DF4),
-          ],
+          colors: [Color(0x291FC9DC), Color(0x1F6A4DF4)],
         ),
         borderRadius: BorderRadius.circular(30),
         border: Border.all(color: Colors.white.withValues(alpha: 0.76)),
@@ -424,10 +410,7 @@ class _Segment extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: selected
                 ? const LinearGradient(
-                    colors: [
-                      Color(0xFF1FC9DC),
-                      Color(0xFF3268F6),
-                    ],
+                    colors: [Color(0xFF1FC9DC), Color(0xFF3268F6)],
                   )
                 : null,
             borderRadius: BorderRadius.circular(19),
@@ -628,10 +611,7 @@ class _PrimaryButton extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFF1FC9DC),
-            Color(0xFF3268F6),
-          ],
+          colors: [Color(0xFF1FC9DC), Color(0xFF3268F6)],
         ),
         borderRadius: BorderRadius.circular(21),
         boxShadow: const [
@@ -696,10 +676,7 @@ class _SecondaryButton extends StatelessWidget {
 }
 
 class _CategoryOption {
-  const _CategoryOption({
-    required this.id,
-    required this.savedName,
-  });
+  const _CategoryOption({required this.id, required this.savedName});
 
   final String id;
   final String savedName;
@@ -707,10 +684,30 @@ class _CategoryOption {
   String label(AppStrings strings) {
     return switch (id) {
       'food' => strings.food,
+      'drink' => strings.drink,
+      'groceries' => strings.groceries,
       'transport' => strings.transport,
       'bills' => strings.bills,
+      'shopping' => strings.shopping,
+      'rent' => strings.rent,
+      'health' => strings.health,
+      'education' => strings.education,
+      'entertainment' => strings.entertainment,
+      'travel' => strings.travel,
+      'family' => strings.family,
+      'insurance' => strings.insurance,
+      'tax' => strings.tax,
+      'donation' => strings.donation,
+      'transfer' => strings.transfer,
       'salary' => strings.salary,
       'side_job' => strings.sideJob,
+      'business' => strings.business,
+      'bonus' => strings.bonus,
+      'investment' => strings.investment,
+      'interest' => strings.interest,
+      'sale' => strings.sale,
+      'allowance' => strings.allowance,
+      'gift' => strings.gift,
       'refund' => strings.refund,
       _ => strings.other,
     };
@@ -718,19 +715,41 @@ class _CategoryOption {
 }
 
 List<_CategoryOption> _categoriesFor(TransactionType type) {
-  return type == TransactionType.expense ? _expenseCategories : _incomeCategories;
+  return type == TransactionType.expense
+      ? _expenseCategories
+      : _incomeCategories;
 }
 
 const _expenseCategories = [
   _CategoryOption(id: 'food', savedName: 'Food'),
+  _CategoryOption(id: 'drink', savedName: 'Drinks'),
+  _CategoryOption(id: 'groceries', savedName: 'Groceries'),
   _CategoryOption(id: 'transport', savedName: 'Transport'),
+  _CategoryOption(id: 'shopping', savedName: 'Shopping'),
   _CategoryOption(id: 'bills', savedName: 'Bills'),
+  _CategoryOption(id: 'rent', savedName: 'Rent / Home'),
+  _CategoryOption(id: 'health', savedName: 'Health'),
+  _CategoryOption(id: 'education', savedName: 'Education'),
+  _CategoryOption(id: 'entertainment', savedName: 'Entertainment'),
+  _CategoryOption(id: 'travel', savedName: 'Travel'),
+  _CategoryOption(id: 'family', savedName: 'Family'),
+  _CategoryOption(id: 'insurance', savedName: 'Insurance'),
+  _CategoryOption(id: 'tax', savedName: 'Tax / Fees'),
+  _CategoryOption(id: 'donation', savedName: 'Donation'),
+  _CategoryOption(id: 'transfer', savedName: 'Transfer'),
   _CategoryOption(id: 'other', savedName: 'Other'),
 ];
 
 const _incomeCategories = [
   _CategoryOption(id: 'salary', savedName: 'Salary'),
   _CategoryOption(id: 'side_job', savedName: 'Side Job'),
+  _CategoryOption(id: 'business', savedName: 'Business'),
+  _CategoryOption(id: 'bonus', savedName: 'Bonus'),
+  _CategoryOption(id: 'investment', savedName: 'Investment'),
+  _CategoryOption(id: 'interest', savedName: 'Interest / Dividend'),
+  _CategoryOption(id: 'sale', savedName: 'Sale'),
+  _CategoryOption(id: 'allowance', savedName: 'Allowance'),
+  _CategoryOption(id: 'gift', savedName: 'Gift'),
   _CategoryOption(id: 'refund', savedName: 'Refund'),
   _CategoryOption(id: 'other_income', savedName: 'Other'),
 ];

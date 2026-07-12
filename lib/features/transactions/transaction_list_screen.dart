@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
+import 'category_localization.dart';
 import 'transaction_record.dart';
 import 'transaction_repository.dart';
 import 'transaction_type.dart';
@@ -26,11 +27,7 @@ class TransactionListScreen extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFE7FFF4),
-              Color(0xFFEAFBFF),
-              Color(0xFFF7F4FF),
-            ],
+            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
           ),
         ),
         child: SafeArea(
@@ -191,6 +188,18 @@ class TransactionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isIncome = record.type == TransactionType.income;
+    final categoryName = localizedCategoryName(
+      strings: context.strings,
+      categoryId: record.categoryId,
+      fallbackName: record.categoryName,
+    );
+    final title = localizedTransactionTitle(
+      strings: context.strings,
+      categoryId: record.categoryId,
+      categoryName: record.categoryName,
+      note: record.note,
+      merchantName: record.merchantName,
+    );
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -206,16 +215,13 @@ class TransactionRow extends StatelessWidget {
             height: 42,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [
-                  Color(0x2E1FC9DC),
-                  Color(0x2E3268F6),
-                ],
+                colors: [Color(0x2E1FC9DC), Color(0x2E3268F6)],
               ),
               borderRadius: BorderRadius.circular(15),
             ),
             child: Center(
               child: Text(
-                _categoryBadge(record.categoryName),
+                _categoryBadge(categoryName),
                 style: const TextStyle(
                   color: Color(0xFF145CC8),
                   fontSize: 13,
@@ -231,7 +237,7 @@ class TransactionRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  record.displayTitle,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -243,7 +249,7 @@ class TransactionRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${record.source.firestoreValue} · ${record.categoryName}',
+                  '${record.source.firestoreValue} · $categoryName',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -260,7 +266,9 @@ class TransactionRow extends StatelessWidget {
           Text(
             _formatSignedMoney(record),
             style: TextStyle(
-              color: isIncome ? const Color(0xFF18B98E) : const Color(0xFFD94768),
+              color: isIncome
+                  ? const Color(0xFF18B98E)
+                  : const Color(0xFFD94768),
               fontSize: 15,
               fontWeight: FontWeight.w900,
               letterSpacing: 0,

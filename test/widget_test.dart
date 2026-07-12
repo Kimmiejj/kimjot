@@ -11,7 +11,6 @@ import 'package:kimjod/features/transactions/create_transaction_input.dart';
 import 'package:kimjod/features/transactions/home_summary.dart';
 import 'package:kimjod/features/transactions/transaction_repository.dart';
 import 'package:kimjod/features/transactions/transaction_record.dart';
-import 'package:kimjod/features/transactions/transaction_source.dart';
 import 'package:kimjod/features/transactions/transaction_type.dart';
 
 void main() {
@@ -111,7 +110,7 @@ void main() {
     authService.dispose();
   });
 
-  testWidgets('scan and QR pages save with the correct source', (
+  testWidgets('slip import page only offers gallery import', (
     WidgetTester tester,
   ) async {
     final authService = _FakeAuthService();
@@ -129,58 +128,15 @@ void main() {
     authService.signInWithGoogle();
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('SCAN\nSlip'));
+    expect(find.text('QR\nBank'), findsNothing);
+    await tester.tap(find.text('Slip\nGallery'));
     await tester.pumpAndSettle();
-    expect(find.text('Scan Hub'), findsOneWidget);
-    expect(find.text('Page 4'), findsOneWidget);
-
-    await tester.tap(find.text('Scan slip'));
-    await tester.pumpAndSettle();
-    expect(find.text('Review slip'), findsOneWidget);
-    expect(find.textContaining('Page 5'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField).first, '80');
-    await tester.ensureVisible(find.text('Save transaction'));
-    await tester.tap(find.text('Save transaction'));
-    await tester.pumpAndSettle();
-    expect(find.text('Scan Hub'), findsOneWidget);
+    expect(find.text('Slip Import'), findsOneWidget);
+    expect(find.text('Import from gallery'), findsOneWidget);
+    expect(find.text('Scan slip'), findsNothing);
+    expect(transactionRepository.savedInputs, isEmpty);
 
     authService.dispose();
-
-    final qrAuthService = _FakeAuthService();
-    await tester.pumpWidget(
-      _buildTestApp(
-        AuthGate(
-          authService: qrAuthService,
-          transactionRepository: transactionRepository,
-        ),
-        key: UniqueKey(),
-      ),
-    );
-    await tester.pump();
-    qrAuthService.signInWithGoogle();
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('QR\nBank'));
-    await tester.pumpAndSettle();
-    expect(find.text('QR Camera'), findsOneWidget);
-    expect(find.text('Review QR'), findsOneWidget);
-    expect(find.textContaining('Page 6'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField).first, '40');
-    await tester.ensureVisible(find.text('Save transaction'));
-    await tester.tap(find.text('Save transaction'));
-    await tester.pumpAndSettle();
-
-    expect(transactionRepository.savedInputs, hasLength(2));
-    expect(
-      transactionRepository.savedInputs[0].source,
-      TransactionSource.gallerySlip,
-    );
-    expect(
-      transactionRepository.savedInputs[1].source,
-      TransactionSource.qrCamera,
-    );
-
-    qrAuthService.dispose();
   });
 }
 
@@ -238,6 +194,14 @@ class _FakeTransactionRepository implements TransactionRepository {
   }
 
   @override
+  Future<Set<String>> loadActiveSlipFingerprints(String userId) async {
+    return savedInputs
+        .map((input) => input.slipFingerprint)
+        .whereType<String>()
+        .toSet();
+  }
+
+  @override
   Stream<HomeSummary> watchCurrentMonthSummary(String userId) {
     return _summaryController.stream;
   }
@@ -281,6 +245,7 @@ class _FakeTransactionRepository implements TransactionRepository {
       final index = savedInputs.indexOf(input);
       return TransactionRecord(
         id: 'tx-$index',
+        userId: input.userId,
         amount: input.amount,
         type: input.type,
         categoryId: input.categoryId,
@@ -292,4 +257,3 @@ class _FakeTransactionRepository implements TransactionRepository {
     }).toList();
   }
 }
-

@@ -5,9 +5,9 @@ import '../../shared/widgets/pastel_kit.dart';
 import '../analytics/analytics_screen.dart';
 import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
-import '../scan/qr_camera_screen.dart';
 import '../scan/scan_hub_screen.dart';
 import '../settings/settings_screen.dart';
+import '../transactions/category_localization.dart';
 import '../transactions/home_summary.dart';
 import '../transactions/manual_add_screen.dart';
 import '../transactions/transaction_list_screen.dart';
@@ -28,14 +28,14 @@ class HomeScreen extends StatelessWidget {
   final TransactionRepository transactionRepository;
 
   Future<void> _openPage(BuildContext context, Widget page) async {
-    final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (context) => page),
-    );
+    final saved = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (context) => page));
 
     if (saved == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.strings.transactionSaved)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.strings.transactionSaved)));
     }
   }
 
@@ -76,11 +76,7 @@ class HomeScreen extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFE7FFF4),
-              Color(0xFFEAFBFF),
-              Color(0xFFF7F4FF),
-            ],
+            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
           ),
         ),
         child: SafeArea(
@@ -130,13 +126,6 @@ class HomeScreen extends StatelessWidget {
                         transactionRepository: transactionRepository,
                       ),
                     ),
-                    onQr: () => _openPage(
-                      context,
-                      QrCameraScreen(
-                        user: user,
-                        transactionRepository: transactionRepository,
-                      ),
-                    ),
                   ),
                 ),
               ),
@@ -169,9 +158,7 @@ class HomeScreen extends StatelessWidget {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
                 sliver: SliverToBoxAdapter(
-                  child: _SectionHeader(
-                    title: strings.recentTransactions,
-                  ),
+                  child: _SectionHeader(title: strings.recentTransactions),
                 ),
               ),
               SliverPadding(
@@ -196,7 +183,6 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _SummaryBuilder extends StatelessWidget {
@@ -298,11 +284,7 @@ class _BalancePanel extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF7FEFD),
-            Color(0xFFE7FAF8),
-            Color(0xFFEAFBF1),
-          ],
+          colors: [Color(0xFFF7FEFD), Color(0xFFE7FAF8), Color(0xFFEAFBF1)],
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: const [
@@ -419,15 +401,10 @@ class _BalanceMetric extends StatelessWidget {
 }
 
 class _QuickActions extends StatelessWidget {
-  const _QuickActions({
-    required this.onAdd,
-    required this.onScan,
-    required this.onQr,
-  });
+  const _QuickActions({required this.onAdd, required this.onScan});
 
   final VoidCallback onAdd;
   final VoidCallback onScan;
-  final VoidCallback onQr;
 
   @override
   Widget build(BuildContext context) {
@@ -448,15 +425,6 @@ class _QuickActions extends StatelessWidget {
           child: _ActionTile(
             label: strings.scanSlip,
             onTap: onScan,
-            backgroundColor: Colors.white.withValues(alpha: 0.92),
-            foregroundColor: const Color(0xFF111827),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionTile(
-            label: strings.qrBank,
-            onTap: onQr,
             backgroundColor: Colors.white.withValues(alpha: 0.92),
             foregroundColor: const Color(0xFF111827),
           ),
@@ -685,15 +653,25 @@ class _TransactionListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isIncome = record.type == TransactionType.income;
+    final categoryName = localizedCategoryName(
+      strings: context.strings,
+      categoryId: record.categoryId,
+      fallbackName: record.categoryName,
+    );
+    final title = localizedTransactionTitle(
+      strings: context.strings,
+      categoryId: record.categoryId,
+      categoryName: record.categoryName,
+      note: record.note,
+      merchantName: record.merchantName,
+    );
 
     return _ListTileCard(
-      badge: _badgeFor(record.categoryName),
-      title: record.displayTitle,
-      subtitle: '${record.source.firestoreValue} · ${record.categoryName}',
+      badge: _badgeFor(categoryName),
+      title: title,
+      subtitle: '${record.source.firestoreValue} · $categoryName',
       amount: '${isIncome ? '+' : '-'}${_formatMoney(record.amount)}',
-      amountColor: isIncome
-          ? const Color(0xFF589F76)
-          : const Color(0xFFB66A72),
+      amountColor: isIncome ? const Color(0xFF589F76) : const Color(0xFFB66A72),
     );
   }
 }

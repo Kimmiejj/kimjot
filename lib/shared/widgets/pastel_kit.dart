@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 
 class KimjodMascot extends StatelessWidget {
-  const KimjodMascot({
-    this.size = 88,
-    this.mood = MascotMood.happy,
-    super.key,
-  });
+  const KimjodMascot({this.size = 88, this.mood = MascotMood.happy, super.key});
 
   final double size;
   final MascotMood mood;
@@ -188,11 +184,7 @@ class PastelHeroCard extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xEFFFFFFF),
-            Color(0xE8E8FCFF),
-            Color(0xEFFFF4FA),
-          ],
+          colors: [Color(0xEFFFFFFF), Color(0xE8E8FCFF), Color(0xEFFFF4FA)],
         ),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(color: Colors.white.withValues(alpha: 0.86)),

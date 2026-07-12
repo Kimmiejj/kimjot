@@ -19,17 +19,17 @@ class LoadingScreen extends StatelessWidget {
           ),
         ),
         child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const KimjodMascot(size: 82, mood: MascotMood.calm),
-            const SizedBox(height: 18),
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(message),
-          ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const KimjodMascot(size: 82, mood: MascotMood.calm),
+              const SizedBox(height: 18),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(message),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

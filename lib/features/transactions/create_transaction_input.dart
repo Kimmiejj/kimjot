@@ -11,6 +11,8 @@ class CreateTransactionInput {
     required this.transactionDate,
     this.source = TransactionSource.manual,
     this.note,
+    this.slipFingerprint,
+    this.slipReference,
   });
 
   final String userId;
@@ -21,4 +23,6 @@ class CreateTransactionInput {
   final DateTime transactionDate;
   final TransactionSource source;
   final String? note;
+  final String? slipFingerprint;
+  final String? slipReference;
 }

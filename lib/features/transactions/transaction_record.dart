@@ -4,6 +4,7 @@ import 'transaction_type.dart';
 class TransactionRecord {
   const TransactionRecord({
     required this.id,
+    required this.userId,
     required this.amount,
     required this.type,
     required this.categoryId,
@@ -12,9 +13,12 @@ class TransactionRecord {
     required this.source,
     this.note,
     this.merchantName,
+    this.slipFingerprint,
+    this.slipReference,
   });
 
   final String id;
+  final String userId;
   final double amount;
   final TransactionType type;
   final String categoryId;
@@ -23,6 +27,8 @@ class TransactionRecord {
   final TransactionSource source;
   final String? note;
   final String? merchantName;
+  final String? slipFingerprint;
+  final String? slipReference;
 
   bool get isIncome => type == TransactionType.income;
 

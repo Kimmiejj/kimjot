@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'create_transaction_input.dart';
@@ -26,7 +28,8 @@ class FirebaseTransactionRepository implements TransactionRepository {
         .collection('transactions')
         .doc();
 
-    await document.set({
+    final write = document.set({
+      'user': input.userId,
       'amount': input.amount,
       'type': input.type.firestoreValue,
       'categoryId': input.categoryId,
@@ -34,9 +37,38 @@ class FirebaseTransactionRepository implements TransactionRepository {
       'note': note == null || note.isEmpty ? null : note,
       'transactionDate': Timestamp.fromDate(input.transactionDate),
       'source': input.source.firestoreValue,
+      'slipFingerprint': input.slipFingerprint,
+      'slipReference': input.slipReference,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    await write.timeout(
+      const Duration(seconds: 4),
+      onTimeout: () {
+        // Firestore keeps the local write queued offline. Return control to UI
+        // so saving a transaction never looks frozen while the network is gone.
+      },
+    );
+  }
+
+  @override
+  Future<Set<String>> loadActiveSlipFingerprints(String userId) async {
+    final snapshot = await _db
+        .collection('users')
+        .doc(userId)
+        .collection('transactions')
+        .where(
+          'source',
+          isEqualTo: TransactionSource.gallerySlip.firestoreValue,
+        )
+        .get();
+
+    return snapshot.docs
+        .map((document) => document.data()['slipFingerprint'] as String?)
+        .whereType<String>()
+        .where((value) => value.trim().isNotEmpty)
+        .toSet();
   }
 
   @override
@@ -44,37 +76,14 @@ class FirebaseTransactionRepository implements TransactionRepository {
     final now = DateTime.now();
     final monthStart = DateTime(now.year, now.month);
 
-    return _db
-        .collection('users')
-        .doc(userId)
-        .collection('transactions')
+    return _userTransactionsCollection(userId)
         .where(
           'transactionDate',
           isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
         )
+        .orderBy('transactionDate')
         .snapshots()
-        .map((snapshot) {
-          var incomeTotal = 0.0;
-          var expenseTotal = 0.0;
-
-          for (final document in snapshot.docs) {
-            final data = document.data();
-            final amount = (data['amount'] as num?)?.toDouble() ?? 0;
-            final type = data['type'] as String?;
-
-            if (type == 'income') {
-              incomeTotal += amount;
-            } else if (type == 'expense') {
-              expenseTotal += amount;
-            }
-          }
-
-          return HomeSummary(
-            incomeTotal: incomeTotal,
-            expenseTotal: expenseTotal,
-            transactionCount: snapshot.docs.length,
-          );
-        });
+        .map((snapshot) => _summaryFromSnapshot(snapshot, monthStart));
   }
 
   @override
@@ -82,9 +91,10 @@ class FirebaseTransactionRepository implements TransactionRepository {
     String userId, {
     int limit = 5,
   }) {
-    return _transactionsQuery(userId).limit(limit).snapshots().map(
-      (snapshot) => snapshot.docs.map(_recordFromDocument).toList(),
-    );
+    return _transactionsQuery(userId)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(_recordFromDocument).toList());
   }
 
   @override
@@ -94,12 +104,53 @@ class FirebaseTransactionRepository implements TransactionRepository {
     );
   }
 
+  CollectionReference<Map<String, dynamic>> _userTransactionsCollection(
+    String userId,
+  ) {
+    return _db.collection('users').doc(userId).collection('transactions');
+  }
+
   Query<Map<String, dynamic>> _transactionsQuery(String userId) {
-    return _db
-        .collection('users')
-        .doc(userId)
-        .collection('transactions')
-        .orderBy('transactionDate', descending: true);
+    return _userTransactionsCollection(
+      userId,
+    ).orderBy('transactionDate', descending: true);
+  }
+
+  HomeSummary _summaryFromSnapshot(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+    DateTime monthStart,
+  ) {
+    var incomeTotal = 0.0;
+    var expenseTotal = 0.0;
+    var transactionCount = 0;
+
+    for (final document in snapshot.docs) {
+      final data = document.data();
+      if (!_matchesCurrentMonth(data, monthStart)) {
+        continue;
+      }
+
+      transactionCount++;
+      final amount = (data['amount'] as num?)?.toDouble() ?? 0;
+      final type = data['type'] as String?;
+
+      if (type == 'income') {
+        incomeTotal += amount;
+      } else if (type == 'expense') {
+        expenseTotal += amount;
+      }
+    }
+
+    return HomeSummary(
+      incomeTotal: incomeTotal,
+      expenseTotal: expenseTotal,
+      transactionCount: transactionCount,
+    );
+  }
+
+  bool _matchesCurrentMonth(Map<String, dynamic> data, DateTime monthStart) {
+    final transactionDate = (data['transactionDate'] as Timestamp?)?.toDate();
+    return transactionDate != null && !transactionDate.isBefore(monthStart);
   }
 
   TransactionRecord _recordFromDocument(
@@ -110,14 +161,18 @@ class FirebaseTransactionRepository implements TransactionRepository {
 
     return TransactionRecord(
       id: document.id,
+      userId: data['user'] as String? ?? '',
       amount: (data['amount'] as num?)?.toDouble() ?? 0,
       type: _typeFromFirestore(data['type'] as String?),
       categoryId: data['categoryId'] as String? ?? 'other',
       categoryName: data['categoryName'] as String? ?? 'Other',
-      transactionDate: timestamp?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0),
+      transactionDate:
+          timestamp?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0),
       source: _sourceFromFirestore(data['source'] as String?),
       note: data['note'] as String?,
       merchantName: data['merchantName'] as String?,
+      slipFingerprint: data['slipFingerprint'] as String?,
+      slipReference: data['slipReference'] as String?,
     );
   }
 
@@ -128,7 +183,6 @@ class FirebaseTransactionRepository implements TransactionRepository {
   TransactionSource _sourceFromFirestore(String? value) {
     return switch (value) {
       'gallery_slip' => TransactionSource.gallerySlip,
-      'qr_camera' => TransactionSource.qrCamera,
       _ => TransactionSource.manual,
     };
   }

@@ -14,11 +14,7 @@ class BrandMark extends StatelessWidget {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF62E4B6),
-              Color(0xFF1FC9DC),
-              Color(0xFF6A4DF4),
-            ],
+            colors: [Color(0xFF62E4B6), Color(0xFF1FC9DC), Color(0xFF6A4DF4)],
           ),
           boxShadow: const [
             BoxShadow(

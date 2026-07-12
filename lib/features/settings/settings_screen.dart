@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
@@ -33,9 +34,7 @@ class SettingsScreen extends StatelessWidget {
         children: [
           _ProfileCard(user: user),
           const SizedBox(height: 14),
-          MascotTip(
-            message: strings.settingsTip,
-          ),
+          MascotTip(message: strings.settingsTip),
           const SizedBox(height: 14),
           const _LanguageCard(),
           const SizedBox(height: 14),
@@ -66,6 +65,8 @@ class SettingsScreen extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          const _AmountClassifierCard(),
           const SizedBox(height: 18),
           OutlinedButton(
             onPressed: () => _signOut(context),
@@ -124,7 +125,11 @@ class _ProfileCard extends StatelessWidget {
             height: 46,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF62E4B6), Color(0xFF1FC9DC), Color(0xFF6A4DF4)],
+                colors: [
+                  Color(0xFF62E4B6),
+                  Color(0xFF1FC9DC),
+                  Color(0xFF6A4DF4),
+                ],
               ),
               borderRadius: BorderRadius.circular(16),
             ),
@@ -205,18 +210,13 @@ class _LanguageCard extends StatelessWidget {
             children: [
               const _IconBadge(label: 'LA'),
               const SizedBox(width: 12),
-              Expanded(
-                child: Text(strings.language, style: _rowTitleStyle),
-              ),
+              Expanded(child: Text(strings.language, style: _rowTitleStyle)),
             ],
           ),
           const SizedBox(height: 14),
           SegmentedButton<AppLanguage>(
             segments: [
-              ButtonSegment(
-                value: AppLanguage.th,
-                label: Text(strings.thai),
-              ),
+              ButtonSegment(value: AppLanguage.th, label: Text(strings.thai)),
               ButtonSegment(
                 value: AppLanguage.en,
                 label: Text(strings.english),
@@ -411,3 +411,90 @@ const _statusStyle = TextStyle(
   fontWeight: FontWeight.w900,
   letterSpacing: 0,
 );
+
+class _AmountClassifierCard extends StatelessWidget {
+  const _AmountClassifierCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const _IconBadge(label: 'AI'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  strings.isThai ? 'โมเดล AI' : 'AI Model',
+                  style: _rowTitleStyle,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            strings.isThai
+                ? 'ปรับปรุงการทำงานของ AI โดยการฝึกและตั้งค่า'
+                : 'Improve AI by training and configuring model weights',
+            style: _mutedStyle,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(
+                          strings.isThai ? 'ลบข้อมูลโมเดล' : 'Reset Model',
+                        ),
+                        content: Text(
+                          strings.isThai
+                              ? 'ลบข้อมูลการฝึกทั้งหมดและเริ่มใหม่?'
+                              : 'Delete all training data and reset model?',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: Text(strings.isThai ? 'ยกเลิก' : 'Cancel'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(strings.isThai ? 'ลบ' : 'Delete'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true && context.mounted) {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.remove('amount_classifier_weights');
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              strings.isThai ? 'ลบแล้ว' : 'Reset complete',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: Text(strings.isThai ? 'รีเซ็ต' : 'Reset'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}

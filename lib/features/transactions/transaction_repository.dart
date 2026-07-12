@@ -5,6 +5,8 @@ import 'transaction_record.dart';
 abstract class TransactionRepository {
   Future<void> createManualTransaction(CreateTransactionInput input);
 
+  Future<Set<String>> loadActiveSlipFingerprints(String userId);
+
   Stream<HomeSummary> watchCurrentMonthSummary(String userId);
 
   Stream<List<TransactionRecord>> watchRecentTransactions(
