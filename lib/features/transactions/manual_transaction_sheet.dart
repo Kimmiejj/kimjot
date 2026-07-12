@@ -608,7 +608,7 @@ class _TypeSelector extends StatelessWidget {
           const SizedBox(height: 6),
           _Segment(
             label: context.strings.internalTransfer,
-            icon: Icons.compare_arrows_rounded,
+            icon: Icons.sync_alt_rounded,
             selected: type == TransactionType.internalTransfer,
             enabled: enabled,
             palette: _SegmentPalette.transfer,
@@ -783,7 +783,7 @@ class _InternalTransferHintCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Icon(
-              Icons.compare_arrows_rounded,
+              Icons.sync_alt_rounded,
               color: Color(0xFF167FBA),
             ),
           ),

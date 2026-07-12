@@ -225,7 +225,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
         );
         savedCount++;
       } catch (_) {
-        // keep going; failed entries remain unsaved
+        // Keep going; failed entries remain unsaved.
       }
     }
 
@@ -284,9 +284,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
                 MascotTip(
                   message: _isScanning
                       ? strings.readingSlip
-                      : (strings.isThai
-                            ? 'AI à¸ªà¸£à¸¸à¸›à¸ªà¸¥à¸´à¸›à¸—à¸±à¹‰à¸‡à¸­à¸±à¸¥à¸šà¸±à¸¡à¹à¸¥à¹‰à¸§ à¸à¸”à¸šà¸±à¸™à¸—à¸¶à¸à¹„à¸”à¹‰à¹€à¸¥à¸¢'
-                            : 'AI finished scanning this album. You can save all now.'),
+                      : 'AI finished scanning this album. You can save all now.',
                   mood: MascotMood.calm,
                 ),
                 const SizedBox(height: 16),
@@ -317,13 +315,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2.2),
                         )
                       : const Icon(Icons.save_rounded),
-                  label: Text(
-                    _isSaving
-                        ? strings.saving
-                        : (strings.isThai
-                              ? 'à¸šà¸±à¸™à¸—à¸¶à¸à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”'
-                              : 'Save all'),
-                  ),
+                  label: Text(_isSaving ? strings.saving : 'Save all'),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(54),
                   ),
@@ -363,11 +355,35 @@ class _AlbumSummaryCard extends StatelessWidget {
         children: [
           Expanded(child: _SummaryPill(label: 'Total', value: '$totalCount')),
           const SizedBox(width: 8),
-          Expanded(child: _SummaryPill(label: 'Ready', value: '$readyCount')),
+          Expanded(
+            child: _SummaryPill(
+              label: 'Done',
+              value: '$readyCount',
+              tint: const Color(0xFFEAF8F1),
+              valueColor: const Color(0xFF1B8F73),
+              labelColor: const Color(0xFF1B8F73),
+            ),
+          ),
           const SizedBox(width: 8),
-          Expanded(child: _SummaryPill(label: 'Dup', value: '$duplicateCount')),
+          Expanded(
+            child: _SummaryPill(
+              label: 'Dup',
+              value: '$duplicateCount',
+              tint: const Color(0xFFFFF6DD),
+              valueColor: const Color(0xFFB8942D),
+              labelColor: const Color(0xFFB8942D),
+            ),
+          ),
           const SizedBox(width: 8),
-          Expanded(child: _SummaryPill(label: 'Fail', value: '$failedCount')),
+          Expanded(
+            child: _SummaryPill(
+              label: 'Fail',
+              value: '$failedCount',
+              tint: const Color(0xFFFFEFF1),
+              valueColor: const Color(0xFFD94768),
+              labelColor: const Color(0xFFD94768),
+            ),
+          ),
         ],
       ),
     );
@@ -375,25 +391,34 @@ class _AlbumSummaryCard extends StatelessWidget {
 }
 
 class _SummaryPill extends StatelessWidget {
-  const _SummaryPill({required this.label, required this.value});
+  const _SummaryPill({
+    required this.label,
+    required this.value,
+    this.tint = const Color(0xFFF4FBFF),
+    this.valueColor = const Color(0xFF10233F),
+    this.labelColor = const Color(0xFF65748B),
+  });
 
   final String label;
   final String value;
+  final Color tint;
+  final Color valueColor;
+  final Color labelColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4FBFF),
+        color: tint,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [
           Text(
             value,
-            style: const TextStyle(
-              color: Color(0xFF10233F),
+            style: TextStyle(
+              color: valueColor,
               fontSize: 18,
               fontWeight: FontWeight.w900,
               letterSpacing: 0,
@@ -402,8 +427,8 @@ class _SummaryPill extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF65748B),
+            style: TextStyle(
+              color: labelColor,
               fontSize: 12,
               fontWeight: FontWeight.w800,
               letterSpacing: 0,
@@ -422,40 +447,54 @@ class _AlbumResultTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, color, label) = switch (item.status) {
+    final categoryLabel = item.decision == null
+        ? null
+        : localizedCategoryName(
+            strings: context.strings,
+            categoryId: item.decision!.categoryId,
+            fallbackName: item.decision!.categoryName,
+          );
+    final (icon, color, label, chipTint) = switch (item.status) {
       _AlbumReviewStatus.reading => (
         Icons.document_scanner_rounded,
         const Color(0xFF3268F6),
         context.strings.readingSlip,
+        const Color(0xFFEAF1FF),
       ),
       _AlbumReviewStatus.ready => (
         Icons.check_circle_rounded,
-        _decisionColor(item.decision?.type),
-        item.decision == null
-            ? (context.strings.isThai ? 'à¸žà¸£à¹‰à¸­à¸¡à¸šà¸±à¸™à¸—à¸¶à¸' : 'Ready')
-            : localizedCategoryName(
-                strings: context.strings,
-                categoryId: item.decision!.categoryId,
-                fallbackName: item.decision!.categoryName,
-              ),
+        const Color(0xFF1B8F73),
+        'Done',
+        const Color(0xFFEAF8F1),
       ),
       _AlbumReviewStatus.duplicate => (
         Icons.remove_circle_rounded,
         const Color(0xFFB8942D),
-        context.strings.skippedDuplicateSlip,
+        'Dup',
+        const Color(0xFFFFF6DD),
       ),
       _AlbumReviewStatus.failed => (
         Icons.error_rounded,
-        const Color(0xFFB66A72),
-        context.strings.couldNotReadSlip,
+        const Color(0xFFD94768),
+        'Fail',
+        const Color(0xFFFFEFF1),
       ),
     };
+    final detailText = item.amount == null
+        ? switch (item.status) {
+            _AlbumReviewStatus.reading => context.strings.readingSlip,
+            _AlbumReviewStatus.ready => categoryLabel ?? 'Done',
+            _AlbumReviewStatus.duplicate => context.strings.skippedDuplicateSlip,
+            _AlbumReviewStatus.failed => context.strings.couldNotReadSlip,
+          }
+        : '${item.result?.bankDisplayName ?? 'Slip'}  •  ${item.amount!.toStringAsFixed(2)}';
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.88),
+        color: Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x245D81AD)),
       ),
       child: Row(
         children: [
@@ -472,6 +511,18 @@ class _AlbumResultTile extends StatelessWidget {
                 color: const Color(0xFFE7EDF4),
                 child: const Icon(Icons.image_not_supported_rounded),
               ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE7EDF4),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Center(
+              child: Icon(icon, color: color, size: 22),
             ),
           ),
           const SizedBox(width: 12),
@@ -492,9 +543,7 @@ class _AlbumResultTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  item.amount == null
-                      ? label
-                      : '${item.result?.bankDisplayName ?? 'Slip'}  •  ${item.amount!.toStringAsFixed(2)}',
+                  detailText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -504,38 +553,44 @@ class _AlbumResultTile extends StatelessWidget {
                     letterSpacing: 0,
                   ),
                 ),
+                if (categoryLabel != null && item.status == _AlbumReviewStatus.ready) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    categoryLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF10233F),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           const SizedBox(width: 8),
-          Column(
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0,
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: chipTint,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
               ),
-            ],
+            ),
           ),
         ],
       ),
     );
   }
-}
-
-Color _decisionColor(TransactionType? type) {
-  return switch (type) {
-    TransactionType.income => const Color(0xFF1B8F73),
-    TransactionType.expense => const Color(0xFFD94768),
-    TransactionType.internalTransfer => const Color(0xFF168AA6),
-    null => const Color(0xFF1B8F73),
-  };
 }
 
 enum _AlbumReviewStatus { reading, ready, duplicate, failed }

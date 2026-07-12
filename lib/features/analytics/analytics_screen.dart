@@ -27,6 +27,7 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   late DateTime _selectedMonth;
+  _TrendViewMode _selectedView = _TrendViewMode.daily;
 
   @override
   void initState() {
@@ -79,22 +80,28 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       onNextMonth: () => _changeMonth(1),
       onSelectMonth: _selectMonth,
       child: StreamBuilder<List<TransactionRecord>>(
-        stream: widget.transactionRepository.watchMonthTransactions(
-          widget.user.uid,
-          month,
-        ),
+        stream: widget.transactionRepository.watchTransactions(widget.user.uid),
         builder: (context, snapshot) {
           final transactions = snapshot.data ?? const <TransactionRecord>[];
-          final analytics = _MonthlyAnalytics.fromRecords(
+          final analytics = _TrendAnalytics.fromRecords(
             strings: strings,
             month: month,
             records: transactions,
+            selectedView: _selectedView,
           );
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _DailyTrendCard(analytics: analytics),
+              _ExpenseTrendCard(
+                analytics: analytics,
+                selectedView: _selectedView,
+                onViewChanged: (view) {
+                  setState(() {
+                    _selectedView = view;
+                  });
+                },
+              ),
               const SizedBox(height: 14),
               _CategoryDonutCard(analytics: analytics),
               const SizedBox(height: 14),
@@ -103,8 +110,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   Expanded(
                     child: _MiniMetricCard(
                       label: strings.isThai
-                          ? 'ใช้เดือนนี้'
-                          : 'Spent this month',
+                          ? 'ใช้ในช่วงที่เลือก'
+                          : 'Spent in selected period',
                       value: _formatMoney(analytics.expenseTotal),
                     ),
                   ),
@@ -125,15 +132,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
-class _DailyTrendCard extends StatelessWidget {
-  const _DailyTrendCard({required this.analytics});
+enum _TrendViewMode { daily, monthly, yearly }
 
-  final _MonthlyAnalytics analytics;
+class _ExpenseTrendCard extends StatelessWidget {
+  const _ExpenseTrendCard({
+    required this.analytics,
+    required this.selectedView,
+    required this.onViewChanged,
+  });
+
+  final _TrendAnalytics analytics;
+  final _TrendViewMode selectedView;
+  final ValueChanged<_TrendViewMode> onViewChanged;
 
   @override
   Widget build(BuildContext context) {
-    final strings = context.strings;
-
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
       decoration: _cardDecoration(),
@@ -141,39 +154,136 @@ class _DailyTrendCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                strings.isThai ? 'แนวโน้มรายจ่าย' : 'Expense trend',
-                style: _titleStyle,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.strings.isThai
+                          ? 'แนวโน้มรายจ่าย'
+                          : 'Expense trend',
+                      style: _titleStyle,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      analytics.periodLabel,
+                      style: _smallAccentStyle,
+                    ),
+                  ],
+                ),
               ),
-              const Spacer(),
-              Text(
-                strings.isThai ? 'รายวัน' : 'Daily',
-                style: _smallAccentStyle,
+              const SizedBox(width: 12),
+              _TrendViewSwitcher(
+                selectedView: selectedView,
+                onChanged: onViewChanged,
               ),
             ],
           ),
           const SizedBox(height: 20),
           SizedBox(
             height: 220,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (final bar in analytics.dailyBars)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      child: _TrendBar(
-                        label: bar.label,
-                        value: bar.amount,
-                        maxValue: analytics.maxDailyExpense,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: math.max(
+                  MediaQuery.sizeOf(context).width - 80,
+                  analytics.points.length * _trendBarWidth,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (final point in analytics.points)
+                      SizedBox(
+                        width: _trendBarWidth,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 5),
+                          child: _TrendBar(
+                            label: point.label,
+                            value: point.amount,
+                            maxValue: analytics.maxPointAmount,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TrendViewSwitcher extends StatelessWidget {
+  const _TrendViewSwitcher({
+    required this.selectedView,
+    required this.onChanged,
+  });
+
+  final _TrendViewMode selectedView;
+  final ValueChanged<_TrendViewMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      alignment: WrapAlignment.end,
+      children: [
+        for (final view in _TrendViewMode.values)
+          _TrendChip(
+            label: _viewLabel(context.strings, view),
+            isSelected: selectedView == view,
+            onTap: () => onChanged(view),
+          ),
+      ],
+    );
+  }
+}
+
+class _TrendChip extends StatelessWidget {
+  const _TrendChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Ink(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFFE7F1FF)
+              : Colors.white.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF3763F1)
+                : const Color(0x245D81AD),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected
+                ? const Color(0xFF1F4FD6)
+                : const Color(0xFF6D7F97),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0,
+          ),
+        ),
       ),
     );
   }
@@ -193,8 +303,8 @@ class _TrendBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final heightFactor = maxValue <= 0
-        ? 0.12
-        : (value / maxValue).clamp(0.12, 1.0).toDouble();
+        ? 0.06
+        : (value / maxValue).clamp(0.06, 1.0).toDouble();
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -227,7 +337,7 @@ class _TrendBar extends StatelessWidget {
 class _CategoryDonutCard extends StatelessWidget {
   const _CategoryDonutCard({required this.analytics});
 
-  final _MonthlyAnalytics analytics;
+  final _TrendAnalytics analytics;
 
   @override
   Widget build(BuildContext context) {
@@ -427,7 +537,7 @@ class _MonthSelector extends StatelessWidget {
         Expanded(
           child: Tooltip(
             message: strings.isThai
-                ? 'à¹€à¸¥à¸·à¸­à¸à¹€à¸”à¸·à¸­à¸™à¹à¸¥à¸°à¸›à¸µ'
+                ? 'เลือกเดือนและปี'
                 : 'Choose month and year',
             child: InkWell(
               onTap: onSelectMonth,
@@ -530,9 +640,7 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
             Row(
               children: [
                 Text(
-                  strings.isThai
-                      ? 'à¹€à¸¥à¸·à¸­à¸à¹€à¸”à¸·à¸­à¸™'
-                      : 'Select month',
+                  strings.isThai ? 'เลือกเดือน' : 'Select month',
                   style: const TextStyle(
                     color: Color(0xFF111827),
                     fontSize: 20,
@@ -560,9 +668,7 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                 children: [
                   _MonthArrowButton(
                     icon: Icons.chevron_left_rounded,
-                    tooltip: strings.isThai
-                        ? 'à¸›à¸µà¸à¹ˆà¸­à¸™à¸«à¸™à¹‰à¸²'
-                        : 'Previous year',
+                    tooltip: strings.isThai ? 'ปีก่อนหน้า' : 'Previous year',
                     onTap: () => setState(() => _year--),
                   ),
                   Expanded(
@@ -579,9 +685,7 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                   ),
                   _MonthArrowButton(
                     icon: Icons.chevron_right_rounded,
-                    tooltip: strings.isThai
-                        ? 'à¸›à¸µà¸–à¸±à¸”à¹„à¸›'
-                        : 'Next year',
+                    tooltip: strings.isThai ? 'ปีถัดไป' : 'Next year',
                     onTap: () => setState(() => _year++),
                   ),
                 ],
@@ -605,7 +709,7 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                     widget.initialMonth.month == month;
 
                 return _MonthChoiceButton(
-                  label: _monthLabel(context, month),
+                  label: _monthLabel(context.strings, month),
                   isSelected: isSelected,
                   onTap: () =>
                       Navigator.of(context).pop(DateTime(_year, month)),
@@ -850,10 +954,11 @@ class _DonutPainter extends CustomPainter {
   }
 }
 
-class _MonthlyAnalytics {
-  const _MonthlyAnalytics({
-    required this.dailyBars,
-    required this.maxDailyExpense,
+class _TrendAnalytics {
+  const _TrendAnalytics({
+    required this.points,
+    required this.maxPointAmount,
+    required this.periodLabel,
     required this.expenseTotal,
     required this.incomeTotal,
     required this.balance,
@@ -863,8 +968,9 @@ class _MonthlyAnalytics {
     required this.donutSegments,
   });
 
-  final List<_DailyBarPoint> dailyBars;
-  final double maxDailyExpense;
+  final List<_TrendPoint> points;
+  final double maxPointAmount;
+  final String periodLabel;
   final double expenseTotal;
   final double incomeTotal;
   final double balance;
@@ -873,15 +979,22 @@ class _MonthlyAnalytics {
   final List<_TopCategory> topCategories;
   final List<_DonutSegment> donutSegments;
 
-  factory _MonthlyAnalytics.fromRecords({
+  factory _TrendAnalytics.fromRecords({
     required AppStrings strings,
     required DateTime month,
     required List<TransactionRecord> records,
+    required _TrendViewMode selectedView,
   }) {
-    final expenseRecords = records
+    final periodRecords = records
+        .where(
+          (record) =>
+              _matchesView(record.transactionDate, month, selectedView),
+        )
+        .toList();
+    final expenseRecords = periodRecords
         .where((record) => record.type == TransactionType.expense)
         .toList();
-    final incomeTotal = records
+    final incomeTotal = periodRecords
         .where((record) => record.type == TransactionType.income)
         .fold(0.0, (sum, record) => sum + record.amount);
     final expenseTotal = expenseRecords.fold(
@@ -889,25 +1002,13 @@ class _MonthlyAnalytics {
       (sum, record) => sum + record.amount,
     );
 
-    final dayTotals = <int, double>{};
-    for (final record in expenseRecords) {
-      final day = record.transactionDate.day;
-      dayTotals.update(
-        day,
-        (value) => value + record.amount,
-        ifAbsent: () => record.amount,
-      );
-    }
-
-    final monthEndDay = _isSameMonth(month, DateTime.now())
-        ? DateTime.now().day
-        : DateUtils.getDaysInMonth(month.year, month.month);
-    final startDay = math.max(1, monthEndDay - 6);
-    final dailyBars = <_DailyBarPoint>[
-      for (var day = startDay; day <= monthEndDay; day++)
-        _DailyBarPoint(label: day.toString(), amount: dayTotals[day] ?? 0),
-    ];
-    final maxDailyExpense = dailyBars.fold<double>(
+    final points = _buildTrendPoints(
+      strings: strings,
+      month: month,
+      records: expenseRecords,
+      selectedView: selectedView,
+    );
+    final maxPointAmount = points.fold<double>(
       0,
       (maxValue, point) => math.max(maxValue, point.amount).toDouble(),
     );
@@ -967,9 +1068,10 @@ class _MonthlyAnalytics {
       );
     }
 
-    return _MonthlyAnalytics(
-      dailyBars: dailyBars,
-      maxDailyExpense: maxDailyExpense,
+    return _TrendAnalytics(
+      points: points,
+      maxPointAmount: maxPointAmount,
+      periodLabel: _periodLabel(strings, month, selectedView),
       expenseTotal: expenseTotal,
       incomeTotal: incomeTotal,
       balance: incomeTotal - expenseTotal,
@@ -981,8 +1083,8 @@ class _MonthlyAnalytics {
   }
 }
 
-class _DailyBarPoint {
-  const _DailyBarPoint({required this.label, required this.amount});
+class _TrendPoint {
+  const _TrendPoint({required this.label, required this.amount});
 
   final String label;
   final double amount;
@@ -1065,6 +1167,8 @@ const _statusStyle = TextStyle(
   letterSpacing: 0,
 );
 
+const _trendBarWidth = 38.0;
+
 String _formatMoney(double amount) {
   final sign = amount < 0 ? '-' : '';
   return '$sign฿${_formatNumber(amount.abs())}';
@@ -1083,11 +1187,186 @@ String _formatNumber(double amount) {
   return buffer.toString();
 }
 
-String _monthLabel(BuildContext context, int month) {
-  final monthText = context.strings.formatMonthYear(DateTime(2000, month));
-  return monthText.replaceFirst(' 2000', '');
+String _monthLabel(AppStrings strings, int month) {
+  final months = strings.isThai
+      ? const [
+          'ม.ค.',
+          'ก.พ.',
+          'มี.ค.',
+          'เม.ย.',
+          'พ.ค.',
+          'มิ.ย.',
+          'ก.ค.',
+          'ส.ค.',
+          'ก.ย.',
+          'ต.ค.',
+          'พ.ย.',
+          'ธ.ค.',
+        ]
+      : const [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+  return months[month - 1];
+}
+
+String _monthShortLabel(AppStrings strings, int month) {
+  final months = strings.isThai
+      ? const [
+          'ม.ค.',
+          'ก.พ.',
+          'มี.ค.',
+          'เม.ย.',
+          'พ.ค.',
+          'มิ.ย.',
+          'ก.ค.',
+          'ส.ค.',
+          'ก.ย.',
+          'ต.ค.',
+          'พ.ย.',
+          'ธ.ค.',
+        ]
+      : const [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ];
+  return months[month - 1];
 }
 
 bool _isSameMonth(DateTime left, DateTime right) {
   return left.year == right.year && left.month == right.month;
+}
+
+bool _matchesView(
+  DateTime transactionDate,
+  DateTime selectedMonth,
+  _TrendViewMode selectedView,
+) {
+  return switch (selectedView) {
+    _TrendViewMode.daily => _isSameMonth(transactionDate, selectedMonth),
+    _TrendViewMode.monthly => transactionDate.year == selectedMonth.year,
+    _TrendViewMode.yearly => true,
+  };
+}
+
+List<_TrendPoint> _buildTrendPoints({
+  required AppStrings strings,
+  required DateTime month,
+  required List<TransactionRecord> records,
+  required _TrendViewMode selectedView,
+}) {
+  return switch (selectedView) {
+    _TrendViewMode.daily => _buildDailyPoints(month, records),
+    _TrendViewMode.monthly => _buildMonthlyPoints(strings, records),
+    _TrendViewMode.yearly => _buildYearlyPoints(month, records),
+  };
+}
+
+List<_TrendPoint> _buildDailyPoints(
+  DateTime month,
+  List<TransactionRecord> records,
+) {
+  final dayTotals = <int, double>{};
+  for (final record in records) {
+    final day = record.transactionDate.day;
+    dayTotals.update(
+      day,
+      (value) => value + record.amount,
+      ifAbsent: () => record.amount,
+    );
+  }
+
+  final daysInMonth = DateUtils.getDaysInMonth(month.year, month.month);
+  return [
+    for (var day = 1; day <= daysInMonth; day++)
+      _TrendPoint(label: day.toString(), amount: dayTotals[day] ?? 0),
+  ];
+}
+
+List<_TrendPoint> _buildMonthlyPoints(
+  AppStrings strings,
+  List<TransactionRecord> records,
+) {
+  final monthTotals = <int, double>{};
+  for (final record in records) {
+    final recordMonth = record.transactionDate.month;
+    monthTotals.update(
+      recordMonth,
+      (value) => value + record.amount,
+      ifAbsent: () => record.amount,
+    );
+  }
+
+  return [
+    for (var monthIndex = 1; monthIndex <= 12; monthIndex++)
+      _TrendPoint(
+        label: _monthShortLabel(strings, monthIndex),
+        amount: monthTotals[monthIndex] ?? 0,
+      ),
+  ];
+}
+
+List<_TrendPoint> _buildYearlyPoints(
+  DateTime month,
+  List<TransactionRecord> records,
+) {
+  final yearTotals = <int, double>{};
+  for (final record in records) {
+    final year = record.transactionDate.year;
+    yearTotals.update(
+      year,
+      (value) => value + record.amount,
+      ifAbsent: () => record.amount,
+    );
+  }
+
+  if (yearTotals.isEmpty) {
+    return [_TrendPoint(label: month.year.toString(), amount: 0)];
+  }
+
+  final years = yearTotals.keys.toList()..sort();
+  return [
+    for (final year in years)
+      _TrendPoint(label: year.toString(), amount: yearTotals[year] ?? 0),
+  ];
+}
+
+String _viewLabel(AppStrings strings, _TrendViewMode view) {
+  return switch (view) {
+    _TrendViewMode.daily => strings.isThai ? 'รายวัน' : 'Daily',
+    _TrendViewMode.monthly => strings.isThai ? 'รายเดือน' : 'Monthly',
+    _TrendViewMode.yearly => strings.isThai ? 'รายปี' : 'Yearly',
+  };
+}
+
+String _periodLabel(
+  AppStrings strings,
+  DateTime month,
+  _TrendViewMode selectedView,
+) {
+  return switch (selectedView) {
+    _TrendViewMode.daily => strings.formatMonthYear(month),
+    _TrendViewMode.monthly => month.year.toString(),
+    _TrendViewMode.yearly => strings.isThai ? 'ทุกปี' : 'All years',
+  };
 }

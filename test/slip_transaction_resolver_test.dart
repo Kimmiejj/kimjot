@@ -30,4 +30,31 @@ void main() {
 
     expect(decision?.type, TransactionType.internalTransfer);
   });
+
+  test('treats matching Thai honorific names as internal transfer', () {
+    final result = SlipScanResult(
+      rawText: 'internal transfer',
+      sender: 'นาย ชิษณุชา',
+      recipient: 'นาย ชิษณุชา',
+      amount: 900,
+    );
+
+    final decision = resolveLocalSlipDecision(result);
+
+    expect(decision?.type, TransactionType.internalTransfer);
+    expect(decision?.categoryId, 'internal_transfer');
+  });
+
+  test('does not treat one shared token alone as internal transfer', () {
+    final result = SlipScanResult(
+      rawText: 'transfer success',
+      sender: 'Somchai Jaidee',
+      recipient: 'Somchai Sukjai',
+      amount: 1200,
+    );
+
+    final decision = resolveLocalSlipDecision(result);
+
+    expect(decision?.type, isNot(TransactionType.internalTransfer));
+  });
 }

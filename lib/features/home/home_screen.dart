@@ -1097,6 +1097,9 @@ String _formatMoney(double amount) {
 }
 
 String _transactionPrefix(TransactionType type) {
+  if (type == TransactionType.internalTransfer) {
+    return '';
+  }
   return switch (type) {
     TransactionType.income => '+',
     TransactionType.expense => '-',

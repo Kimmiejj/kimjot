@@ -268,7 +268,14 @@ bool partiesLookLikeSamePerson(String? sender, String? recipient) {
   }
 
   final overlap = senderTokens.intersection(recipientTokens);
-  return overlap.isNotEmpty;
+  if (overlap.isEmpty) {
+    return false;
+  }
+
+  final smallerSetSize = senderTokens.length <= recipientTokens.length
+      ? senderTokens.length
+      : recipientTokens.length;
+  return overlap.length == smallerSetSize;
 }
 
 String? buildSlipNote(SlipScanResult result, {String? overrideNote}) {

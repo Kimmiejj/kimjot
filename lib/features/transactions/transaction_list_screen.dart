@@ -570,14 +570,15 @@ class _EmptyTransactionsCard extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 String _formatSignedMoney(TransactionRecord record) {
   final sign = record.type == TransactionType.income ? '+' : '-';
   return '$sign฿${_formatNumber(record.amount)}';
 }
 
 String _formatTransferAwareMoney(TransactionRecord record) {
-  if (record.type != TransactionType.internalTransfer) {
-    return _formatSignedMoney(record);
+  if (record.type == TransactionType.internalTransfer) {
+    return 'THB ${_formatNumber(record.amount)}';
   }
   final sign = switch (record.type) {
     TransactionType.income => '+',
