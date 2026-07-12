@@ -341,8 +341,8 @@ class _CategoryIconChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
-            width: 48,
-            height: 48,
+            constraints: const BoxConstraints(minHeight: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
             decoration: BoxDecoration(
               color: selected
                   ? const Color(0xFF102F67)
@@ -354,7 +354,24 @@ class _CategoryIconChip extends StatelessWidget {
                     : const Color(0x2E5D81AD),
               ),
             ),
-            child: Icon(categoryIconData(category.id), color: color, size: 23),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(categoryIconData(category.id), color: color, size: 20),
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

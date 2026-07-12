@@ -481,6 +481,7 @@ class _CategoryIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = category.label(context.strings);
+    final color = selected ? Colors.white : const Color(0xFF1D3C6C);
 
     return Tooltip(
       message: label,
@@ -493,8 +494,8 @@ class _CategoryIconButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
-            width: 52,
-            height: 52,
+            constraints: const BoxConstraints(minHeight: 46),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               gradient: selected
                   ? const LinearGradient(
@@ -518,10 +519,23 @@ class _CategoryIconButton extends StatelessWidget {
                     ]
                   : null,
             ),
-            child: Icon(
-              categoryIconData(category.id),
-              color: selected ? Colors.white : const Color(0xFF1D3C6C),
-              size: 24,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(categoryIconData(category.id), color: color, size: 21),
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
