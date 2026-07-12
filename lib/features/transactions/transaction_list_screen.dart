@@ -371,7 +371,6 @@ List<TransactionRecord> _filterTransactions(
 
   final strings = context.strings;
   return records.where((record) {
-    final accent = _transactionAccent(record.type);
     final categoryName = localizedCategoryName(
       strings: strings,
       categoryId: record.categoryId,
@@ -440,6 +439,7 @@ class TransactionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = _transactionAccent(record.type);
     final categoryName = localizedCategoryName(
       strings: context.strings,
       categoryId: record.categoryId,
@@ -585,14 +585,6 @@ String _formatTransferAwareMoney(TransactionRecord record) {
     TransactionType.internalTransfer => '↔',
   };
   return '$sign฿${_formatNumber(record.amount)}';
-}
-
-Color _transactionColor(TransactionType type) {
-  return switch (type) {
-    TransactionType.income => const Color(0xFF18B98E),
-    TransactionType.expense => const Color(0xFFD94768),
-    TransactionType.internalTransfer => const Color(0xFF168AA6),
-  };
 }
 
 _TransactionAccent _transactionAccent(TransactionType type) {
