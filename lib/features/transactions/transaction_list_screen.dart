@@ -439,7 +439,6 @@ class TransactionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = _transactionAccent(record.type);
     final categoryName = localizedCategoryName(
       strings: context.strings,
       categoryId: record.categoryId,
@@ -454,7 +453,7 @@ class TransactionRow extends StatelessWidget {
     );
 
     return Material(
-      color: accent.background,
+      color: Colors.white.withValues(alpha: 0.92),
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         onTap: onTap,
@@ -463,7 +462,7 @@ class TransactionRow extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accent.border),
+            border: Border.all(color: const Color(0x245D81AD)),
           ),
           child: Row(
             children: [
@@ -471,13 +470,13 @@ class TransactionRow extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: accent.iconBackground),
+                  color: const Color(0xFFE7EDF4),
                   borderRadius: BorderRadius.circular(15),
                 ),
                 child: Center(
                   child: Icon(
                     categoryIconData(record.categoryId),
-                    color: accent.iconColor,
+                    color: const Color(0xFF334155),
                     size: 22,
                   ),
                 ),
@@ -503,8 +502,8 @@ class TransactionRow extends StatelessWidget {
                       '${record.source.firestoreValue} · $categoryName',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: accent.secondaryText,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0,
@@ -520,7 +519,7 @@ class TransactionRow extends StatelessWidget {
                   Text(
                     _formatTransferAwareMoney(record),
                     style: TextStyle(
-                      color: accent.amountColor,
+                      color: _transactionAmountColor(record.type),
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0,
@@ -588,51 +587,12 @@ String _formatTransferAwareMoney(TransactionRecord record) {
   return '$sign฿${_formatNumber(record.amount)}';
 }
 
-_TransactionAccent _transactionAccent(TransactionType type) {
+Color _transactionAmountColor(TransactionType type) {
   return switch (type) {
-    TransactionType.income => const _TransactionAccent(
-      background: Color(0xFFF5FEFA),
-      border: Color(0x3318B98E),
-      iconBackground: [Color(0x2E4FE3B8), Color(0x1A18B98E)],
-      iconColor: Color(0xFF159570),
-      amountColor: Color(0xFF18B98E),
-      secondaryText: Color(0xFF4F8A78),
-    ),
-    TransactionType.expense => const _TransactionAccent(
-      background: Color(0xFFFFF7F9),
-      border: Color(0x33D94768),
-      iconBackground: [Color(0x2EF58AA0), Color(0x1AD94768)],
-      iconColor: Color(0xFFC53C60),
-      amountColor: Color(0xFFD94768),
-      secondaryText: Color(0xFF996070),
-    ),
-    TransactionType.internalTransfer => const _TransactionAccent(
-      background: Color(0xFFF3FBFE),
-      border: Color(0x33168AA6),
-      iconBackground: [Color(0x2E56D3E8), Color(0x1A168AA6)],
-      iconColor: Color(0xFF147D97),
-      amountColor: Color(0xFF168AA6),
-      secondaryText: Color(0xFF50788A),
-    ),
+    TransactionType.income => const Color(0xFF18B98E),
+    TransactionType.expense => const Color(0xFFD94768),
+    TransactionType.internalTransfer => const Color(0xFF168AA6),
   };
-}
-
-class _TransactionAccent {
-  const _TransactionAccent({
-    required this.background,
-    required this.border,
-    required this.iconBackground,
-    required this.iconColor,
-    required this.amountColor,
-    required this.secondaryText,
-  });
-
-  final Color background;
-  final Color border;
-  final List<Color> iconBackground;
-  final Color iconColor;
-  final Color amountColor;
-  final Color secondaryText;
 }
 
 String _formatNumber(double value) {

@@ -137,7 +137,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
   Future<SlipTransactionDecision?> _resolveDecision(
     SlipScanResult result,
   ) async {
-    final localDecision = resolveLocalSlipDecision(result);
+    final localDecision = resolveBestEffortSlipDecision(result);
     if (localDecision?.type == TransactionType.internalTransfer) {
       return localDecision;
     }
@@ -159,8 +159,18 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
       );
     }
 
+    if (aiDecision.type == TransactionType.income) {
+      return localDecision ??
+          SlipTransactionDecision(
+            type: TransactionType.expense,
+            categoryId: 'transfer',
+            categoryName: 'Transfer',
+            note: buildSlipNote(result, overrideNote: aiDecision.note),
+          );
+    }
+
     return SlipTransactionDecision(
-      type: aiDecision.type,
+      type: TransactionType.expense,
       categoryId: aiDecision.categoryId,
       categoryName: savedCategoryNameForId(aiDecision.categoryId),
       note: buildSlipNote(result, overrideNote: aiDecision.note),
@@ -353,7 +363,9 @@ class _AlbumSummaryCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(child: _SummaryPill(label: 'Total', value: '$totalCount')),
+          Expanded(
+            child: _SummaryPill(label: 'Total', value: '$totalCount'),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: _SummaryPill(
@@ -484,7 +496,8 @@ class _AlbumResultTile extends StatelessWidget {
         ? switch (item.status) {
             _AlbumReviewStatus.reading => context.strings.readingSlip,
             _AlbumReviewStatus.ready => categoryLabel ?? 'Done',
-            _AlbumReviewStatus.duplicate => context.strings.skippedDuplicateSlip,
+            _AlbumReviewStatus.duplicate =>
+              context.strings.skippedDuplicateSlip,
             _AlbumReviewStatus.failed => context.strings.couldNotReadSlip,
           }
         : '${item.result?.bankDisplayName ?? 'Slip'}  •  ${item.amount!.toStringAsFixed(2)}';
@@ -521,9 +534,7 @@ class _AlbumResultTile extends StatelessWidget {
               color: const Color(0xFFE7EDF4),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Center(
-              child: Icon(icon, color: color, size: 22),
-            ),
+            child: Center(child: Icon(icon, color: color, size: 22)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -553,7 +564,8 @@ class _AlbumResultTile extends StatelessWidget {
                     letterSpacing: 0,
                   ),
                 ),
-                if (categoryLabel != null && item.status == _AlbumReviewStatus.ready) ...[
+                if (categoryLabel != null &&
+                    item.status == _AlbumReviewStatus.ready) ...[
                   const SizedBox(height: 4),
                   Text(
                     categoryLabel,

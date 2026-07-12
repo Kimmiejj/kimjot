@@ -31,15 +31,13 @@ class AmountClassifier {
 
   static const _amountKeywordPattern =
       r'amount|total|paid|payment|bill|transfer|promptpay|qr|'
-      r'à¸ˆà¸³à¸™à¸§à¸™à¹€à¸‡à¸´à¸™|à¸¢à¸­à¸”à¹€à¸‡à¸´à¸™|à¸ˆà¹ˆà¸²à¸¢à¸šà¸´à¸¥|'
-      r'à¸ˆà¹ˆà¸²à¸¢|à¸Šà¸³à¸£à¸°|à¸£à¸§à¸¡';
+      r'จำนวนเงิน|ยอดเงิน|จ่ายบิล|จำนวน|จ่าย|ชำระ|รวม|บาท';
   static const _referenceKeywordPattern =
       r'ref|reference|transaction|account|biller|merchant|invoice|order|'
-      r'id|à¹€à¸¥à¸‚à¸—à¸µà¹ˆ|à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡|à¸šà¸±à¸à¸Šà¸µ|à¸£à¹‰à¸²à¸™à¸„à¹‰à¸²|à¸˜à¸¸à¸£à¸à¸£à¸£à¸¡';
-  static const _feeKeywordPattern =
-      r'fee|service charge|à¸„à¹ˆà¸²à¸˜à¸£à¸£à¸¡à¹€à¸™à¸µà¸¢à¸¡';
+      r'id|เลขที่|อ้างอิง|บัญชี|ร้านค้า|ธุรกรรม|biller id|merchant id';
+  static const _feeKeywordPattern = r'fee|service charge|ค่าธรรมเนียม';
   static const _dateTimePattern =
-      r'(\d{1,2}:\d{2})|(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4})';
+      r'(\d{1,2}:\d{2})|(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4})|(\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4})';
 
   final List<String> _featureNames = [
     'bias',
@@ -168,7 +166,7 @@ class AmountClassifier {
     ].join(' ').toLowerCase();
 
     final hasBahtOnLine =
-        RegExp(r'à¸šà¸²à¸—|baht|thb', caseSensitive: false).hasMatch(lineLower)
+        RegExp(r'บาท|baht|thb', caseSensitive: false).hasMatch(lineLower)
         ? 1.0
         : 0.0;
     final keywordOnLine =
@@ -176,10 +174,7 @@ class AmountClassifier {
         ? 1.0
         : 0.0;
     final keywordNearby =
-        RegExp(
-          _amountKeywordPattern,
-          caseSensitive: false,
-        ).hasMatch(nearbyLower)
+        RegExp(_amountKeywordPattern, caseSensitive: false).hasMatch(nearbyLower)
         ? 1.0
         : 0.0;
     final lineLooksLikeAmount = _lineLooksLikeAmount(context.lineText)
@@ -193,10 +188,7 @@ class AmountClassifier {
         ? 0.0
         : math.log(context.value) / math.log(10);
     final penaltyReferenceLine =
-        RegExp(
-          _referenceKeywordPattern,
-          caseSensitive: false,
-        ).hasMatch(lineLower)
+        RegExp(_referenceKeywordPattern, caseSensitive: false).hasMatch(lineLower)
         ? 1.0
         : 0.0;
     final penaltyFeeLine =
@@ -228,7 +220,7 @@ class AmountClassifier {
     final normalized = line.replaceAll(RegExp(r'\s+'), ' ').trim();
     final stripped = normalized.replaceAll(
       RegExp(
-        '$_amountKeywordPattern|à¸šà¸²à¸—|baht|thb|[0-9.,\\s:-]',
+        '$_amountKeywordPattern|บาท|baht|thb|[0-9.,\\s:-]',
         caseSensitive: false,
       ),
       '',

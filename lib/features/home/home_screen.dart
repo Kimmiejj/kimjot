@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
+import '../settings/money_settings_store.dart';
 import '../transactions/category_icons.dart';
 import '../transactions/category_localization.dart';
 import '../transactions/home_summary.dart';
@@ -37,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _selectedMonth = _currentMonth();
+    MoneySettingsStore.instance.load();
   }
 
   Future<void> _openPage(BuildContext context, Widget page) async {
@@ -85,7 +87,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _selectMonth() async {
     final selected = await showDialog<DateTime>(
       context: context,
-      builder: (context) => _MonthYearPickerDialog(initialMonth: _selectedMonth),
+      builder: (context) =>
+          _MonthYearPickerDialog(initialMonth: _selectedMonth),
     );
 
     if (selected == null || !mounted) {
@@ -156,10 +159,10 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
                 sliver: SliverToBoxAdapter(
-                  child: _EmptyInfoCard(
-                    title: strings.budget,
-                    message: strings.noBudget,
-                    icon: Icons.account_balance_wallet_rounded,
+                  child: _BudgetStatusBuilder(
+                    userId: widget.user.uid,
+                    month: _selectedMonth,
+                    transactionRepository: widget.transactionRepository,
                   ),
                 ),
               ),
@@ -172,11 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
                 sliver: SliverToBoxAdapter(
-                  child: _EmptyInfoCard(
-                    title: strings.noDueInstallment,
-                    message: strings.installmentHint,
-                    icon: Icons.event_available_rounded,
-                  ),
+                  child: _InstallmentStatusBuilder(month: _selectedMonth),
                 ),
               ),
               SliverPadding(
@@ -207,6 +206,100 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _BudgetStatusBuilder extends StatelessWidget {
+  const _BudgetStatusBuilder({
+    required this.userId,
+    required this.month,
+    required this.transactionRepository,
+  });
+
+  final String userId;
+  final DateTime month;
+  final TransactionRepository transactionRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    return _MoneySettingsBuilder(
+      builder: (settings) {
+        final budget = settings.monthlyBudget;
+        if (budget == null || budget <= 0) {
+          return _EmptyInfoCard(
+            title: context.strings.budget,
+            message: context.strings.noBudget,
+            icon: Icons.account_balance_wallet_rounded,
+          );
+        }
+
+        return _SummaryBuilder(
+          userId: userId,
+          month: month,
+          transactionRepository: transactionRepository,
+          builder: (summary) =>
+              _BudgetProgressCard(budget: budget, spent: summary.expenseTotal),
+        );
+      },
+    );
+  }
+}
+
+class _InstallmentStatusBuilder extends StatelessWidget {
+  const _InstallmentStatusBuilder({required this.month});
+
+  final DateTime month;
+
+  @override
+  Widget build(BuildContext context) {
+    return _MoneySettingsBuilder(
+      builder: (settings) {
+        final duePlans = settings.dueInstallmentsFor(month);
+        if (duePlans.isEmpty) {
+          return _EmptyInfoCard(
+            title: context.strings.noDueInstallment,
+            message: context.strings.installmentHint,
+            icon: Icons.event_available_rounded,
+          );
+        }
+        return _InstallmentDueCard(plans: duePlans, month: month);
+      },
+    );
+  }
+}
+
+class _MoneySettingsBuilder extends StatefulWidget {
+  const _MoneySettingsBuilder({required this.builder});
+
+  final Widget Function(MoneySettingsSnapshot settings) builder;
+
+  @override
+  State<_MoneySettingsBuilder> createState() => _MoneySettingsBuilderState();
+}
+
+class _MoneySettingsBuilderState extends State<_MoneySettingsBuilder> {
+  final _store = MoneySettingsStore.instance;
+  late Future<MoneySettingsSnapshot> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _store.load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _store,
+      builder: (context, _) {
+        return FutureBuilder<MoneySettingsSnapshot>(
+          future: _future,
+          builder: (context, snapshot) {
+            return widget.builder(snapshot.data ?? _store.snapshot);
+          },
+        );
+      },
     );
   }
 }
@@ -488,9 +581,8 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                 return _MonthChoiceButton(
                   label: _monthLabel(context, month),
                   isSelected: isSelected,
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pop(DateTime(_year, month)),
+                  onTap: () =>
+                      Navigator.of(context).pop(DateTime(_year, month)),
                 );
               },
             ),
@@ -531,10 +623,7 @@ class _MonthChoiceButton extends StatelessWidget {
               ? const Color(0xFFE8F8F8)
               : Colors.white.withValues(alpha: 0.76),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: borderColor,
-            width: isSelected ? 2.2 : 1,
-          ),
+          border: Border.all(color: borderColor, width: isSelected ? 2.2 : 1),
           boxShadow: isSelected
               ? const [
                   BoxShadow(
@@ -885,6 +974,200 @@ class _EmptyInfoCard extends StatelessWidget {
   }
 }
 
+class _BudgetProgressCard extends StatelessWidget {
+  const _BudgetProgressCard({required this.budget, required this.spent});
+
+  final double budget;
+  final double spent;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final remaining = budget - spent;
+    final progress = budget <= 0 ? 0.0 : (spent / budget).clamp(0.0, 1.0);
+    final isOver = spent > budget;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10305472),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F8F8),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: isOver
+                      ? const Color(0xFFB66A72)
+                      : const Color(0xFF0C8C8C),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings.budget,
+                      style: const TextStyle(
+                        color: Color(0xFF111827),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isOver
+                          ? 'Over by ${_formatMoney(remaining.abs())}'
+                          : '${_formatMoney(remaining)} left',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '${(progress * 100).toStringAsFixed(0)}%',
+                style: TextStyle(
+                  color: isOver
+                      ? const Color(0xFFB66A72)
+                      : const Color(0xFF0C8C8C),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 9,
+              backgroundColor: const Color(0xFFE7EDF4),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isOver ? const Color(0xFFB66A72) : const Color(0xFF0C8C8C),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '${_formatMoney(spent)} spent of ${_formatMoney(budget)}',
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InstallmentDueCard extends StatelessWidget {
+  const _InstallmentDueCard({required this.plans, required this.month});
+
+  final List<InstallmentPlan> plans;
+  final DateTime month;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = plans.fold<double>(0, (sum, plan) => sum + plan.amount);
+    final first = plans.first;
+    final moreCount = plans.length - 1;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10305472),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE7EDF4),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.event_available_rounded,
+              color: Color(0xFF475569),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  first.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  moreCount > 0
+                      ? '${_formatMoney(total)} due across ${plans.length} plans'
+                      : '${_formatMoney(first.amount)} due this month',
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title});
 
@@ -1002,7 +1285,8 @@ class _TransactionListTile extends StatelessWidget {
       categoryIcon: categoryIconData(record.categoryId),
       title: title,
       subtitle: '${record.source.firestoreValue} · $categoryName',
-      amount: '${_transactionPrefix(record.type)}${_formatMoney(record.amount)}',
+      amount:
+          '${_transactionPrefix(record.type)}${_formatMoney(record.amount)}',
       amountColor: _transactionColor(record.type),
     );
   }
@@ -1089,7 +1373,6 @@ class _ListTileCard extends StatelessWidget {
     );
   }
 }
-
 
 String _formatMoney(double amount) {
   final sign = amount < 0 ? '-' : '';

@@ -42,6 +42,8 @@ dependencies:
   cloud_firestore: ^6.6.0
   image_picker: ^1.2.3
   google_mlkit_text_recognition: ^0.16.0
+  tesseract_ocr:
+    path: third_party/tesseract_ocr
   shared_preferences: ^2.1.0
   http: ^1.1.0
 
@@ -84,6 +86,10 @@ flutter:
           weight: 800
         - asset: assets/fonts/itim/Itim-Regular.ttf
           weight: 900
+
+  assets:
+    - assets/tessdata_config.json
+    - assets/tessdata/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

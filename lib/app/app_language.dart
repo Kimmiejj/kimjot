@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum AppLanguage {
   th(Locale('th'), 'ไทย'),
@@ -14,6 +15,8 @@ class AppLanguageController extends ChangeNotifier {
   AppLanguageController({AppLanguage initialLanguage = AppLanguage.en})
     : _language = initialLanguage;
 
+  static const _preferenceKey = 'app.language';
+
   AppLanguage _language;
 
   AppLanguage get language => _language;
@@ -22,13 +25,35 @@ class AppLanguageController extends ChangeNotifier {
 
   AppStrings get strings => AppStrings(_language);
 
-  void setLanguage(AppLanguage language) {
+  static Future<AppLanguage> loadSavedLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    return _languageFromCode(prefs.getString(_preferenceKey)) ?? AppLanguage.en;
+  }
+
+  Future<void> setLanguage(AppLanguage language) async {
     if (_language == language) {
       return;
     }
 
     _language = language;
     notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_preferenceKey, language.name);
+  }
+
+  static AppLanguage? _languageFromCode(String? code) {
+    if (code == null || code.trim().isEmpty) {
+      return null;
+    }
+
+    for (final language in AppLanguage.values) {
+      if (language.name == code || language.locale.languageCode == code) {
+        return language;
+      }
+    }
+
+    return null;
   }
 }
 

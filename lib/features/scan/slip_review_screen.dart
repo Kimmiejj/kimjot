@@ -152,7 +152,7 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
     );
     if (!mounted) return;
 
-    final decision = resolveLocalSlipDecision(result);
+    final decision = resolveBestEffortSlipDecision(result);
     if (decision == null) {
       return;
     }
@@ -205,7 +205,7 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
     final currentImagePath = _currentImagePath;
     final decision = scanResult == null
         ? null
-        : resolveLocalSlipDecision(scanResult);
+        : resolveBestEffortSlipDecision(scanResult);
 
     final parsedDate = parseTransactionDateFrom(
       dateText: scanResult?.dateText,
@@ -343,7 +343,7 @@ class _ReviewQueueCard extends StatelessWidget {
           Expanded(
             child: Text(
               strings.isThai
-                  ? 'à¸ªà¸¥à¸´à¸› ${currentIndex + 1} à¸ˆà¸²à¸ $totalCount'
+                  ? 'สลิป ${currentIndex + 1} จาก $totalCount'
                   : 'Slip ${currentIndex + 1} of $totalCount',
               textAlign: TextAlign.center,
               style: _summaryValueStyle,
@@ -542,7 +542,7 @@ class _HighConfidenceCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            strings.isThai ? 'AI à¸¡à¸±à¹ˆà¸™à¹ƒà¸ˆà¸ªà¸¹à¸‡' : 'High Confidence',
+            strings.isThai ? 'AI มั่นใจสูง' : 'High Confidence',
             style: const TextStyle(
               color: Color(0xFF1B8F73),
               fontSize: 16,
@@ -552,8 +552,8 @@ class _HighConfidenceCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             strings.isThai
-                ? 'à¸£à¸°à¸šà¸šà¸­à¹ˆà¸²à¸™à¸ªà¸¥à¸´à¸›à¹„à¸”à¹‰ $confidencePercent% â€” à¸ªà¸²à¸¡à¸²à¸£à¸–à¸šà¸±à¸™à¸—à¸¶à¸à¸­à¸±à¸•à¹‚à¸™à¸¡à¸±à¸•à¸´à¹„à¸”à¹‰'
-                : 'AI detected amount with $confidencePercent% confidence â€” auto-save available',
+                ? 'ระบบอ่านสลิปได้ $confidencePercent% - สามารถบันทึกอัตโนมัติได้'
+                : 'AI detected amount with $confidencePercent% confidence - auto-save available',
             style: const TextStyle(
               color: Color(0xFF10233F),
               fontSize: 13,
@@ -565,7 +565,7 @@ class _HighConfidenceCard extends StatelessWidget {
             onPressed: onAutoAccept,
             icon: const Icon(Icons.check_rounded),
             label: Text(
-              strings.isThai ? 'à¸¢à¸­à¸¡à¸£à¸±à¸š & à¸šà¸±à¸™à¸—à¸¶à¸' : 'Accept & Save',
+              strings.isThai ? 'ยอมรับ & บันทึก' : 'Accept & Save',
             ),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.green,

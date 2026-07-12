@@ -171,14 +171,14 @@ If none of the candidates seem correct, return {"chosen": null, "confidence": 0.
       defaultValue: 'gpt-3.5-turbo',
     );
 
-    final system =
-        '''You classify transaction slips from OCR text.
+    final system = '''You classify transaction slips from OCR text.
 Return JSON only with this shape:
-{"type":"expense|income|internal_transfer","categoryId":"one of the allowed category ids","note":"short optional note or null","confidence":0.0}
+{"type":"expense|internal_transfer","categoryId":"one of the allowed category ids","note":"short optional note or null","confidence":0.0}
 Rules:
 - Choose exactly one categoryId from the allowed list.
+- Never classify an OCR slip as income. Income must be entered manually by the user.
 - Use "internal_transfer" when the sender and recipient appear to be the same person moving money between their own accounts.
-- Keep note short and factual, preferably merchant/bank/reference style.
+- Keep note short and factual. Prefer merchant/place names. Do not put sender or recipient person names in the note.
 - If uncertain, still choose the best option and lower confidence.
 ''';
 

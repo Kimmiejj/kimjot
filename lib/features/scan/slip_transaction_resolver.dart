@@ -1,5 +1,6 @@
 import '../transactions/transaction_type.dart';
 import 'slip_scan_result.dart';
+import 'slip_text_parser.dart';
 
 class SlipTransactionDecision {
   const SlipTransactionDecision({
@@ -15,7 +16,7 @@ class SlipTransactionDecision {
   final String? note;
 }
 
-const List<String> kSlipAnalysisCategoryIds = [
+const kSlipAnalysisCategoryIds = <String>[
   'food',
   'drink',
   'groceries',
@@ -32,65 +33,48 @@ const List<String> kSlipAnalysisCategoryIds = [
   'tax',
   'donation',
   'transfer',
-  'salary',
-  'side_job',
-  'business',
-  'bonus',
-  'investment',
-  'interest',
-  'sale',
-  'allowance',
-  'gift',
-  'refund',
   'internal_transfer',
   'other',
-  'other_income',
 ];
 
-String savedCategoryNameForId(String categoryId) {
-  return switch (categoryId) {
-    'food' => 'Food',
-    'drink' => 'Drinks',
-    'groceries' => 'Groceries',
-    'transport' => 'Transport',
-    'shopping' => 'Shopping',
-    'bills' => 'Bills',
-    'rent' => 'Rent / Home',
-    'health' => 'Health',
-    'education' => 'Education',
-    'entertainment' => 'Entertainment',
-    'travel' => 'Travel',
-    'family' => 'Family',
-    'insurance' => 'Insurance',
-    'tax' => 'Tax / Fees',
-    'donation' => 'Donation',
-    'transfer' => 'Transfer',
-    'salary' => 'Salary',
-    'side_job' => 'Side Job',
-    'business' => 'Business',
-    'bonus' => 'Bonus',
-    'investment' => 'Investment',
-    'interest' => 'Interest / Dividend',
-    'sale' => 'Sale',
-    'allowance' => 'Allowance',
-    'gift' => 'Gift',
-    'refund' => 'Refund',
-    'internal_transfer' => 'Internal Transfer',
-    _ => 'Other',
-  };
-}
+String savedCategoryNameForId(String categoryId) => switch (categoryId) {
+  'food' => 'Food',
+  'drink' => 'Drinks',
+  'groceries' => 'Groceries',
+  'transport' => 'Transport',
+  'shopping' => 'Shopping',
+  'bills' => 'Bills',
+  'rent' => 'Rent / Home',
+  'health' => 'Health',
+  'education' => 'Education',
+  'entertainment' => 'Entertainment',
+  'travel' => 'Travel',
+  'family' => 'Family',
+  'insurance' => 'Insurance',
+  'tax' => 'Tax / Fees',
+  'donation' => 'Donation',
+  'transfer' => 'Transfer',
+  'salary' => 'Salary',
+  'side_job' => 'Side Job',
+  'business' => 'Business',
+  'bonus' => 'Bonus',
+  'investment' => 'Investment',
+  'interest' => 'Interest / Dividend',
+  'sale' => 'Sale',
+  'allowance' => 'Allowance',
+  'gift' => 'Gift',
+  'refund' => 'Refund',
+  'internal_transfer' => 'Internal Transfer',
+  _ => 'Other',
+};
 
 TransactionType? resolveTransactionTypeFromSlip(SlipScanResult result) {
   if (partiesLookLikeSamePerson(result.sender, result.recipient)) {
     return TransactionType.internalTransfer;
   }
-  if (result.category == SlipCategory.income) {
-    return TransactionType.income;
-  }
-  if (result.category == SlipCategory.expense) {
-    return TransactionType.expense;
-  }
-  if (looksLikePaymentSlip(result)) {
+  if (result.category == SlipCategory.expense ||
+      result.category == SlipCategory.income ||
+      looksLikePaymentSlip(result)) {
     return TransactionType.expense;
   }
   return null;
@@ -98,11 +82,7 @@ TransactionType? resolveTransactionTypeFromSlip(SlipScanResult result) {
 
 SlipTransactionDecision? resolveLocalSlipDecision(SlipScanResult result) {
   final type = resolveTransactionTypeFromSlip(result);
-  if (type == null) {
-    return null;
-  }
-
-  final text = result.rawText.toLowerCase();
+  if (type == null) return null;
   if (type == TransactionType.internalTransfer) {
     return SlipTransactionDecision(
       type: type,
@@ -112,191 +92,271 @@ SlipTransactionDecision? resolveLocalSlipDecision(SlipScanResult result) {
     );
   }
 
-  if (type == TransactionType.income) {
-    if (text.contains('salary') || text.contains('à¹€à¸‡à¸´à¸™à¹€à¸”à¸·à¸­à¸™')) {
-      return _decision(type, 'salary', 'Salary', result);
+  final text = SlipTextParser.repairThaiMojibake(result.rawText).toLowerCase();
+  final categories = <(String, String, String)>[
+    ('ptt', 'transport', 'Transport'),
+    ('\u0E1B\u0E15\u0E17', 'transport', 'Transport'),
+    ('food patio', 'food', 'Food'),
+    ('food', 'food', 'Food'),
+    ('restaurant', 'food', 'Food'),
+    ('\u0E23\u0E49\u0E32\u0E19\u0E2D\u0E32\u0E2B\u0E32\u0E23', 'food', 'Food'),
+    ('\u0E2D\u0E32\u0E2B\u0E32\u0E23', 'food', 'Food'),
+    ('drink', 'drink', 'Drinks'),
+    ('coffee', 'drink', 'Drinks'),
+    ('cafe', 'drink', 'Drinks'),
+    ('\u0E01\u0E32\u0E41\u0E1F', 'drink', 'Drinks'),
+    ('grocery', 'groceries', 'Groceries'),
+    ('groceries', 'groceries', 'Groceries'),
+    ('supermarket', 'groceries', 'Groceries'),
+    ('\u0E0B\u0E39\u0E40\u0E1B\u0E2D\u0E23\u0E4C', 'groceries', 'Groceries'),
+    ('transport', 'transport', 'Transport'),
+    ('taxi', 'transport', 'Transport'),
+    ('grab', 'transport', 'Transport'),
+    ('bus', 'transport', 'Transport'),
+    ('\u0E02\u0E19\u0E2A\u0E48\u0E07', 'transport', 'Transport'),
+    ('\u0E41\u0E17\u0E47\u0E01\u0E0B\u0E35\u0E48', 'transport', 'Transport'),
+    ('health', 'health', 'Health'),
+    ('hospital', 'health', 'Health'),
+    ('clinic', 'health', 'Health'),
+    ('pharmacy', 'health', 'Health'),
+    ('\u0E22\u0E32', 'health', 'Health'),
+    ('bill', 'bills', 'Bills'),
+    ('electricity', 'bills', 'Bills'),
+    ('water', 'bills', 'Bills'),
+    ('internet', 'bills', 'Bills'),
+    ('phone', 'bills', 'Bills'),
+    (
+      '\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22',
+      'bills',
+      'Bills',
+    ),
+    ('\u0E04\u0E48\u0E32', 'bills', 'Bills'),
+    ('rent', 'rent', 'Rent / Home'),
+    ('\u0E40\u0E0A\u0E48\u0E32', 'rent', 'Rent / Home'),
+    ('insurance', 'insurance', 'Insurance'),
+    ('\u0E1B\u0E23\u0E30\u0E01\u0E31\u0E19', 'insurance', 'Insurance'),
+    ('tax', 'tax', 'Tax / Fees'),
+    ('fee', 'tax', 'Tax / Fees'),
+    (
+      '\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21',
+      'tax',
+      'Tax / Fees',
+    ),
+    ('donation', 'donation', 'Donation'),
+    ('\u0E1A\u0E23\u0E34\u0E08\u0E32\u0E04', 'donation', 'Donation'),
+  ];
+  for (final category in categories) {
+    if (text.contains(category.$1)) {
+      return _decision(type, category.$2, category.$3, result);
     }
-    if (text.contains('bonus') || text.contains('à¹‚à¸šà¸™à¸±à¸ª')) {
-      return _decision(type, 'bonus', 'Bonus', result);
-    }
-    if (text.contains('interest') || text.contains('à¸”à¸­à¸à¹€à¸šà¸µà¹‰à¸¢')) {
-      return _decision(type, 'interest', 'Interest / Dividend', result);
-    }
-    if (text.contains('sale') || text.contains('à¸‚à¸²à¸¢')) {
-      return _decision(type, 'sale', 'Sale', result);
-    }
-    if (text.contains('refund') || text.contains('à¸„à¸·à¸™à¹€à¸‡à¸´à¸™')) {
-      return _decision(type, 'refund', 'Refund', result);
-    }
-    if (text.contains('gift') || text.contains('à¸‚à¸­à¸‡à¸‚à¸§à¸±à¸')) {
-      return _decision(type, 'gift', 'Gift', result);
-    }
-    return _decision(type, 'salary', 'Salary', result);
   }
-
   if (looksLikePaymentSlip(result) || result.reference != null) {
     return _decision(type, 'transfer', 'Transfer', result);
-  }
-  if (text.contains('food') ||
-      text.contains('restaurant') ||
-      text.contains('à¸£à¹‰à¸²à¸™à¸­à¸²à¸«à¸²à¸£') ||
-      text.contains('à¸­à¸²à¸«à¸²à¸£')) {
-    return _decision(type, 'food', 'Food', result);
-  }
-  if (text.contains('drink') ||
-      text.contains('coffee') ||
-      text.contains('cafe') ||
-      text.contains('à¸à¸²à¹à¸Ÿ')) {
-    return _decision(type, 'drink', 'Drinks', result);
-  }
-  if (text.contains('grocery') ||
-      text.contains('groceries') ||
-      text.contains('supermarket') ||
-      text.contains('à¸‹à¸¹à¹€à¸›à¸­à¸£à¹Œ')) {
-    return _decision(type, 'groceries', 'Groceries', result);
-  }
-  if (text.contains('transport') ||
-      text.contains('taxi') ||
-      text.contains('grab') ||
-      text.contains('bus') ||
-      text.contains('à¸‚à¸™à¸ªà¹ˆà¸‡') ||
-      text.contains('à¹à¸—à¹‡à¸à¸‹à¸µà¹ˆ')) {
-    return _decision(type, 'transport', 'Transport', result);
-  }
-  if (text.contains('health') ||
-      text.contains('hospital') ||
-      text.contains('clinic') ||
-      text.contains('pharmacy') ||
-      text.contains('medicine') ||
-      text.contains('à¹‚à¸£à¸‡à¸žà¸¢à¸²à¸šà¸²à¸¥') ||
-      text.contains('à¸¢à¸²')) {
-    return _decision(type, 'health', 'Health', result);
-  }
-  if (text.contains('education') ||
-      text.contains('school') ||
-      text.contains('course') ||
-      text.contains('training') ||
-      text.contains('à¹‚à¸£à¸‡à¹€à¸£à¸µà¸¢à¸™') ||
-      text.contains('à¸¨à¸¶à¸à¸©à¸²')) {
-    return _decision(type, 'education', 'Education', result);
-  }
-  if (text.contains('entertainment') ||
-      text.contains('movie') ||
-      text.contains('cinema') ||
-      text.contains('game') ||
-      text.contains('à¸šà¸±à¸™à¹€à¸—à¸´à¸‡') ||
-      text.contains('à¸ à¸²à¸žà¸¢à¸™à¸•à¸£à¹Œ')) {
-    return _decision(type, 'entertainment', 'Entertainment', result);
-  }
-  if (text.contains('travel') ||
-      text.contains('hotel') ||
-      text.contains('flight') ||
-      text.contains('ticket') ||
-      text.contains('à¸—à¹ˆà¸­à¸‡à¹€à¸—à¸µà¹ˆà¸¢à¸§') ||
-      text.contains('à¹‚à¸£à¸‡à¹à¸£à¸¡')) {
-    return _decision(type, 'travel', 'Travel', result);
-  }
-  if (text.contains('bill') ||
-      text.contains('electricity') ||
-      text.contains('water') ||
-      text.contains('internet') ||
-      text.contains('phone') ||
-      text.contains('utility') ||
-      text.contains('à¸„à¹ˆà¸²à¸ˆà¹‰à¸²à¸‡') ||
-      text.contains('à¸„à¹ˆà¸²')) {
-    return _decision(type, 'bills', 'Bills', result);
-  }
-  if (text.contains('rent') ||
-      text.contains('lease') ||
-      text.contains('apartment') ||
-      text.contains('house') ||
-      text.contains('à¹€à¸Šà¹ˆà¸²')) {
-    return _decision(type, 'rent', 'Rent / Home', result);
-  }
-  if (text.contains('insurance') || text.contains('policy') || text.contains('à¸›à¸£à¸°à¸à¸±à¸™')) {
-    return _decision(type, 'insurance', 'Insurance', result);
-  }
-  if (text.contains('tax') ||
-      text.contains('fee') ||
-      text.contains('charge') ||
-      text.contains('à¸„à¹ˆà¸²à¸˜à¸£à¸£à¸¡à¹€à¸™à¸µà¸¢à¸¡')) {
-    return _decision(type, 'tax', 'Tax / Fees', result);
-  }
-  if (text.contains('donation') || text.contains('charity') || text.contains('à¸šà¸£à¸´à¸ˆà¸²à¸„')) {
-    return _decision(type, 'donation', 'Donation', result);
   }
   return _decision(type, 'shopping', 'Shopping', result);
 }
 
+SlipTransactionDecision? resolveBestEffortSlipDecision(SlipScanResult result) {
+  final localDecision = resolveLocalSlipDecision(result);
+  if (localDecision != null) return localDecision;
+  if (result.amount == null || result.amount! <= 0) return null;
+
+  final text = SlipTextParser.repairThaiMojibake(result.rawText).toLowerCase();
+  final looksLikeSlip =
+      result.hasUsefulData ||
+      [
+        'scb',
+        'k plus',
+        'truemoney',
+        'wallet',
+        'reference',
+        'transaction',
+        'biller',
+        '\u0E08\u0E48\u0E32\u0E22',
+        '\u0E0A\u0E33\u0E23\u0E30',
+        '\u0E40\u0E15\u0E34\u0E21\u0E40\u0E07\u0E34\u0E19',
+        '\u0E42\u0E2D\u0E19',
+        '\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19',
+      ].any(text.contains);
+  if (!looksLikeSlip) return null;
+
+  return _decision(TransactionType.expense, 'transfer', 'Transfer', result);
+}
+
 bool looksLikePaymentSlip(SlipScanResult result) {
-  final text = result.rawText.toLowerCase();
+  final text = SlipTextParser.repairThaiMojibake(result.rawText).toLowerCase();
   return result.bankName != null ||
       result.reference != null ||
-      text.contains('k plus') ||
-      text.contains('scb') ||
-      text.contains('transfer') ||
-      text.contains('payment') ||
-      text.contains('transaction') ||
-      text.contains('à¹‚à¸­à¸™') ||
-      text.contains('à¸Šà¸³à¸£à¸°') ||
-      text.contains('à¸žà¸£à¹‰à¸­à¸¡à¹€à¸žà¸¢à¹Œ') ||
-      text.contains('à¹€à¸¥à¸‚à¸—à¸µà¹ˆ') ||
-      text.contains('à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡') ||
-      text.contains('à¸ˆà¸³à¸™à¸§à¸™à¹€à¸‡à¸´à¸™');
+      [
+        'k plus',
+        'scb',
+        'truemoney',
+        'wallet',
+        'transfer',
+        'payment',
+        'transaction',
+        'biller',
+        '\u0E42\u0E2D\u0E19',
+        '\u0E0A\u0E33\u0E23\u0E30',
+        '\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E40\u0E1E\u0E22\u0E4C',
+        '\u0E40\u0E15\u0E34\u0E21\u0E40\u0E07\u0E34\u0E19',
+        '\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48',
+        '\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07',
+        '\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19',
+      ].any(text.contains);
 }
 
 bool partiesLookLikeSamePerson(String? sender, String? recipient) {
-  final normalizedSender = _normalizePartyName(sender);
-  final normalizedRecipient = _normalizePartyName(recipient);
-  if (normalizedSender == null || normalizedRecipient == null) {
-    return false;
-  }
+  final senderTokens = _nameTokens(_withoutThaiTitles(sender));
+  final recipientTokens = _nameTokens(_withoutThaiTitles(recipient));
+  if (senderTokens.isEmpty || recipientTokens.isEmpty) return false;
+  return senderTokens.intersection(recipientTokens).isNotEmpty;
+}
 
-  if (normalizedSender == normalizedRecipient) {
-    return true;
-  }
-
-  if (normalizedSender.contains(normalizedRecipient) ||
-      normalizedRecipient.contains(normalizedSender)) {
-    return true;
-  }
-
-  final senderTokens = _nameTokens(sender);
-  final recipientTokens = _nameTokens(recipient);
-  if (senderTokens.isEmpty || recipientTokens.isEmpty) {
-    return false;
-  }
-
-  final overlap = senderTokens.intersection(recipientTokens);
-  if (overlap.isEmpty) {
-    return false;
-  }
-
-  final smallerSetSize = senderTokens.length <= recipientTokens.length
-      ? senderTokens.length
-      : recipientTokens.length;
-  return overlap.length == smallerSetSize;
+String? _withoutThaiTitles(String? value) {
+  if (value == null) return null;
+  return SlipTextParser.repairThaiMojibake(value).replaceAll(
+    RegExp(
+      r'\b(account|mr|mrs|ms|miss|bank|wallet)\b|\u0E19\u0E32\u0E22|\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27|\u0E19\u0E32\u0E07|\u0E04\u0E38\u0E13|\u0E14\u0E23\.?|\u0E18\.?|\u0E18\u0E19\u0E32\u0E04\u0E32\u0E23',
+    ),
+    ' ',
+  );
 }
 
 String? buildSlipNote(SlipScanResult result, {String? overrideNote}) {
-  final values = <String>[
-    if (result.sender != null && result.sender!.trim().isNotEmpty)
-      'From ${result.sender!.trim()}',
-    if (result.recipient != null && result.recipient!.trim().isNotEmpty)
-      'To ${result.recipient!.trim()}',
-    if (result.bankName != null && result.bankName!.trim().isNotEmpty)
-      result.bankName!.trim(),
-    if (result.reference != null && result.reference!.trim().isNotEmpty)
-      result.reference!.trim(),
-    if (overrideNote != null && overrideNote.trim().isNotEmpty)
-      overrideNote.trim(),
-  ];
-
-  if (values.isEmpty) {
-    return null;
+  final cleanedOverride = _cleanNoteCandidate(overrideNote);
+  if (cleanedOverride != null &&
+      !_sameCleanedParty(cleanedOverride, result.sender) &&
+      !_sameCleanedParty(cleanedOverride, result.recipient)) {
+    return cleanedOverride;
   }
 
-  return values.toSet().join(' / ');
+  final merchant =
+      _merchantNoteFrom(result.recipient) ??
+      _merchantNoteFromText(result.rawText);
+  if (merchant != null) return merchant;
+
+  final bank = _bankNote(result.bankName);
+  if (_looksLikePerson(result.recipient) || _looksLikePerson(result.sender)) {
+    return bank == null ? 'Transfer' : '$bank transfer';
+  }
+  return bank == null ? null : '$bank transfer';
+}
+
+String? _cleanNoteCandidate(String? value) {
+  if (value == null) return null;
+  final repaired = SlipTextParser.repairThaiMojibake(
+    value,
+  ).replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (repaired.isEmpty || SlipTextParser.looksUnreadable(repaired)) return null;
+  return repaired;
+}
+
+String? _merchantNoteFrom(String? value) {
+  final cleaned = _cleanNoteCandidate(value);
+  if (cleaned == null ||
+      _looksLikePerson(cleaned) ||
+      _isMostlyAccountOrReference(cleaned)) {
+    return null;
+  }
+  return cleaned;
+}
+
+String? _merchantNoteFromText(String text) {
+  final repaired = SlipTextParser.repairThaiMojibake(text);
+  final lower = repaired.toLowerCase();
+  for (final known in <String>[
+    'PTT',
+    'Food Patio',
+    '7-Eleven',
+    'Lotus',
+    'Big C',
+    'Grab',
+    'TrueMoney',
+  ]) {
+    if (lower.contains(known.toLowerCase())) return known;
+  }
+
+  final lines = repaired
+      .split(RegExp(r'\r?\n'))
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
+  for (var i = 0; i < lines.length; i++) {
+    final lowerLine = lines[i].toLowerCase();
+    if (!(lowerLine.contains('merchant') ||
+        lowerLine.contains('biller') ||
+        lowerLine.contains('\u0E23\u0E49\u0E32\u0E19'))) {
+      continue;
+    }
+    final inline = lines[i]
+        .replaceFirst(RegExp(r'^.*?[:\uFF1A]\s*'), '')
+        .trim();
+    final inlineMerchant = _merchantNoteFrom(inline);
+    if (inlineMerchant != null) return inlineMerchant;
+    if (i + 1 < lines.length) {
+      final nextMerchant = _merchantNoteFrom(lines[i + 1]);
+      if (nextMerchant != null) return nextMerchant;
+    }
+  }
+  return null;
+}
+
+String? _bankNote(String? bankName) {
+  final cleaned = _cleanNoteCandidate(bankName);
+  if (cleaned == null) return null;
+  final upper = cleaned.toUpperCase();
+  if (upper.contains('SCB')) return 'SCB';
+  if (upper.contains('K PLUS') ||
+      upper.contains('KPLUS') ||
+      upper.contains('KASIKORN')) {
+    return 'K PLUS';
+  }
+  return cleaned;
+}
+
+bool _sameCleanedParty(String value, String? party) {
+  final cleanedParty = _cleanNoteCandidate(party);
+  return cleanedParty != null &&
+      value.toLowerCase() == cleanedParty.toLowerCase();
+}
+
+bool _looksLikePerson(String? value) {
+  final cleaned = _cleanNoteCandidate(value);
+  if (cleaned == null) return false;
+  final lower = cleaned.toLowerCase();
+  if (RegExp(r'\b(mr|mrs|ms|miss)\b').hasMatch(lower)) return true;
+  if (RegExp(
+    r'\u0E19\u0E32\u0E22|\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27|\u0E19\u0E32\u0E07|\u0E04\u0E38\u0E13',
+  ).hasMatch(cleaned)) {
+    return true;
+  }
+  final tokens = _nameTokens(cleaned);
+  return tokens.length >= 2 && !_isMostlyBusinessName(cleaned);
+}
+
+bool _isMostlyBusinessName(String value) {
+  final lower = value.toLowerCase();
+  return [
+    'food',
+    'patio',
+    'ptt',
+    'biller',
+    'company',
+    'co.',
+    'ltd',
+    'restaurant',
+    'cafe',
+    'shop',
+    'store',
+  ].any(lower.contains);
+}
+
+bool _isMostlyAccountOrReference(String value) {
+  final compact = value.replaceAll(RegExp(r'\s+'), '');
+  return compact.isEmpty ||
+      RegExp(r'^[xX*\u2022\-\d]+$').hasMatch(compact) ||
+      RegExp(r'^[A-Z0-9\-]{8,}$', caseSensitive: false).hasMatch(compact);
 }
 
 SlipTransactionDecision _decision(
@@ -304,40 +364,27 @@ SlipTransactionDecision _decision(
   String categoryId,
   String categoryName,
   SlipScanResult result,
-) {
-  return SlipTransactionDecision(
-    type: type,
-    categoryId: categoryId,
-    categoryName: categoryName,
-    note: buildSlipNote(result),
-  );
-}
-
-String? _normalizePartyName(String? value) {
-  if (value == null) {
-    return null;
-  }
-
-  final normalized = value
-      .toLowerCase()
-      .replaceAll(RegExp(r'account|บัญชี|เลขที่|นาย|นางสาว|นาง'), '')
-      .replaceAll(RegExp(r'[^a-z0-9\u0E00-\u0E7F]'), '');
-  if (normalized.length < 3) {
-    return null;
-  }
-  return normalized;
-}
+) => SlipTransactionDecision(
+  type: type,
+  categoryId: categoryId,
+  categoryName: categoryName,
+  note: buildSlipNote(result),
+);
 
 Set<String> _nameTokens(String? value) {
-  if (value == null) {
-    return const {};
-  }
-
-  return value
+  if (value == null) return const {};
+  final stripped = SlipTextParser.repairThaiMojibake(value)
       .toLowerCase()
+      .replaceAll(
+        RegExp(
+          r'\b(account|mr|mrs|ms|miss|bank|wallet|true|money)\b|\u0E19\u0E32\u0E22|\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27|\u0E19\u0E32\u0E07|\u0E04\u0E38\u0E13|\u0E14\u0E23\.?|\u0E18\.?|\u0E18\u0E19\u0E32\u0E04\u0E32\u0E23|\u0E1A\u0E31\u0E0D\u0E0A\u0E35|\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48',
+        ),
+        ' ',
+      );
+  const ignored = {'account', 'bank', 'wallet', 'true', 'money', 'k', 'plus'};
+  return stripped
       .split(RegExp(r'[^a-z0-9\u0E00-\u0E7F]+'))
-      .map((token) => _normalizePartyName(token))
-      .whereType<String>()
-      .where((token) => token.length >= 3)
+      .map((token) => token.trim())
+      .where((token) => token.length >= 2 && !ignored.contains(token))
       .toSet();
 }

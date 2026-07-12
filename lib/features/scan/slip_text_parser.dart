@@ -1,9 +1,9 @@
+import 'dart:convert';
+
 import 'slip_amount_classifier.dart';
 import 'slip_scan_result.dart';
 
 class SlipTextParser {
-  SlipTextParser();
-
   double? _lastAmountConfidence;
 
   SlipScanResult parse(
@@ -11,161 +11,173 @@ class SlipTextParser {
     double? suggestedAmount,
     double? suggestedConfidence,
   }) {
-    final lines = rawText
+    final text = repairThaiMojibake(rawText);
+    final lines = text
         .split(RegExp(r'\r?\n'))
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    final compact = lines.join('\n');
-
-    final detectedAmount = _detectAmount(lines);
-    final finalAmount = suggestedAmount ?? detectedAmount;
-    final detectedRecipient = _detectNearbyValue(lines, [
-      'to',
-      'recipient',
-      'receiver',
-      'ผู้รับ',
-      'ไปยัง',
-      'ชื่อบัญชี',
-    ]);
-    final detectedSender = _detectNearbyValue(lines, [
-      'from',
-      'sender',
-      'ผู้โอน',
-      'จาก',
-    ]);
-
+    final parties = _detectParties(lines);
+    final amount = suggestedAmount ?? _detectAmount(lines);
     final result = SlipScanResult(
-      rawText: rawText,
-      bankName: _detectBank(compact),
-      amount: finalAmount,
-      dateText: _detectDate(compact),
-      timeText: _detectTime(compact),
-      recipient: detectedRecipient,
-      sender: detectedSender,
+      rawText: text,
+      bankName: _detectBank(lines.join('\n')),
+      amount: amount,
+      dateText: _detectDate(text),
+      timeText: RegExp(r'\d{1,2}:\d{2}(?::\d{2})?').firstMatch(text)?.group(0),
+      sender: parties?.sender,
+      recipient: parties?.recipient,
       reference: _detectReference(lines),
-      category: _detectCategory(
-        rawText,
-        lines,
-        detectedAmount,
-        detectedSender,
-        detectedRecipient,
-      ),
-      amountConfidence: suggestedAmount != null
-          ? suggestedConfidence
-          : _lastAmountConfidence,
+      category: _detectCategory(text, amount, parties),
+      amountConfidence: suggestedAmount == null
+          ? _lastAmountConfidence
+          : suggestedConfidence,
     );
-
     _lastAmountConfidence = null;
     return result;
   }
 
-  SlipCategory _detectCategory(
-    String rawText,
-    List<String> lines,
-    double? amount,
-    String? sender,
-    String? recipient,
-  ) {
-    final lower = rawText.toLowerCase();
-
-    final incomeKeywords = [
-      'income',
-      'credit',
-      'credited',
-      'deposit',
-      'received',
-      'receipt received',
-      'receipt of',
-      'payment received',
-      'เงินเข้า',
-      'รับเงิน',
-      'เครดิต',
-    ];
-    final expenseKeywords = [
-      'payment',
-      'paid',
-      'purchase',
-      'total',
-      'amount',
-      'withdrawal',
-      'debit',
-      'invoice',
-      'receipt',
-      'bill',
-      'ค่าบริการ',
-      'ซื้อ',
-      'จ่าย',
-      'ยอดเงิน',
-    ];
-
-    for (final keyword in incomeKeywords) {
-      if (lower.contains(keyword)) {
-        return SlipCategory.income;
-      }
-    }
-
-    for (final keyword in expenseKeywords) {
-      if (lower.contains(keyword)) {
-        return SlipCategory.expense;
-      }
-    }
-
-    if (sender != null && recipient == null) {
-      return SlipCategory.income;
-    }
-
-    if (recipient != null && sender == null) {
-      return SlipCategory.expense;
-    }
-
-    if (amount != null) {
-      final nearby = lines.join(' ');
-      if (nearby.contains('to') || nearby.contains('ไปยัง')) {
-        return SlipCategory.expense;
-      }
-    }
-
-    return SlipCategory.unknown;
+  static String repairThaiMojibake(String text) {
+    final candidates = <String>{
+      text,
+      _decodeLatin1Utf8(text),
+      _decodeLatin1Utf8(_decodeLatin1Utf8(text)),
+      _decodeWindows1252Utf8(text),
+      _decodeWindows1252Utf8(_decodeWindows1252Utf8(text)),
+      _decodeTis620(text),
+    }..removeWhere((value) => value.isEmpty);
+    if (candidates.isEmpty) return '';
+    return candidates.reduce(
+      (best, current) =>
+          _textScore(current) > _textScore(best) ? current : best,
+    );
   }
 
-  String? _detectBank(String text) {
-    final upper = text.toUpperCase();
-    if (upper.contains('K PLUS') ||
-        upper.contains('KPLUS') ||
-        upper.contains('KASIKORN') ||
-        text.contains('กสิกร')) {
-      return 'K PLUS';
-    }
+  static bool looksUnreadable(String text) {
+    final repaired = repairThaiMojibake(text).trim();
+    if (repaired.isEmpty) return true;
+    final hasThai = RegExp(r'[\u0E00-\u0E7F]').hasMatch(repaired);
+    final hasAsciiWord = RegExp(r'[A-Za-z]{2,}').hasMatch(repaired);
+    final suspiciousLatin = RegExp(r'[\u00C0-\u00FF]').hasMatch(repaired);
+    return suspiciousLatin && !hasThai && !hasAsciiWord;
+  }
 
-    if (upper.contains('SCB EASY') ||
-        upper.contains('SCB') ||
-        upper.contains('SIAM COMMERCIAL') ||
-        text.contains('ไทยพาณิชย์')) {
-      return 'SCB EASY';
+  static String _decodeLatin1Utf8(String text) {
+    try {
+      return utf8.decode(latin1.encode(text), allowMalformed: true);
+    } catch (_) {
+      return text;
     }
+  }
 
-    return null;
+  static String _decodeWindows1252Utf8(String text) {
+    try {
+      return utf8.decode(_windows1252Encode(text), allowMalformed: true);
+    } catch (_) {
+      return text;
+    }
+  }
+
+  static List<int> _windows1252Encode(String text) {
+    return text.runes.map((unit) {
+      if (unit <= 0xFF) return unit;
+      return _windows1252ExtraBytes[unit] ?? unit;
+    }).toList();
+  }
+
+  static const _windows1252ExtraBytes = <int, int>{
+    0x20AC: 0x80,
+    0x201A: 0x82,
+    0x0192: 0x83,
+    0x201E: 0x84,
+    0x2026: 0x85,
+    0x2020: 0x86,
+    0x2021: 0x87,
+    0x02C6: 0x88,
+    0x2030: 0x89,
+    0x0160: 0x8A,
+    0x2039: 0x8B,
+    0x0152: 0x8C,
+    0x017D: 0x8E,
+    0x2018: 0x91,
+    0x2019: 0x92,
+    0x201C: 0x93,
+    0x201D: 0x94,
+    0x2022: 0x95,
+    0x2013: 0x96,
+    0x2014: 0x97,
+    0x02DC: 0x98,
+    0x2122: 0x99,
+    0x0161: 0x9A,
+    0x203A: 0x9B,
+    0x0153: 0x9C,
+    0x017E: 0x9E,
+    0x0178: 0x9F,
+  };
+
+  static String _decodeTis620(String text) {
+    final units = text.codeUnits;
+    if (units.any((unit) => unit > 0xFF)) return text;
+    final buffer = StringBuffer();
+    for (final unit in units) {
+      if (unit < 0x80) {
+        buffer.writeCharCode(unit);
+      } else if (unit >= 0xA1 && unit <= 0xDA) {
+        buffer.writeCharCode(0x0E01 + (unit - 0xA1));
+      } else if (unit == 0xDF) {
+        buffer.writeCharCode(0x0E3F);
+      } else if (unit >= 0xE0 && unit <= 0xFB) {
+        buffer.writeCharCode(0x0E40 + (unit - 0xE0));
+      } else {
+        buffer.writeCharCode(unit);
+      }
+    }
+    return buffer.toString();
+  }
+
+  static int _textScore(String text) {
+    var score = 0;
+    for (final unit in text.codeUnits) {
+      if (unit >= 0x0E00 && unit <= 0x0E7F) {
+        score += 5;
+      } else if ((unit >= 0x30 && unit <= 0x39) ||
+          (unit >= 0x41 && unit <= 0x5A) ||
+          (unit >= 0x61 && unit <= 0x7A)) {
+        score += 1;
+      } else if (unit == 0x20 ||
+          unit == 0x2D ||
+          unit == 0x2E ||
+          unit == 0x2F ||
+          unit == 0x3A) {
+        score += 1;
+      } else if (unit >= 0xC0 && unit <= 0xFF) {
+        score -= 3;
+      } else if (unit == 0xFFFD) {
+        score -= 5;
+      }
+    }
+    return score;
   }
 
   double? _detectAmount(List<String> lines) {
-    final rawText = lines.join('\n');
+    final labeledAmount = _detectAmountNearLabel(lines);
+    if (labeledAmount != null) {
+      _lastAmountConfidence = 1;
+      return labeledAmount;
+    }
+
     final contexts = AmountClassifier.instance.extractCandidateContexts(
-      rawText,
+      lines.join('\n'),
       lines: lines,
     );
-    if (contexts.isEmpty) {
-      return null;
-    }
-
+    if (contexts.isEmpty) return null;
     if (contexts.length == 1) {
-      _lastAmountConfidence = 1.0;
+      _lastAmountConfidence = 1;
       return contexts.first.value;
     }
-
     try {
       final prediction = AmountClassifier.instance.predictFromContexts(
-        rawText: rawText,
+        rawText: lines.join('\n'),
         lines: lines,
         contexts: contexts,
       );
@@ -173,105 +185,259 @@ class SlipTextParser {
         _lastAmountConfidence = prediction.confidence;
         return contexts[prediction.index].value;
       }
-    } catch (_) {
-      // Ignore and use the first extracted amount as a fallback.
-    }
-
-    _lastAmountConfidence = 0.0;
+    } catch (_) {}
+    _lastAmountConfidence = 0;
     return contexts.first.value;
   }
 
-  String? _detectDate(String text) {
-    final patterns = [
-      RegExp(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'),
-      RegExp(r'\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}'),
-      RegExp(r'\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}'),
-    ];
+  double? _detectAmountNearLabel(List<String> lines) {
+    final amountLabel = RegExp(
+      r'amount|total|paid|payment|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
+      r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19',
+      caseSensitive: false,
+    );
+    final numberPattern = RegExp(
+      r'(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?',
+    );
 
-    for (final pattern in patterns) {
-      final match = pattern.firstMatch(text);
-      if (match != null) {
-        return match.group(0);
+    for (var i = 0; i < lines.length; i++) {
+      if (!amountLabel.hasMatch(lines[i])) continue;
+      for (var j = i; j < lines.length && j <= i + 3; j++) {
+        if (_isMetadata(lines[j]) && j != i) continue;
+        for (final match in numberPattern.allMatches(lines[j])) {
+          final token = match.group(0);
+          if (token == null || _looksLikeDateToken(token)) continue;
+          final value = double.tryParse(token.replaceAll(',', ''));
+          if (value != null && value > 0 && value < 10000000) {
+            return value;
+          }
+        }
       }
     }
-
     return null;
   }
 
-  String? _detectTime(String text) {
-    return RegExp(r'\d{1,2}:\d{2}(?::\d{2})?').firstMatch(text)?.group(0);
+  String? _detectBank(String text) {
+    final upper = text.toUpperCase();
+    if (upper.contains('K PLUS') ||
+        upper.contains('KPLUS') ||
+        upper.contains('KASIKORN') ||
+        upper.contains('K+')) {
+      return 'K PLUS';
+    }
+    if (upper.contains('SCB') || upper.contains('SIAM COMMERCIAL')) {
+      return 'SCB EASY';
+    }
+    return null;
   }
 
-  String? _detectNearbyValue(List<String> lines, List<String> keys) {
-    for (var i = 0; i < lines.length; i++) {
-      final lower = lines[i].toLowerCase();
-      final matched = keys.any((key) => lower.contains(key.toLowerCase()));
-      if (!matched) {
-        continue;
-      }
-
-      final afterColon = lines[i]
-          .split(RegExp(r'[:：]'))
-          .skip(1)
-          .join(':')
-          .trim();
-      if (_looksLikeName(afterColon)) {
-        return afterColon;
-      }
-
-      if (i + 1 < lines.length && _looksLikeName(lines[i + 1])) {
-        return lines[i + 1];
-      }
+  String? _detectDate(String text) {
+    for (final pattern in <RegExp>[
+      RegExp(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'),
+      RegExp(r'\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}'),
+      RegExp(r'\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}'),
+    ]) {
+      final match = pattern.firstMatch(text);
+      if (match != null) return match.group(0);
     }
-
     return null;
   }
 
   String? _detectReference(List<String> lines) {
+    final key = RegExp(
+      r'^(?:\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23|\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48|\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07|reference|ref|transaction)',
+      caseSensitive: false,
+    );
     for (var i = 0; i < lines.length; i++) {
-      final lower = lines[i].toLowerCase();
-      final hasKey =
-          lower.contains('ref') ||
-          lower.contains('reference') ||
-          lower.contains('transaction') ||
-          lower.contains('เลขที่') ||
-          lower.contains('อ้างอิง');
-      if (!hasKey) {
-        continue;
-      }
+      if (!key.hasMatch(lines[i])) continue;
+      final inline = lines[i]
+          .replaceFirst(key, '')
+          .replaceFirst(RegExp(r'^[:\uFF1A\s]+'), '');
+      final matcher = RegExp(r'[A-Z0-9][A-Z0-9\-]{5,}', caseSensitive: false);
+      final match =
+          matcher.firstMatch(inline) ??
+          (i + 1 < lines.length ? matcher.firstMatch(lines[i + 1]) : null);
+      if (match != null) return match.group(0);
+    }
+    return null;
+  }
 
-      final match = RegExp(r'[A-Z0-9]{6,}', caseSensitive: false)
-          .allMatches(lines[i])
-          .map((item) => item.group(0))
-          .whereType<String>()
-          .lastOrNull;
-      if (match != null) {
-        return match;
-      }
+  _Parties? _detectParties(List<String> lines) {
+    String? sender;
+    String? recipient;
 
-      if (i + 1 < lines.length) {
-        final next = RegExp(
-          r'[A-Z0-9]{6,}',
-          caseSensitive: false,
-        ).firstMatch(lines[i + 1])?.group(0);
-        if (next != null) {
-          return next;
-        }
+    for (var i = 0; i < lines.length; i++) {
+      if (_hasLabel(lines[i], const ['\u0E08\u0E32\u0E01', 'from', 'sender'])) {
+        sender ??= _valueAfter(lines, i, const [
+          '\u0E08\u0E32\u0E01',
+          'from',
+          'sender',
+        ]);
+      }
+      if (_hasLabel(lines[i], const [
+        '\u0E44\u0E1B\u0E22\u0E31\u0E07',
+        'to',
+        'recipient',
+        'receiver',
+      ])) {
+        recipient ??= _valueAfter(lines, i, const [
+          '\u0E44\u0E1B\u0E22\u0E31\u0E07',
+          'to',
+          'recipient',
+          'receiver',
+        ]);
       }
     }
 
+    if (sender != null && recipient != null) {
+      return _Parties(sender, recipient);
+    }
+
+    final candidates = <String>[];
+    for (var i = 0; i + 1 < lines.length; i++) {
+      final looksLikeStackedParty =
+          _looksLikeName(lines[i]) &&
+          (_isBankOrAccount(lines[i + 1]) ||
+              (i + 2 < lines.length && _isBankOrAccount(lines[i + 2])));
+      if (looksLikeStackedParty) {
+        candidates.add(lines[i]);
+      }
+    }
+
+    sender ??= candidates.isNotEmpty ? candidates.first : null;
+    recipient ??= candidates.length > 1 ? candidates[1] : null;
+    return sender == null && recipient == null
+        ? null
+        : _Parties(sender, recipient);
+  }
+
+  bool _hasLabel(String line, List<String> labels) {
+    final lower = line.toLowerCase();
+    return labels.any(
+      (label) =>
+          lower == label ||
+          lower.startsWith('$label:') ||
+          lower.startsWith('$label '),
+    );
+  }
+
+  String? _valueAfter(List<String> lines, int index, List<String> labels) {
+    final line = lines[index];
+    for (final label in labels) {
+      final at = line.toLowerCase().indexOf(label.toLowerCase());
+      if (at < 0) continue;
+      final value = line
+          .substring(at + label.length)
+          .replaceFirst(RegExp(r'^[:\uFF1A\s\-]+'), '')
+          .trim();
+      if (_looksLikeName(value)) return value;
+    }
+    for (var j = index + 1; j < lines.length && j <= index + 3; j++) {
+      if (_looksLikeName(lines[j]) && !_isBankOrAccount(lines[j])) {
+        return lines[j];
+      }
+    }
     return null;
   }
 
   bool _looksLikeName(String value) {
-    if (value.length < 3) {
-      return false;
-    }
-
-    if (RegExp(r'^\d+[.,\d]*$').hasMatch(value)) {
-      return false;
-    }
-
-    return true;
+    final repaired = repairThaiMojibake(value).trim();
+    if (repaired.length < 2 || looksUnreadable(repaired)) return false;
+    if (RegExp(r'^\d+[.,\d]*$').hasMatch(repaired)) return false;
+    if (_isBankOrAccount(repaired) || _isMetadata(repaired)) return false;
+    return RegExp(r'[A-Za-z\u0E00-\u0E7F]').allMatches(repaired).length >= 2;
   }
+
+  bool _isBankOrAccount(String value) {
+    final repaired = repairThaiMojibake(value);
+    final lower = repaired.toLowerCase();
+    final compact = repaired.replaceAll(' ', '');
+    return lower.contains('bank') ||
+        lower.contains('wallet') ||
+        lower.contains('k plus') ||
+        lower.contains('scb') ||
+        lower.contains('kasikorn') ||
+        lower.contains('siam commercial') ||
+        repaired.contains('\u0E18.') ||
+        repaired.contains('\u0E18\u0E19\u0E32\u0E04\u0E32\u0E23') ||
+        repaired.contains('\u0E01\u0E2A\u0E34\u0E01\u0E23') ||
+        repaired.contains(
+          '\u0E44\u0E17\u0E22\u0E1E\u0E32\u0E13\u0E34\u0E0A\u0E22\u0E4C',
+        ) ||
+        compact.isNotEmpty && RegExp(r'^[xX*\u2022\-\d]+$').hasMatch(compact) ||
+        RegExp(
+          r'^(?=.*\d)[A-Z0-9\-]{8,}$',
+          caseSensitive: false,
+        ).hasMatch(compact);
+  }
+
+  bool _isMetadata(String value) {
+    final lower = value.toLowerCase();
+    return lower.contains('reference') ||
+        lower.contains('transaction') ||
+        lower.contains('amount') ||
+        lower.contains('fee') ||
+        lower.contains('\u0E08\u0E33\u0E19\u0E27\u0E19') ||
+        lower.contains('\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48') ||
+        lower.contains(
+          '\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21',
+        ) ||
+        RegExp(r'\d{1,2}:\d{2}').hasMatch(lower) ||
+        RegExp(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}').hasMatch(lower) ||
+        RegExp(r'\d{1,2}\s+[a-z]{3,9}\s+\d{2,4}').hasMatch(lower) ||
+        RegExp(r'\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}')
+            .hasMatch(lower);
+  }
+
+  bool _looksLikeDateToken(String token) {
+    if (token.length != 4) return false;
+    final year = int.tryParse(token);
+    return year != null && year >= 1900 && year <= 2600;
+  }
+
+  SlipCategory _detectCategory(String text, double? amount, _Parties? parties) {
+    if (parties?.sender != null && parties?.recipient != null) {
+      return SlipCategory.detail;
+    }
+    final lower = text.toLowerCase();
+    if ([
+      'income',
+      'credit',
+      'deposit',
+      '\u0E40\u0E07\u0E34\u0E19\u0E40\u0E02\u0E49\u0E32',
+      '\u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19',
+      '\u0E40\u0E15\u0E34\u0E21\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08',
+    ].any(lower.contains)) {
+      return SlipCategory.income;
+    }
+    if ([
+      'payment',
+      'paid',
+      'purchase',
+      'withdrawal',
+      'debit',
+      '\u0E08\u0E48\u0E32\u0E22',
+      '\u0E0A\u0E33\u0E23\u0E30',
+      '\u0E0B\u0E37\u0E49\u0E2D',
+      '\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08',
+    ].any(lower.contains)) {
+      return SlipCategory.expense;
+    }
+    if (parties?.sender != null && parties?.recipient == null) {
+      return SlipCategory.income;
+    }
+    if (parties?.recipient != null && parties?.sender == null) {
+      return SlipCategory.expense;
+    }
+    return amount == null ? SlipCategory.unknown : SlipCategory.expense;
+  }
+}
+
+class _Parties {
+  const _Parties(this.sender, this.recipient);
+
+  final String? sender;
+  final String? recipient;
 }

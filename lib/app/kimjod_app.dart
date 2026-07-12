@@ -12,19 +12,29 @@ class KimjodApp extends StatefulWidget {
     required this.firebaseInitialization,
     required this.authService,
     required this.transactionRepository,
+    this.initialLanguage = AppLanguage.en,
     super.key,
   });
 
   final Future<FirebaseApp> firebaseInitialization;
   final AuthService authService;
   final TransactionRepository transactionRepository;
+  final AppLanguage initialLanguage;
 
   @override
   State<KimjodApp> createState() => _KimjodAppState();
 }
 
 class _KimjodAppState extends State<KimjodApp> {
-  final _languageController = AppLanguageController();
+  late final AppLanguageController _languageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _languageController = AppLanguageController(
+      initialLanguage: widget.initialLanguage,
+    );
+  }
 
   @override
   void dispose() {

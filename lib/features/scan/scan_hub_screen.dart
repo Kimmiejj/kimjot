@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -16,6 +18,7 @@ import 'album_sync_review_screen.dart';
 import 'slip_fingerprint.dart';
 import 'slip_scan_result.dart';
 import 'slip_review_screen.dart';
+import 'slip_transaction_resolver.dart';
 import 'slip_text_recognizer.dart';
 import 'slip_date_parser.dart';
 import 'slip_amount_classifier.dart';
@@ -245,27 +248,18 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
         }
 
         // Use the detected category (income/expense). If unknown or detail, fall back to heuristics.
-        TransactionType txType;
-        if (result.category == SlipCategory.income) {
-          txType = TransactionType.income;
-        } else if (result.category == SlipCategory.expense) {
-          txType = TransactionType.expense;
-        } else {
-          // Fallback: if it looks like a payment slip, treat as expense, otherwise skip
-          if (!_looksLikePaymentSlip(result)) {
-            failed++;
-            if (!mounted) return;
+        final decision = resolveBestEffortSlipDecision(result);
+        if (decision == null) {
+          failed++;
+          if (!mounted) return;
 
-            setState(() {
-              _statusByPath[image.path] = _SlipSyncStatus.failed;
-            });
-            continue;
-          }
-          txType = TransactionType.expense;
+          setState(() {
+            _statusByPath[image.path] = _SlipSyncStatus.failed;
+          });
+          continue;
         }
 
         // ✅ Resolve category from AI analysis
-        final (categoryId: categoryId, categoryName: categoryName) = _resolveCategoryFromAI(result);
         // ✅ Parse transaction date from slip
         final transactionDate = parseTransactionDateFrom(
           dateText: result.dateText,
@@ -277,21 +271,21 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
 
         final localizedCategory = localizedCategoryName(
           strings: strings,
-          categoryId: categoryId,
-          fallbackName: categoryName,
+          categoryId: decision.categoryId,
+          fallbackName: decision.categoryName,
         );
 
         await widget.transactionRepository.createManualTransaction(
           CreateTransactionInput(
             userId: widget.user.uid,
             amount: amount,
-            type: txType,
-            categoryId: categoryId,
+            type: decision.type,
+            categoryId: decision.categoryId,
             categoryName: localizedCategory,
             transactionDate: transactionDate,
             transactionDateText: strings.formatDate(transactionDate),
             source: TransactionSource.gallerySlip,
-            note: _noteFromScan(result),
+            note: decision.note,
             slipFingerprint: fingerprint,
             slipReference: result.reference,
           ),
