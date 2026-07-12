@@ -41,7 +41,12 @@ class SlipTextRecognizer {
       final inputImage = InputImage.fromFilePath(imagePath);
       final recognizedText = await _mlKitRecognizer.processImage(inputImage);
       if (recognizedText.text.trim().isNotEmpty) {
-        rawTexts.add(recognizedText.text);
+        final layoutAmount = _detectAmountFromMlKitLayout(recognizedText);
+        rawTexts.add(
+          layoutAmount == null
+              ? recognizedText.text
+              : '${recognizedText.text}\n\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19\n${layoutAmount.toStringAsFixed(2)}',
+        );
       }
     } catch (error) {
       firstError ??= error;
@@ -96,6 +101,88 @@ class SlipTextRecognizer {
     return _parser.parse(rawText);
   }
 
+  double? _detectAmountFromMlKitLayout(RecognizedText recognizedText) {
+    final lines = <TextLine>[];
+    for (final block in recognizedText.blocks) {
+      lines.addAll(block.lines.where((line) => line.text.trim().isNotEmpty));
+    }
+    if (lines.isEmpty) return null;
+
+    for (final labelLine in lines) {
+      if (!_looksLikeAmountLabel(labelLine.text)) continue;
+
+      final candidates = <({double amount, int score})>[];
+      for (final line in lines) {
+        final amount = _amountFromTextLine(line.text);
+        if (amount == null) continue;
+
+        final sameBand =
+            (line.boundingBox.center.dy - labelLine.boundingBox.center.dy)
+                .abs() <=
+            48;
+        final nearBelow =
+            line.boundingBox.top >= labelLine.boundingBox.top &&
+            line.boundingBox.top <= labelLine.boundingBox.bottom + 96;
+        if (!sameBand && !nearBelow) continue;
+
+        var score = 0;
+        if (sameBand) score += 40;
+        if (line.boundingBox.left >= labelLine.boundingBox.right - 16) {
+          score += 32;
+        }
+        if (line.text.contains('.')) score += 16;
+        score -= (line.boundingBox.center.dy - labelLine.boundingBox.center.dy)
+            .abs()
+            .round();
+        candidates.add((amount: amount, score: score));
+      }
+      if (candidates.isNotEmpty) {
+        candidates.sort((a, b) => b.score.compareTo(a.score));
+        return candidates.first.amount;
+      }
+    }
+    return null;
+  }
+
+  bool _looksLikeAmountLabel(String text) {
+    final normalized = SlipTextParser.repairThaiMojibake(text)
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s\u200B]+'), '')
+        .replaceAll('\u0E4D\u0E32', '\u0E33');
+    return RegExp(
+      r'amount|total|paid|payment|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
+      r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19',
+      caseSensitive: false,
+    ).hasMatch(normalized);
+  }
+
+  double? _amountFromTextLine(String text) {
+    if (_looksLikeAccountOrMetadataLine(text)) return null;
+    final match = RegExp(
+      r'(?<![\dA-Za-z])(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})(?![\dA-Za-z])',
+    ).firstMatch(text);
+    if (match == null) return null;
+    final amount = double.tryParse(match.group(0)!.replaceAll(',', ''));
+    if (amount == null || amount <= 0 || amount >= 10000000) return null;
+    return amount;
+  }
+
+  bool _looksLikeAccountOrMetadataLine(String text) {
+    final repaired = SlipTextParser.repairThaiMojibake(text).toLowerCase();
+    final compact = repaired.replaceAll(RegExp(r'\s+'), '');
+    return repaired.contains('reference') ||
+        repaired.contains('transaction') ||
+        repaired.contains('account') ||
+        repaired.contains('biller') ||
+        repaired.contains('merchant') ||
+        repaired.contains('id') ||
+        repaired.contains('\u0E1A\u0E31\u0E0D\u0E0A\u0E35') ||
+        repaired.contains('\u0E23\u0E2B\u0E31\u0E2A') ||
+        RegExp(r'^(?:x+|\*+|[\u2022]+)?[-x*\u2022\d]+$').hasMatch(compact);
+  }
+
   bool _externalAmountLooksSafe(String rawText, double chosenAmount) {
     final text = SlipTextParser.repairThaiMojibake(rawText);
     final amountText = _amountTokenPattern(chosenAmount);
@@ -120,11 +207,11 @@ class SlipTextRecognizer {
     final fixed = amount.toStringAsFixed(2);
     final whole = amount.truncate().toString();
     return RegExp(
-      r'(?<!\d)(?:' +
+      r'(?<![\dA-Za-zxX*\u2022-])(?:' +
           RegExp.escape(fixed) +
           r'|' +
           RegExp.escape(whole) +
-          r')(?!\d)',
+          r')(?![\dA-Za-zxX*\u2022-])',
     );
   }
 
@@ -143,6 +230,10 @@ class SlipTextRecognizer {
     var score = 0;
     if (decision != null) score += 100;
     if (result.amount != null && result.amount! > 0) score += 40;
+    if (result.amount != null &&
+        _externalAmountLooksSafe(result.rawText, result.amount!)) {
+      score += 60;
+    }
     if (result.reference?.isNotEmpty == true) score += 25;
     if (result.bankName?.isNotEmpty == true) score += 20;
     if (result.sender?.isNotEmpty == true) score += 15;

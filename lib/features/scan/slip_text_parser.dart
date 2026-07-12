@@ -86,11 +86,11 @@ class SlipTextParser {
     final fixed = amount.toStringAsFixed(2);
     final whole = amount.truncate().toString();
     return RegExp(
-      r'(?<!\d)(?:' +
+      r'(?<![\dA-Za-zxX*\u2022-])(?:' +
           RegExp.escape(fixed) +
           r'|' +
           RegExp.escape(whole) +
-          r')(?!\d)',
+          r')(?![\dA-Za-zxX*\u2022-])',
     );
   }
 

@@ -371,6 +371,23 @@ x-5899
     expect(result.amount, isNull);
   });
 
+  test('rejects external account suggestion next to an amount label', () {
+    final result = parser.parse(
+      '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22\u0E01\u0E21\u0E25 \u0E1E\u0E27\u0E07\u0E1A\u0E38\u0E1B\u0E1C\u0E32
+x-5899
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+''',
+      suggestedAmount: 5899,
+      suggestedConfidence: 0.99,
+    );
+
+    expect(result.amount, isNull);
+  });
+
   test(
     'keeps explicit SCB amount when external suggestion chooses metadata',
     () {
