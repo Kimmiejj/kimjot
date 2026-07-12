@@ -41,8 +41,10 @@ SCB
     expect(result.timeText, '14:39');
   });
 
-  test('extracts sender and recipient names from SCB style from and to blocks', () {
-    final result = parser.parse('''
+  test(
+    'extracts sender and recipient names from SCB style from and to blocks',
+    () {
+      final result = parser.parse('''
 SCB
 โอนเงินสำเร็จ
 25 มิ.ย. 2569 - 06:09
@@ -57,10 +59,11 @@ x-4365
 26,000.00
 ''');
 
-    expect(result.sender, 'นาย ชิษณุชา ส.');
-    expect(result.recipient, 'นาย ชิษณุชา สมบูรณ์วรรณะ');
-    expect(result.amount, 26000);
-  });
+      expect(result.sender, 'นาย ชิษณุชา ส.');
+      expect(result.recipient, 'นาย ชิษณุชา สมบูรณ์วรรณะ');
+      expect(result.amount, 26000);
+    },
+  );
 
   test('uses SCB amount row instead of reference or account digits', () {
     final rawText = '''
@@ -111,8 +114,10 @@ x-4365
     expect(decision?.categoryId, 'internal_transfer');
   });
 
-  test('classifies SCB FOOD PATIO bill as expense and not internal transfer', () {
-    final result = parser.parse('''
+  test(
+    'classifies SCB FOOD PATIO bill as expense and not internal transfer',
+    () {
+      final result = parser.parse('''
 SCB
 จ่ายบิลสำเร็จ
 11 ก.ค. 2569 - 14:39
@@ -129,15 +134,16 @@ Biller ID : 010753600031501
 15.00
 ''');
 
-    final decision = resolveLocalSlipDecision(result);
+      final decision = resolveLocalSlipDecision(result);
 
-    expect(result.sender, 'นาย ชิษณุชา ส.');
-    expect(result.recipient, 'FOOD PATIO');
-    expect(result.amount, 15);
-    expect(decision?.type, TransactionType.expense);
-    expect(decision?.type, isNot(TransactionType.internalTransfer));
-    expect(decision?.categoryId, 'food');
-  });
+      expect(result.sender, 'นาย ชิษณุชา ส.');
+      expect(result.recipient, 'FOOD PATIO');
+      expect(result.amount, 15);
+      expect(decision?.type, TransactionType.expense);
+      expect(decision?.type, isNot(TransactionType.internalTransfer));
+      expect(decision?.categoryId, 'food');
+    },
+  );
 
   test('extracts sender and recipient from KBank stacked transfer layout', () {
     final result = parser.parse('''
@@ -160,8 +166,10 @@ xxx-x-x8893-x
     expect(result.recipient, 'นาย ชิษณุชา สมบูรณ์วรรณะ');
   });
 
-  test('classifies KBank stacked transfer with matching name part as internal transfer', () {
-    final result = parser.parse('''
+  test(
+    'classifies KBank stacked transfer with matching name part as internal transfer',
+    () {
+      final result = parser.parse('''
 K+
 โอนเงินสำเร็จ
 10 พ.ค. 69 10:05 น.
@@ -177,14 +185,17 @@ xxx-x-x8893-x
 100.00 บาท
 ''');
 
-    final decision = resolveLocalSlipDecision(result);
+      final decision = resolveLocalSlipDecision(result);
 
-    expect(decision?.type, TransactionType.internalTransfer);
-    expect(decision?.categoryId, 'internal_transfer');
-  });
+      expect(decision?.type, TransactionType.internalTransfer);
+      expect(decision?.categoryId, 'internal_transfer');
+    },
+  );
 
-  test('does not classify KBank bill payment as internal transfer when names do not overlap', () {
-    final result = parser.parse('''
+  test(
+    'does not classify KBank bill payment as internal transfer when names do not overlap',
+    () {
+      final result = parser.parse('''
 K+
 จ่ายบิลสำเร็จ
 9 ก.ค. 69 22:33 น.
@@ -200,13 +211,14 @@ xxx-x-x0253-x
 25.00 บาท
 ''');
 
-    final decision = resolveLocalSlipDecision(result);
+      final decision = resolveLocalSlipDecision(result);
 
-    expect(result.sender, 'นาย ชิษณุชา ส');
-    expect(result.recipient, 'องค์กรขนส่งมวลชนกรุงเทพ');
-    expect(result.amount, 25);
-    expect(decision?.type, isNot(TransactionType.internalTransfer));
-  });
+      expect(result.sender, 'นาย ชิษณุชา ส');
+      expect(result.recipient, 'องค์กรขนส่งมวลชนกรุงเทพ');
+      expect(result.amount, 25);
+      expect(decision?.type, isNot(TransactionType.internalTransfer));
+    },
+  );
 
   test('repairs mojibake Thai OCR text before parsing', () {
     final result = parser.parse('''

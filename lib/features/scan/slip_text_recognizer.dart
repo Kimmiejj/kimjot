@@ -10,9 +10,9 @@ import 'slip_transaction_resolver.dart';
 
 class SlipTextRecognizer {
   SlipTextRecognizer({TextRecognizer? recognizer, SlipTextParser? parser})
-      : _mlKitRecognizer =
-            recognizer ?? TextRecognizer(script: TextRecognitionScript.latin),
-        _parser = parser ?? SlipTextParser();
+    : _mlKitRecognizer =
+          recognizer ?? TextRecognizer(script: TextRecognitionScript.latin),
+      _parser = parser ?? SlipTextParser();
 
   static const OCRConfig _thaiOcrConfig = OCRConfig(language: 'tha+eng');
 

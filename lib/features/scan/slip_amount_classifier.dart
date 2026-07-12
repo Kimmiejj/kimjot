@@ -221,10 +221,11 @@ class AmountClassifier {
       return false;
     }
 
-    return RegExp(r'^(?:x+|\*+|[\u2022]+)?[-x*\u2022\d]+$')
-            .hasMatch(compact) ||
-        RegExp(r'(?:x{1,3}|\*)[-x*\d]{2,}', caseSensitive: false)
-            .hasMatch(compact) ||
+    return RegExp(r'^(?:x+|\*+|[\u2022]+)?[-x*\u2022\d]+$').hasMatch(compact) ||
+        RegExp(
+          r'(?:x{1,3}|\*)[-x*\d]{2,}',
+          caseSensitive: false,
+        ).hasMatch(compact) ||
         RegExp(r'^(?=.*[a-z])(?=.*\d)[a-z0-9\-]{8,}$').hasMatch(compact);
   }
 
@@ -260,11 +261,17 @@ class AmountClassifier {
         ? 1.0
         : 0.0;
     final keywordOnLine =
-        RegExp(_amountKeywordPattern, caseSensitive: false).hasMatch(lineLower)
+        RegExp(
+          '$_amountKeywordPattern|$_thaiAmountKeywordPattern',
+          caseSensitive: false,
+        ).hasMatch(lineLower)
         ? 1.0
         : 0.0;
     final keywordNearby =
-        RegExp(_amountKeywordPattern, caseSensitive: false).hasMatch(nearbyLower)
+        RegExp(
+          '$_amountKeywordPattern|$_thaiAmountKeywordPattern',
+          caseSensitive: false,
+        ).hasMatch(nearbyLower)
         ? 1.0
         : 0.0;
     final lineLooksLikeAmount = _lineLooksLikeAmount(context.lineText)
@@ -278,11 +285,17 @@ class AmountClassifier {
         ? 0.0
         : math.log(context.value) / math.log(10);
     final penaltyReferenceLine =
-        RegExp(_referenceKeywordPattern, caseSensitive: false).hasMatch(lineLower)
+        RegExp(
+          '$_referenceKeywordPattern|$_thaiReferenceKeywordPattern',
+          caseSensitive: false,
+        ).hasMatch(lineLower)
         ? 1.0
         : 0.0;
     final penaltyFeeLine =
-        RegExp(_feeKeywordPattern, caseSensitive: false).hasMatch(lineLower)
+        RegExp(
+          '$_feeKeywordPattern|$_thaiFeeKeywordPattern',
+          caseSensitive: false,
+        ).hasMatch(lineLower)
         ? 1.0
         : 0.0;
     final penaltyDateTimeLine =
@@ -308,11 +321,15 @@ class AmountClassifier {
 
   bool _lineLooksLikeAmount(String line) {
     final normalized = line.replaceAll(RegExp(r'\s+'), ' ').trim();
-    final stripped = normalized.replaceAll(
+    var stripped = normalized.replaceAll(
       RegExp(
         '$_amountKeywordPattern|บาท|baht|thb|[0-9.,\\s:-]',
         caseSensitive: false,
       ),
+      '',
+    );
+    stripped = stripped.replaceAll(
+      RegExp(_thaiAmountKeywordPattern, caseSensitive: false),
       '',
     );
     return normalized.isNotEmpty && stripped.length <= 3;
