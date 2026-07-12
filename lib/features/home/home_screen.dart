@@ -555,8 +555,10 @@ class _MonthChoiceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const selectedBorderColor = Color(0xFF8EDCF2);
-    const textColor = Color(0xFF111827);
+    const selectedBorderColor = Color(0xFF0C8C8C);
+    final textColor = isSelected
+        ? const Color(0xFF145A5A)
+        : const Color(0xFF111827);
     final borderColor = isSelected
         ? selectedBorderColor
         : const Color(0x245D81AD);
@@ -567,13 +569,22 @@ class _MonthChoiceButton extends StatelessWidget {
       child: Ink(
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFFEAFBFF)
+              ? const Color(0xFFE8F8F8)
               : Colors.white.withValues(alpha: 0.76),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: borderColor,
-            width: isSelected ? 1.8 : 1,
+            width: isSelected ? 2.2 : 1,
           ),
+          boxShadow: isSelected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x1A0C8C8C),
+                    blurRadius: 12,
+                    offset: Offset(0, 5),
+                  ),
+                ]
+              : null,
         ),
         child: Center(
           child: Text(
