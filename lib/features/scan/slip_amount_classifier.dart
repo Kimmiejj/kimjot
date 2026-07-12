@@ -158,6 +158,10 @@ class AmountClassifier {
 
         if (_shouldSkipCandidate(
           line: line,
+          previousLine: lineIndex > 0 ? normalizedLines[lineIndex - 1] : null,
+          nextLine: lineIndex + 1 < normalizedLines.length
+              ? normalizedLines[lineIndex + 1]
+              : null,
           match: match,
           token: token,
           value: value,
@@ -181,17 +185,41 @@ class AmountClassifier {
 
   bool _shouldSkipCandidate({
     required String line,
+    required String? previousLine,
+    required String? nextLine,
     required RegExpMatch match,
     required String token,
     required double value,
   }) {
     final lower = line.toLowerCase();
+    final previousLower = previousLine?.toLowerCase();
+    final nextLower = nextLine?.toLowerCase();
     final hasAmountHint = _hasAmountHint(lower);
 
     if (_looksLikeBareSmallNoise(line: lower, token: token, value: value)) {
       return true;
     }
+    if (_hasFeeHint(lower) ||
+        (previousLower != null && _hasFeeHint(previousLower))) {
+      return true;
+    }
     if (!hasAmountHint && _looksLikeDateToken(token)) {
+      return true;
+    }
+    if (_isEmbeddedInIdentifier(line, match.start, match.end) ||
+        _isMaskedAccountToken(line, match.start, match.end)) {
+      return true;
+    }
+    if (!hasAmountHint &&
+        _looksLikeAccountSuffixContext(
+          line: line,
+          token: token,
+          previousLine: previousLower,
+          nextLine: nextLower,
+        )) {
+      return true;
+    }
+    if (!hasAmountHint && _looksLikeNonAmountMixedText(line, token)) {
       return true;
     }
     if (!hasAmountHint &&
@@ -201,11 +229,6 @@ class AmountClassifier {
     if (!hasAmountHint && _lineLooksLikeReferenceOrAccount(lower)) {
       return true;
     }
-    if (!hasAmountHint &&
-        _isEmbeddedInIdentifier(line, match.start, match.end)) {
-      return true;
-    }
-
     return false;
   }
 
@@ -220,6 +243,13 @@ class AmountClassifier {
     return !_hasCurrencyHint(line);
   }
 
+  bool _hasFeeHint(String lowerLine) {
+    return RegExp(
+      '$_feeKeywordPattern|$_thaiFeeKeywordPattern',
+      caseSensitive: false,
+    ).hasMatch(lowerLine);
+  }
+
   bool _hasCurrencyHint(String lowerLine) {
     return RegExp(
       r'฿|baht|thb|à¸šà¸²à¸—|\u0E1A\u0E32\u0E17',
@@ -228,6 +258,14 @@ class AmountClassifier {
   }
 
   bool _hasAmountHint(String lowerLine) {
+    final normalized = _normalizedKeywordText(lowerLine);
+    if (RegExp(
+      r'amount|total|paid|payment|baht|thb|'
+      '$_thaiAmountKeywordPattern',
+      caseSensitive: false,
+    ).hasMatch(normalized)) {
+      return true;
+    }
     return RegExp(
       r'amount|total|paid|payment|baht|thb|'
       '$_thaiAmountKeywordPattern',
@@ -235,11 +273,22 @@ class AmountClassifier {
     ).hasMatch(lowerLine);
   }
 
+  String _normalizedKeywordText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s\u200B]+'), '')
+        .replaceAll('\u0E4D\u0E32', '\u0E33');
+  }
+
   bool _lineLooksLikeReferenceOrAccount(String lowerLine) {
     if (RegExp(
       '$_referenceKeywordPattern|$_thaiReferenceKeywordPattern',
       caseSensitive: false,
     ).hasMatch(lowerLine)) {
+      return true;
+    }
+    if (lowerLine.contains('\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02') ||
+        lowerLine.contains('\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32')) {
       return true;
     }
 
@@ -256,10 +305,51 @@ class AmountClassifier {
         RegExp(r'^(?=.*[a-z])(?=.*\d)[a-z0-9\-]{8,}$').hasMatch(compact);
   }
 
+  bool _looksLikeNonAmountMixedText(String line, String token) {
+    if (token.contains('.') || _hasCurrencyHint(line.toLowerCase())) {
+      return false;
+    }
+    if (_lineLooksLikeAmount(line)) return false;
+    final letters = RegExp(r'[A-Za-z\u0E00-\u0E7F]').allMatches(line).length;
+    return letters >= 2;
+  }
+
+  bool _looksLikeAccountSuffixContext({
+    required String line,
+    required String token,
+    required String? previousLine,
+    required String? nextLine,
+  }) {
+    if (token.contains('.') || token.length < 4 || token.length > 6) {
+      return false;
+    }
+    if (!_lineLooksLikeReferenceOrAccount(line.toLowerCase())) return false;
+    if (previousLine != null && _hasAmountHint(previousLine)) return false;
+    final previousLooksLikeParty =
+        previousLine != null &&
+        RegExp(r'[A-Za-z\u0E00-\u0E7F]').hasMatch(previousLine) &&
+        !_hasAmountHint(previousLine);
+    final nextIsAmountLabel = nextLine != null && _hasAmountHint(nextLine);
+    return previousLooksLikeParty || nextIsAmountLabel;
+  }
+
   bool _isEmbeddedInIdentifier(String line, int start, int end) {
+    if (_hasTouchingCurrencyHint(line, start, end)) {
+      return false;
+    }
     final before = start > 0 ? line.codeUnitAt(start - 1) : null;
     final after = end < line.length ? line.codeUnitAt(end) : null;
     return _isIdentifierLetter(before) || _isIdentifierLetter(after);
+  }
+
+  bool _hasTouchingCurrencyHint(String line, int start, int end) {
+    final beforeStart = start - 4 < 0 ? 0 : start - 4;
+    final afterEnd = end + 4 > line.length ? line.length : end + 4;
+    final before = line.substring(beforeStart, start).toLowerCase();
+    final after = line.substring(end, afterEnd).toLowerCase();
+    return before.endsWith('thb') ||
+        after.startsWith('thb') ||
+        after.startsWith('\u0E1A\u0E32\u0E17');
   }
 
   bool _isIdentifierLetter(int? codeUnit) {
@@ -269,6 +359,15 @@ class AmountClassifier {
     return codeUnit >= 0x41 && codeUnit <= 0x5A ||
         codeUnit >= 0x61 && codeUnit <= 0x7A ||
         codeUnit >= 0x0E00 && codeUnit <= 0x0E7F;
+  }
+
+  bool _isMaskedAccountToken(String line, int start, int end) {
+    final leftStart = start - 8 < 0 ? 0 : start - 8;
+    final rightEnd = end + 4 > line.length ? line.length : end + 4;
+    final left = line.substring(leftStart, start);
+    final right = line.substring(end, rightEnd);
+    return RegExp(r'[xX*\u2022]\s*[-\s]*$').hasMatch(left) ||
+        RegExp(r'^[-\s]*[xX*\u2022]').hasMatch(right);
   }
 
   Map<String, double> _featuresForCandidate({
@@ -359,6 +458,9 @@ class AmountClassifier {
       RegExp(_thaiAmountKeywordPattern, caseSensitive: false),
       '',
     );
+    stripped = _normalizedKeywordText(
+      stripped,
+    ).replaceAll(RegExp(_thaiAmountKeywordPattern, caseSensitive: false), '');
     return normalized.isNotEmpty && stripped.length <= 3;
   }
 

@@ -67,6 +67,11 @@ class SlipTextRecognizer {
   }
 
   Future<SlipScanResult> _parseWithSuggestions(String rawText) async {
+    final localResult = _parser.parse(rawText);
+    if (localResult.amount != null && localResult.amount! > 0) {
+      return localResult;
+    }
+
     final candidates = AmountClassifier.instance.extractCandidates(rawText);
     ExternalPrediction? ext;
     if (candidates.isNotEmpty) {
@@ -79,7 +84,8 @@ class SlipTextRecognizer {
     final chosenAmount = ext?.chosenAmount;
     final chosenConfidence = ext?.confidence;
     if (chosenAmount != null &&
-        candidates.any((amount) => (amount - chosenAmount).abs() < 0.01)) {
+        candidates.any((amount) => (amount - chosenAmount).abs() < 0.01) &&
+        _externalAmountLooksSafe(rawText, chosenAmount)) {
       return _parser.parse(
         rawText,
         suggestedAmount: chosenAmount,
@@ -88,6 +94,48 @@ class SlipTextRecognizer {
     }
 
     return _parser.parse(rawText);
+  }
+
+  bool _externalAmountLooksSafe(String rawText, double chosenAmount) {
+    final text = SlipTextParser.repairThaiMojibake(rawText);
+    final amountText = _amountTokenPattern(chosenAmount);
+    final lines = text
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    for (var i = 0; i < lines.length; i++) {
+      if (!amountText.hasMatch(lines[i])) continue;
+      final nearby = [
+        if (i > 0) lines[i - 1],
+        lines[i],
+        if (i + 1 < lines.length) lines[i + 1],
+      ].join(' ').toLowerCase();
+      if (_hasAmountContext(nearby)) return true;
+    }
+    return false;
+  }
+
+  RegExp _amountTokenPattern(double amount) {
+    final fixed = amount.toStringAsFixed(2);
+    final whole = amount.truncate().toString();
+    return RegExp(
+      r'(?<!\d)(?:' +
+          RegExp.escape(fixed) +
+          r'|' +
+          RegExp.escape(whole) +
+          r')(?!\d)',
+    );
+  }
+
+  bool _hasAmountContext(String value) {
+    return RegExp(
+      r'amount|total|paid|payment|baht|thb|\u0E1A\u0E32\u0E17|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
+      r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19',
+      caseSensitive: false,
+    ).hasMatch(value);
   }
 
   int _scoreResult(SlipScanResult result) {

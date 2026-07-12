@@ -143,6 +143,254 @@ L260614201233A6STB45
     expect(candidates, [100]);
   });
 
+  test('uses SCB transfer amount instead of recipient masked account', () {
+    final rawText = '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+11 \u0E21\u0E34.\u0E22. 2569 - 19:03
+\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07: 202606118MZiuiJUAqwCtQy26
+\u0E08\u0E32\u0E01
+\u0E19\u0E32\u0E22 \u0E0A\u0E35\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A.
+xxx-xxx899-2
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22\u0E01\u0E21\u0E25 \u0E1E\u0E27\u0E07\u0E1A\u0E38\u0E1B\u0E1C\u0E32
+x-5899
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+50.00
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 50);
+    expect(candidates, [50]);
+  });
+
+  test(
+    'uses same-line SCB amount label instead of recipient account suffix',
+    () {
+      final rawText = '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22\u0E01\u0E21\u0E25 \u0E1E\u0E27\u0E07\u0E1A\u0E38\u0E1B\u0E1C\u0E32
+x-5899
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19     50.00
+''';
+
+      final result = parser.parse(rawText);
+      final candidates = AmountClassifier.instance
+          .extractCandidateContexts(rawText)
+          .map((context) => context.value)
+          .toList();
+
+      expect(result.amount, 50);
+      expect(candidates, [50]);
+    },
+  );
+
+  test('ignores recipient account suffix even when OCR drops the x', () {
+    for (final accountLine in ['x-5899', '-5899', '5899']) {
+      final rawText =
+          '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22\u0E01\u0E21\u0E25 \u0E1E\u0E27\u0E07\u0E1A\u0E38\u0E1B\u0E1C\u0E32
+$accountLine
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+50.00
+''';
+
+      final result = parser.parse(rawText);
+      final candidates = AmountClassifier.instance
+          .extractCandidateContexts(rawText)
+          .map((context) => context.value)
+          .toList();
+
+      expect(result.amount, 50, reason: accountLine);
+      expect(candidates, [50], reason: accountLine);
+    }
+  });
+
+  test('uses amount when OCR reads amount before a decomposed Thai label', () {
+    final rawText = '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22\u0E01\u0E21\u0E25 \u0E1E\u0E27\u0E07\u0E1A\u0E38\u0E1B\u0E1C\u0E32
+x-5899
+50.00
+\u0E08\u0E4D\u0E32\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 50);
+    expect(candidates, [50]);
+  });
+
+  test('uses amount when OCR inserts spaces in the Thai amount label', () {
+    final rawText = '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22\u0E01\u0E21\u0E25 \u0E1E\u0E27\u0E07\u0E1A\u0E38\u0E1B\u0E1C\u0E32
+x-5899
+\u0E08 \u0E4D \u0E32 \u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+50.00
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 50);
+    expect(candidates, [50]);
+  });
+
+  test('uses SCB QR payment amount instead of merchant code', () {
+    final rawText = '''
+SCB
+\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+11 \u0E21\u0E34.\u0E22. 2569 - 18:52
+\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07: 202606118ILidd1V7WroPiNAE
+\u0E08\u0E32\u0E01
+\u0E19\u0E32\u0E22 \u0E0A\u0E35\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A.
+xxx-xxx899-2
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+QR Payment at BTS
+Biller ID : 010753600031501
+\u0E23\u0E2B\u0E31\u0E2A\u0E23\u0E49\u0E32\u0E19\u0E04\u0E49\u0E32 : KB0000001525759
+\u0E23\u0E2B\u0E31\u0E2A\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21 : APIC1781178747630ROY
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+19.00
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 19);
+    expect(candidates, [19]);
+  });
+
+  test('uses SCB bill amount instead of merchant name number', () {
+    final rawText = '''
+SCB
+\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+18 \u0E21\u0E34.\u0E22. 2569 - 15:02
+\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07: 202606184laIlzOPAQHsGrpa3
+\u0E08\u0E32\u0E01
+\u0E19\u0E32\u0E22 \u0E0A\u0E35\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A.
+xxx-xxx893-6
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E41\u0E21\u0E04\u0E42\u0E14\u0E19\u0E31\u0E25\u0E14\u0E4C-00041 \u0E40\u0E2D\u0E2A \u0E0B\u0E35 \u0E1A\u0E35 \u0E1E\u0E32\u0E23\u0E4C
+Biller ID : 010753600031501
+\u0E23\u0E2B\u0E31\u0E2A\u0E23\u0E49\u0E32\u0E19\u0E04\u0E49\u0E32 : 401015897276001
+\u0E23\u0E2B\u0E31\u0E2A\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21 : EDC17817697037296685
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+29.00
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 29);
+    expect(candidates, [29]);
+  });
+
+  test('does not hard-code merchant branch number as a specific amount', () {
+    final rawText = '''
+SCB
+\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E41\u0E21\u0E04\u0E42\u0E14\u0E19\u0E31\u0E25\u0E14\u0E4C-00041 \u0E40\u0E2D\u0E2A \u0E0B\u0E35 \u0E1A\u0E35 \u0E1E\u0E32\u0E23\u0E4C
+\u0E23\u0E2B\u0E31\u0E2A\u0E23\u0E49\u0E32\u0E19\u0E04\u0E49\u0E32 : 401015897276001
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 37.00 \u0E1A\u0E32\u0E17
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 37);
+    expect(candidates, [37]);
+  });
+
+  test(
+    'keeps explicit SCB transfer amount when external suggestion chooses account',
+    () {
+      final result = parser.parse(
+        '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22\u0E01\u0E21\u0E25 \u0E1E\u0E27\u0E07\u0E1A\u0E38\u0E1B\u0E1C\u0E32
+x-5899
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+50.00
+''',
+        suggestedAmount: 5899,
+        suggestedConfidence: 0.99,
+      );
+
+      expect(result.amount, 50);
+    },
+  );
+
+  test('rejects external account suggestion when no amount context exists', () {
+    final result = parser.parse(
+      '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22\u0E01\u0E21\u0E25 \u0E1E\u0E27\u0E07\u0E1A\u0E38\u0E1B\u0E1C\u0E32
+x-5899
+''',
+      suggestedAmount: 5899,
+      suggestedConfidence: 0.99,
+    );
+
+    expect(result.amount, isNull);
+  });
+
+  test(
+    'keeps explicit SCB amount when external suggestion chooses metadata',
+    () {
+      final result = parser.parse(
+        '''
+SCB
+\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+QR Payment at BTS
+\u0E23\u0E2B\u0E31\u0E2A\u0E23\u0E49\u0E32\u0E19\u0E04\u0E49\u0E32 : KB0000001525759
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+19.00
+''',
+        suggestedAmount: 1525759,
+        suggestedConfidence: 0.99,
+      );
+
+      expect(result.amount, 19);
+    },
+  );
+
   test(
     'uses Thai amount and baht text instead of transfer metadata numbers',
     () {

@@ -18,7 +18,19 @@ class SlipTextParser {
         .where((line) => line.isNotEmpty)
         .toList();
     final parties = _detectParties(lines);
-    final amount = suggestedAmount ?? _detectAmount(lines);
+    final detectedAmount = _detectAmount(lines);
+    final detectedConfidence = _lastAmountConfidence;
+    final useSuggestedAmount = _shouldUseSuggestedAmount(
+      lines: lines,
+      suggestedAmount: suggestedAmount,
+      suggestedConfidence: suggestedConfidence,
+      detectedAmount: detectedAmount,
+      detectedConfidence: detectedConfidence,
+    );
+    final amount = useSuggestedAmount ? suggestedAmount : detectedAmount;
+    final amountConfidence = useSuggestedAmount
+        ? suggestedConfidence
+        : detectedConfidence;
     final result = SlipScanResult(
       rawText: text,
       bankName: _detectBank(lines.join('\n')),
@@ -29,12 +41,57 @@ class SlipTextParser {
       recipient: parties?.recipient,
       reference: _detectReference(lines),
       category: _detectCategory(text, amount, parties),
-      amountConfidence: suggestedAmount == null
-          ? _lastAmountConfidence
-          : suggestedConfidence,
+      amountConfidence: amountConfidence,
     );
     _lastAmountConfidence = null;
     return result;
+  }
+
+  bool _shouldUseSuggestedAmount({
+    required List<String> lines,
+    required double? suggestedAmount,
+    required double? suggestedConfidence,
+    required double? detectedAmount,
+    required double? detectedConfidence,
+  }) {
+    if (suggestedAmount == null) return false;
+    if (detectedAmount == null) {
+      return _suggestedAmountHasAmountContext(lines, suggestedAmount);
+    }
+    if ((detectedAmount - suggestedAmount).abs() < 0.01) return true;
+    if ((detectedConfidence ?? 0) >= 0.95) return false;
+    return (suggestedConfidence ?? 0) > (detectedConfidence ?? 0) + 0.2;
+  }
+
+  bool _suggestedAmountHasAmountContext(
+    List<String> lines,
+    double suggestedAmount,
+  ) {
+    final amountText = _amountTokenPattern(suggestedAmount);
+    for (var i = 0; i < lines.length; i++) {
+      if (!amountText.hasMatch(lines[i])) continue;
+      final nearby = [
+        if (i > 0) lines[i - 1],
+        lines[i],
+        if (i + 1 < lines.length) lines[i + 1],
+      ].join(' ');
+      if (_hasStrictAmountLabel(nearby) || _hasStrictCurrencyHint(nearby)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  RegExp _amountTokenPattern(double amount) {
+    final fixed = amount.toStringAsFixed(2);
+    final whole = amount.truncate().toString();
+    return RegExp(
+      r'(?<!\d)(?:' +
+          RegExp.escape(fixed) +
+          r'|' +
+          RegExp.escape(whole) +
+          r')(?!\d)',
+    );
   }
 
   static String repairThaiMojibake(String text) {
@@ -205,7 +262,7 @@ class SlipTextParser {
         continue;
       }
 
-      final start = _hasStrictAmountLabel(line) || i == 0 ? i : i - 1;
+      final start = _hasStrictAmountLabel(line) && i > 0 ? i - 1 : i;
       final rawEnd = _hasStrictAmountLabel(line) ? i + 4 : i + 1;
       final end = rawEnd >= lines.length ? lines.length - 1 : rawEnd;
 
@@ -243,6 +300,11 @@ class SlipTextParser {
     for (final match in numberPattern.allMatches(line)) {
       final token = match.group(0);
       if (token == null || _looksLikeDateToken(token)) continue;
+      if (_isEmbeddedInIdentifier(line, match.start, match.end) ||
+          _isMaskedAccountToken(line, match.start, match.end)) {
+        continue;
+      }
+      if (_looksLikeNonAmountMixedText(line, token)) continue;
       final value = double.tryParse(token.replaceAll(',', ''));
       if (value == null || value <= 0 || value >= 10000000) continue;
       candidates.add((token: token, value: value));
@@ -282,6 +344,16 @@ class SlipTextParser {
   }
 
   bool _hasStrictAmountLabel(String value) {
+    final normalized = _normalizedKeywordText(value);
+    if (RegExp(
+      r'amount|total|paid|payment|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
+      r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19',
+      caseSensitive: false,
+    ).hasMatch(normalized)) {
+      return true;
+    }
     return RegExp(
       r'amount|total|paid|payment|'
       r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
@@ -292,6 +364,13 @@ class SlipTextParser {
       r'à¸¢à¸­à¸”à¹€à¸‡à¸´à¸™',
       caseSensitive: false,
     ).hasMatch(value);
+  }
+
+  String _normalizedKeywordText(String value) {
+    return repairThaiMojibake(value)
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s\u200B]+'), '')
+        .replaceAll('\u0E4D\u0E32', '\u0E33');
   }
 
   bool _hasStrictCurrencyHint(String value) {
@@ -366,25 +445,24 @@ class SlipTextParser {
   }
 
   double? _detectAmountNearLabel(List<String> lines) {
-    final amountLabel = RegExp(
-      r'amount|total|paid|payment|'
-      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
-      r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
-      r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19',
-      caseSensitive: false,
-    );
     final numberPattern = RegExp(
       r'(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?',
     );
 
     for (var i = 0; i < lines.length; i++) {
-      if (!amountLabel.hasMatch(lines[i])) continue;
+      if (!_hasStrictAmountLabel(lines[i])) continue;
       final candidates = <({double value, int score})>[];
-      for (var j = i; j < lines.length && j <= i + 3; j++) {
+      final start = i > 0 ? i - 1 : i;
+      for (var j = start; j < lines.length && j <= i + 3; j++) {
         if (_isMetadata(lines[j]) && j != i) continue;
         for (final match in numberPattern.allMatches(lines[j])) {
           final token = match.group(0);
           if (token == null || _looksLikeDateToken(token)) continue;
+          if (_isEmbeddedInIdentifier(lines[j], match.start, match.end) ||
+              _isMaskedAccountToken(lines[j], match.start, match.end)) {
+            continue;
+          }
+          if (_looksLikeNonAmountMixedText(lines[j], token)) continue;
           final value = double.tryParse(token.replaceAll(',', ''));
           if (value == null || value <= 0 || value >= 10000000) continue;
           if (_looksLikeBareSmallNoise(lines[j], token, value)) continue;
@@ -627,6 +705,53 @@ class SlipTextParser {
     if (token.length != 4) return false;
     final year = int.tryParse(token);
     return year != null && year >= 1900 && year <= 2600;
+  }
+
+  bool _looksLikeNonAmountMixedText(String line, String token) {
+    if (token.contains('.') ||
+        _hasCurrencyHint(line) ||
+        _hasStrictCurrencyHint(line)) {
+      return false;
+    }
+    if (_lineLooksLikeAmountValue(line) ||
+        _strictLineLooksLikeAmountValue(line)) {
+      return false;
+    }
+    final letters = RegExp(r'[A-Za-z\u0E00-\u0E7F]').allMatches(line).length;
+    return letters >= 2;
+  }
+
+  bool _isEmbeddedInIdentifier(String line, int start, int end) {
+    if (_hasTouchingCurrencyHint(line, start, end)) return false;
+    final before = start > 0 ? line.codeUnitAt(start - 1) : null;
+    final after = end < line.length ? line.codeUnitAt(end) : null;
+    return _isIdentifierLetter(before) || _isIdentifierLetter(after);
+  }
+
+  bool _hasTouchingCurrencyHint(String line, int start, int end) {
+    final beforeStart = start - 4 < 0 ? 0 : start - 4;
+    final afterEnd = end + 4 > line.length ? line.length : end + 4;
+    final before = line.substring(beforeStart, start).toLowerCase();
+    final after = line.substring(end, afterEnd).toLowerCase();
+    return before.endsWith('thb') ||
+        after.startsWith('thb') ||
+        after.startsWith('\u0E1A\u0E32\u0E17');
+  }
+
+  bool _isIdentifierLetter(int? codeUnit) {
+    if (codeUnit == null) return false;
+    return codeUnit >= 0x41 && codeUnit <= 0x5A ||
+        codeUnit >= 0x61 && codeUnit <= 0x7A ||
+        codeUnit >= 0x0E00 && codeUnit <= 0x0E7F;
+  }
+
+  bool _isMaskedAccountToken(String line, int start, int end) {
+    final leftStart = start - 8 < 0 ? 0 : start - 8;
+    final rightEnd = end + 4 > line.length ? line.length : end + 4;
+    final left = line.substring(leftStart, start);
+    final right = line.substring(end, rightEnd);
+    return RegExp(r'[xX*\u2022]\s*[-\s]*$').hasMatch(left) ||
+        RegExp(r'^[-\s]*[xX*\u2022]').hasMatch(right);
   }
 
   SlipCategory _detectCategory(String text, double? amount, _Parties? parties) {
