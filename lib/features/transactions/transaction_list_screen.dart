@@ -96,14 +96,10 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
                 sliver: StreamBuilder<List<TransactionRecord>>(
-                  stream: _searchQuery.isEmpty
-                      ? widget.transactionRepository.watchMonthTransactions(
-                          widget.user.uid,
-                          _selectedMonth,
-                        )
-                      : widget.transactionRepository.watchTransactions(
-                          widget.user.uid,
-                        ),
+                  stream: widget.transactionRepository.watchMonthTransactions(
+                    widget.user.uid,
+                    _selectedMonth,
+                  ),
                   builder: (context, snapshot) {
                     final records = snapshot.data ?? const [];
                     final transactions = _filterTransactions(
