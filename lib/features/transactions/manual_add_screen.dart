@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
+import 'category_icons.dart';
 import 'create_transaction_input.dart';
 import 'transaction_repository.dart';
 import 'transaction_source.dart';
@@ -452,24 +453,78 @@ class _CategoryField extends StatelessWidget {
         runSpacing: 8,
         children: [
           for (final category in categories)
-            ChoiceChip(
-              label: Text(category.label(context.strings)),
+            _CategoryIconButton(
+              category: category,
               selected: selected.id == category.id,
-              onSelected: enabled ? (_) => onChanged(category) : null,
-              showCheckmark: false,
-              selectedColor: const Color(0xFF102F67),
-              backgroundColor: Colors.white.withValues(alpha: 0.72),
-              side: const BorderSide(color: Color(0x2E5D81AD)),
-              labelStyle: TextStyle(
-                color: selected.id == category.id
-                    ? Colors.white
-                    : const Color(0xFF1D3C6C),
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
+              enabled: enabled,
+              onTap: () => onChanged(category),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _CategoryIconButton extends StatelessWidget {
+  const _CategoryIconButton({
+    required this.category,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final _CategoryOption category;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = category.label(context.strings);
+
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(20),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: selected
+                  ? const LinearGradient(
+                      colors: [Color(0xFF1FC9DC), Color(0xFF3268F6)],
+                    )
+                  : null,
+              color: selected ? null : Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.82)
+                    : const Color(0x2E5D81AD),
+              ),
+              boxShadow: selected
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x241FC9DC),
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Icon(
+              categoryIconData(category.id),
+              color: selected ? Colors.white : const Color(0xFF1D3C6C),
+              size: 24,
+            ),
+          ),
+        ),
       ),
     );
   }

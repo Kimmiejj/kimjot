@@ -7,6 +7,7 @@ import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
 import '../scan/scan_hub_screen.dart';
 import '../settings/settings_screen.dart';
+import '../transactions/category_icons.dart';
 import '../transactions/category_localization.dart';
 import '../transactions/home_summary.dart';
 import '../transactions/manual_add_screen.dart';
@@ -667,7 +668,7 @@ class _TransactionListTile extends StatelessWidget {
     );
 
     return _ListTileCard(
-      badge: _badgeFor(categoryName),
+      categoryIcon: categoryIconData(record.categoryId),
       title: title,
       subtitle: '${record.source.firestoreValue} · $categoryName',
       amount: '${isIncome ? '+' : '-'}${_formatMoney(record.amount)}',
@@ -678,14 +679,14 @@ class _TransactionListTile extends StatelessWidget {
 
 class _ListTileCard extends StatelessWidget {
   const _ListTileCard({
-    required this.badge,
+    required this.categoryIcon,
     required this.title,
     required this.subtitle,
     required this.amount,
     required this.amountColor,
   });
 
-  final String badge;
+  final IconData categoryIcon;
   final String title;
   final String subtitle;
   final String amount;
@@ -709,13 +710,10 @@ class _ListTileCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
             ),
             child: Center(
-              child: Text(
-                badge,
-                style: const TextStyle(
-                  color: Color(0xFF334155),
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0,
-                ),
+              child: Icon(
+                categoryIcon,
+                color: const Color(0xFF334155),
+                size: 22,
               ),
             ),
           ),
@@ -883,15 +881,4 @@ String _formatNumber(double amount) {
     }
   }
   return buffer.toString();
-}
-
-String _badgeFor(String value) {
-  final letters = value
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((part) => part.isNotEmpty)
-      .map((part) => part.characters.first.toUpperCase())
-      .take(2)
-      .join();
-  return letters.isEmpty ? 'TX' : letters;
 }

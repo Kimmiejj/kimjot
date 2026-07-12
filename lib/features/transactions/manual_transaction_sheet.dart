@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_language.dart';
 import '../auth/auth_user.dart';
+import 'category_icons.dart';
 import 'create_transaction_input.dart';
 import 'transaction_repository.dart';
 import 'transaction_source.dart';
@@ -268,16 +269,15 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
             runSpacing: 8,
             children: [
               for (final category in _categories)
-                ChoiceChip(
-                  label: Text(category.label(strings)),
+                _CategoryIconChip(
+                  category: category,
                   selected: _category.id == category.id,
-                  onSelected: _isSaving
-                      ? null
-                      : (_) {
-                          setState(() {
-                            _category = category;
-                          });
-                        },
+                  enabled: !_isSaving,
+                  onSelected: () {
+                    setState(() {
+                      _category = category;
+                    });
+                  },
                 ),
             ],
           ),
@@ -307,6 +307,56 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CategoryIconChip extends StatelessWidget {
+  const _CategoryIconChip({
+    required this.category,
+    required this.selected,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final _CategoryOption category;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = category.label(context.strings);
+    final color = selected ? Colors.white : const Color(0xFF1D3C6C);
+
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: InkWell(
+          onTap: enabled ? onSelected : null,
+          borderRadius: BorderRadius.circular(18),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: selected
+                  ? const Color(0xFF102F67)
+                  : Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: selected
+                    ? const Color(0xFF102F67)
+                    : const Color(0x2E5D81AD),
+              ),
+            ),
+            child: Icon(categoryIconData(category.id), color: color, size: 23),
+          ),
+        ),
       ),
     );
   }

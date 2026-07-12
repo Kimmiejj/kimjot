@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
+import 'category_icons.dart';
 import 'category_localization.dart';
 import 'transaction_record.dart';
 import 'transaction_repository.dart';
@@ -220,14 +221,10 @@ class TransactionRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(15),
             ),
             child: Center(
-              child: Text(
-                _categoryBadge(categoryName),
-                style: const TextStyle(
-                  color: Color(0xFF145CC8),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0,
-                ),
+              child: Icon(
+                categoryIconData(record.categoryId),
+                color: const Color(0xFF145CC8),
+                size: 22,
               ),
             ),
           ),
@@ -302,17 +299,6 @@ class _EmptyTransactionsCard extends StatelessWidget {
       ),
     );
   }
-}
-
-String _categoryBadge(String value) {
-  final letters = value
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((part) => part.isNotEmpty)
-      .map((part) => part.characters.first.toUpperCase())
-      .take(2)
-      .join();
-  return letters.isEmpty ? 'TX' : letters;
 }
 
 String _formatSignedMoney(TransactionRecord record) {
