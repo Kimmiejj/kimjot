@@ -110,7 +110,9 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
         return;
       }
 
-      messenger.showSnackBar(SnackBar(content: Text(strings.galleryPermissionDenied)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(strings.galleryPermissionDenied)),
+      );
       return;
     }
 
@@ -164,11 +166,12 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
         ),
       );
 
-
       if (!mounted) return;
 
       if (saved == true) {
-        messenger.showSnackBar(SnackBar(content: Text(strings.transactionSaved)));
+        messenger.showSnackBar(
+          SnackBar(content: Text(strings.transactionSaved)),
+        );
       }
 
       setState(() {
@@ -385,12 +388,14 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
         text.contains('จำนวนเงิน');
   }
 
-  ({String categoryId, String categoryName}) _resolveCategoryFromAI(SlipScanResult result) {
-    final type = result.category == SlipCategory.income 
-        ? TransactionType.income 
+  ({String categoryId, String categoryName}) _resolveCategoryFromAI(
+    SlipScanResult result,
+  ) {
+    final type = result.category == SlipCategory.income
+        ? TransactionType.income
         : TransactionType.expense;
     final text = result.rawText.toLowerCase();
-    
+
     if (type == TransactionType.income) {
       if (text.contains('salary') || text.contains('เงินเดือน')) {
         return (categoryId: 'salary', categoryName: 'Salary');
@@ -403,38 +408,54 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
       }
       return (categoryId: 'salary', categoryName: 'Salary');
     }
-    
+
     if (type == TransactionType.expense) {
       if (_looksLikePaymentSlip(result) || result.reference != null) {
         return (categoryId: 'transfer', categoryName: 'Transfer');
       }
-      if (text.contains('food') || text.contains('restaurant') || text.contains('อาหาร')) {
+      if (text.contains('food') ||
+          text.contains('restaurant') ||
+          text.contains('อาหาร')) {
         return (categoryId: 'food', categoryName: 'Food');
       }
-      if (text.contains('transport') || text.contains('taxi') || text.contains('grab')) {
+      if (text.contains('transport') ||
+          text.contains('taxi') ||
+          text.contains('grab')) {
         return (categoryId: 'transport', categoryName: 'Transport');
       }
-      if (text.contains('health') || text.contains('hospital') || text.contains('โรงพยาบาล')) {
+      if (text.contains('health') ||
+          text.contains('hospital') ||
+          text.contains('โรงพยาบาล')) {
         return (categoryId: 'health', categoryName: 'Health');
       }
-      if (text.contains('education') || text.contains('school') || text.contains('โรงเรียน')) {
+      if (text.contains('education') ||
+          text.contains('school') ||
+          text.contains('โรงเรียน')) {
         return (categoryId: 'education', categoryName: 'Education');
       }
-      if (text.contains('entertainment') || text.contains('movie') || text.contains('บันเทิง')) {
+      if (text.contains('entertainment') ||
+          text.contains('movie') ||
+          text.contains('บันเทิง')) {
         return (categoryId: 'entertainment', categoryName: 'Entertainment');
       }
-      if (text.contains('travel') || text.contains('hotel') || text.contains('ท่องเที่ยว')) {
+      if (text.contains('travel') ||
+          text.contains('hotel') ||
+          text.contains('ท่องเที่ยว')) {
         return (categoryId: 'travel', categoryName: 'Travel');
       }
-      if (text.contains('bill') || text.contains('electricity') || text.contains('ค่า')) {
+      if (text.contains('bill') ||
+          text.contains('electricity') ||
+          text.contains('ค่า')) {
         return (categoryId: 'bills', categoryName: 'Bills');
       }
-      if (text.contains('rent') || text.contains('apartment') || text.contains('เช่า')) {
+      if (text.contains('rent') ||
+          text.contains('apartment') ||
+          text.contains('เช่า')) {
         return (categoryId: 'rent', categoryName: 'Rent / Home');
       }
       return (categoryId: 'shopping', categoryName: 'Shopping');
     }
-    
+
     return (categoryId: 'other', categoryName: 'Other');
   }
 
@@ -511,35 +532,30 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          strings.isThai ? 'ฝึกตัวอ่านจำนวนเงิน' : 'Train amount classifier',
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              strings.isThai
-                  ? 'กรอกจำนวนเงินแยกด้วยคอมม่า ตามลำดับของภาพที่เลือก'
-                  : 'Enter comma-separated amounts for the selected images in order.',
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'e.g. 40,396.00,15.00,25.00',
-              ),
-            ),
-          ],
+      builder: (ctx) => KimjodDialog(
+        title: strings.isThai
+            ? 'ฝึกตัวอ่านจำนวนเงิน'
+            : 'Train amount classifier',
+        icon: Icons.psychology_alt_rounded,
+        message: strings.isThai
+            ? 'กรอกจำนวนเงินตามลำดับรูปที่เลือก แยกแต่ละรูปด้วยคอมม่า'
+            : 'Enter amounts for the selected images in order, separated by commas.',
+        content: KimjodDialogTextField(
+          controller: controller,
+          hintText: '40, 396.00, 15.00, 25.00',
+          keyboardType: TextInputType.text,
         ),
         actions: [
-          TextButton(
+          KimjodDialogAction(
+            label: strings.isThai ? 'ยกเลิก' : 'Cancel',
+            icon: Icons.close_rounded,
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(strings.isThai ? 'ยกเลิก' : 'Cancel'),
           ),
-          FilledButton(
+          KimjodDialogAction(
+            label: strings.isThai ? 'ฝึก' : 'Train',
+            icon: Icons.auto_fix_high_rounded,
+            isPrimary: true,
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(strings.isThai ? 'ฝึก' : 'Train'),
           ),
         ],
       ),
@@ -693,36 +709,36 @@ class _AlbumSyncPanel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-           ],
-           const SizedBox(height: 8),
-           SizedBox(
-             height: 52,
-             child: Row(
-               children: [
-                 Expanded(
-                   child: FilledButton.icon(
-                     onPressed: isSyncing ? null : onSync,
-                     icon: isSyncing
-                         ? const SizedBox.square(
-                             dimension: 18,
-                             child: CircularProgressIndicator(strokeWidth: 2.2),
-                           )
-                         : const Icon(Icons.sync_rounded),
-                     label: Text(
-                       isSyncing ? strings.syncingAlbum : strings.syncAlbum,
-                     ),
-                   ),
-                 ),
-                 const SizedBox(width: 8),
-                 if (onTrain != null)
-                   FilledButton.icon(
-                     onPressed: isSyncing ? null : onTrain,
-                     icon: const Icon(Icons.school_rounded),
-                     label: Text(strings.isThai ? 'ฝึก' : 'Train'),
-                   ),
-               ],
-             ),
-           ),
+          ],
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 52,
+            child: Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: isSyncing ? null : onSync,
+                    icon: isSyncing
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          )
+                        : const Icon(Icons.sync_rounded),
+                    label: Text(
+                      isSyncing ? strings.syncingAlbum : strings.syncAlbum,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (onTrain != null)
+                  FilledButton.icon(
+                    onPressed: isSyncing ? null : onTrain,
+                    icon: const Icon(Icons.school_rounded),
+                    label: Text(strings.isThai ? 'ฝึก' : 'Train'),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );

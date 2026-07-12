@@ -36,6 +36,23 @@ class AmountClassifier {
       r'ref|reference|transaction|account|biller|merchant|invoice|order|'
       r'id|เลขที่|อ้างอิง|บัญชี|ร้านค้า|ธุรกรรม|biller id|merchant id';
   static const _feeKeywordPattern = r'fee|service charge|ค่าธรรมเนียม';
+  static const _thaiAmountKeywordPattern =
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19|'
+      r'\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19|'
+      r'\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19|'
+      r'\u0E08\u0E48\u0E32\u0E22|'
+      r'\u0E0A\u0E33\u0E23\u0E30|'
+      r'\u0E23\u0E27\u0E21|'
+      r'\u0E1A\u0E32\u0E17';
+  static const _thaiReferenceKeywordPattern =
+      r'\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48|'
+      r'\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07|'
+      r'\u0E1A\u0E31\u0E0D\u0E0A\u0E35|'
+      r'\u0E23\u0E49\u0E32\u0E19\u0E04\u0E49\u0E32|'
+      r'\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21';
+  static const _thaiFeeKeywordPattern =
+      r'\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21';
   static const _dateTimePattern =
       r'(\d{1,2}:\d{2})|(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4})|(\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4})';
 
@@ -134,6 +151,10 @@ class AmountClassifier {
           continue;
         }
 
+        if (_shouldSkipCandidate(line: line, match: match, token: token)) {
+          continue;
+        }
+
         final value = double.tryParse(token.replaceAll(',', ''));
         if (value == null || value <= 0 || value >= 10000000) {
           continue;
@@ -151,6 +172,75 @@ class AmountClassifier {
     }
 
     return contexts;
+  }
+
+  bool _shouldSkipCandidate({
+    required String line,
+    required RegExpMatch match,
+    required String token,
+  }) {
+    final lower = line.toLowerCase();
+    final hasAmountHint = _hasAmountHint(lower);
+
+    if (!hasAmountHint && _looksLikeDateToken(token)) {
+      return true;
+    }
+    if (!hasAmountHint &&
+        RegExp(_dateTimePattern, caseSensitive: false).hasMatch(lower)) {
+      return true;
+    }
+    if (!hasAmountHint && _lineLooksLikeReferenceOrAccount(lower)) {
+      return true;
+    }
+    if (!hasAmountHint &&
+        _isEmbeddedInIdentifier(line, match.start, match.end)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  bool _hasAmountHint(String lowerLine) {
+    return RegExp(
+      r'amount|total|paid|payment|baht|thb|'
+      '$_thaiAmountKeywordPattern',
+      caseSensitive: false,
+    ).hasMatch(lowerLine);
+  }
+
+  bool _lineLooksLikeReferenceOrAccount(String lowerLine) {
+    if (RegExp(
+      '$_referenceKeywordPattern|$_thaiReferenceKeywordPattern',
+      caseSensitive: false,
+    ).hasMatch(lowerLine)) {
+      return true;
+    }
+
+    final compact = lowerLine.replaceAll(RegExp(r'\s+'), '');
+    if (compact.isEmpty) {
+      return false;
+    }
+
+    return RegExp(r'^(?:x+|\*+|[\u2022]+)?[-x*\u2022\d]+$')
+            .hasMatch(compact) ||
+        RegExp(r'(?:x{1,3}|\*)[-x*\d]{2,}', caseSensitive: false)
+            .hasMatch(compact) ||
+        RegExp(r'^(?=.*[a-z])(?=.*\d)[a-z0-9\-]{8,}$').hasMatch(compact);
+  }
+
+  bool _isEmbeddedInIdentifier(String line, int start, int end) {
+    final before = start > 0 ? line.codeUnitAt(start - 1) : null;
+    final after = end < line.length ? line.codeUnitAt(end) : null;
+    return _isIdentifierLetter(before) || _isIdentifierLetter(after);
+  }
+
+  bool _isIdentifierLetter(int? codeUnit) {
+    if (codeUnit == null) {
+      return false;
+    }
+    return codeUnit >= 0x41 && codeUnit <= 0x5A ||
+        codeUnit >= 0x61 && codeUnit <= 0x7A ||
+        codeUnit >= 0x0E00 && codeUnit <= 0x0E7F;
   }
 
   Map<String, double> _featuresForCandidate({

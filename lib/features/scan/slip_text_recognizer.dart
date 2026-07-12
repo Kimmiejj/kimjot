@@ -76,11 +76,14 @@ class SlipTextRecognizer {
       );
     }
 
-    if (ext != null && ext.chosenAmount != null) {
+    final chosenAmount = ext?.chosenAmount;
+    final chosenConfidence = ext?.confidence;
+    if (chosenAmount != null &&
+        candidates.any((amount) => (amount - chosenAmount).abs() < 0.01)) {
       return _parser.parse(
         rawText,
-        suggestedAmount: ext.chosenAmount,
-        suggestedConfidence: ext.confidence,
+        suggestedAmount: chosenAmount,
+        suggestedConfidence: chosenConfidence,
       );
     }
 

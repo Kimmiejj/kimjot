@@ -147,7 +147,10 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
   void initState() {
     super.initState();
     _type = widget.existingRecord?.type ?? widget.initialType;
-    _selectedDate = widget.existingRecord?.transactionDate ?? widget.initialDate ?? DateTime.now();
+    _selectedDate =
+        widget.existingRecord?.transactionDate ??
+        widget.initialDate ??
+        DateTime.now();
     _category = _resolveInitialCategory();
     _applyInitialValues(force: true);
   }
@@ -160,7 +163,10 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
         oldWidget.initialNote != widget.initialNote ||
         oldWidget.initialDate != widget.initialDate) {
       _type = widget.existingRecord?.type ?? widget.initialType;
-      _selectedDate = widget.existingRecord?.transactionDate ?? widget.initialDate ?? DateTime.now();
+      _selectedDate =
+          widget.existingRecord?.transactionDate ??
+          widget.initialDate ??
+          DateTime.now();
       _category = _resolveInitialCategory();
       _applyInitialValues(force: true);
     }
@@ -208,19 +214,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
       initialDate: _selectedDate,
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 2),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF3268F6),
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Color(0xFF10233F),
-            ),
-          ),
-          child: child!,
-        );
-      },
+      builder: kimjodDatePickerTheme,
     );
 
     if (picked != null) {
@@ -313,17 +307,25 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete transaction?'),
-          content: const Text('This will permanently remove this transaction.'),
+        final strings = context.strings;
+        return KimjodDialog(
+          title: strings.isThai ? 'ลบรายการนี้?' : 'Delete transaction?',
+          icon: Icons.delete_rounded,
+          message: strings.isThai
+              ? 'รายการนี้จะถูกลบถาวรและไม่สามารถย้อนกลับได้'
+              : 'This will permanently remove this transaction.',
           actions: [
-            TextButton(
+            KimjodDialogAction(
+              label: strings.isThai ? 'ยกเลิก' : 'Cancel',
+              icon: Icons.close_rounded,
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
             ),
-            FilledButton(
+            KimjodDialogAction(
+              label: strings.isThai ? 'ลบ' : 'Delete',
+              icon: Icons.delete_rounded,
+              isPrimary: true,
+              isDestructive: true,
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
             ),
           ],
         );
@@ -430,11 +432,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
           const SizedBox(height: 16),
           _AmountField(controller: _amountController, enabled: !_isBusy),
           const SizedBox(height: 12),
-          _TypeSelector(
-            type: _type,
-            enabled: !_isBusy,
-            onChanged: _setType,
-          ),
+          _TypeSelector(type: _type, enabled: !_isBusy, onChanged: _setType),
           if (_type == TransactionType.internalTransfer) ...[
             const SizedBox(height: 12),
             const _InternalTransferHintCard(),
@@ -468,13 +466,17 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
           _PrimaryButton(
             label: widget.isEditing
                 ? (_isSaving ? context.strings.saving : 'Save changes')
-                : (_isSaving ? context.strings.saving : context.strings.saveTransaction),
+                : (_isSaving
+                      ? context.strings.saving
+                      : context.strings.saveTransaction),
             onPressed: _isBusy ? null : _save,
           ),
           if (widget.isEditing) ...[
             const SizedBox(height: 10),
             _DangerButton(
-              label: _isDeleting ? context.strings.saving : 'Delete transaction',
+              label: _isDeleting
+                  ? context.strings.saving
+                  : 'Delete transaction',
               onPressed: _isBusy ? null : _delete,
             ),
           ],
@@ -782,10 +784,7 @@ class _InternalTransferHintCard extends StatelessWidget {
               color: const Color(0x16167FBA),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(
-              Icons.sync_alt_rounded,
-              color: Color(0xFF167FBA),
-            ),
+            child: const Icon(Icons.sync_alt_rounded, color: Color(0xFF167FBA)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1228,7 +1227,9 @@ double? _tryParseAmount(String? value) {
 }
 
 String _formatNumber(double amount) {
-  final fixed = amount.toStringAsFixed(amount == amount.roundToDouble() ? 0 : 2);
+  final fixed = amount.toStringAsFixed(
+    amount == amount.roundToDouble() ? 0 : 2,
+  );
   final parts = fixed.split('.');
   final whole = parts.first;
   final decimal = parts.length > 1 ? '.${parts[1]}' : '';

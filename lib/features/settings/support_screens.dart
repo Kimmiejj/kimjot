@@ -321,6 +321,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
       initialDate: _startMonth,
       firstDate: DateTime(DateTime.now().year - 5),
       lastDate: DateTime(DateTime.now().year + 5),
+      builder: kimjodDatePickerTheme,
     );
     if (picked == null || !mounted) return;
     setState(() {
@@ -362,145 +363,216 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
           bottom: MediaQuery.viewInsetsOf(context).bottom + 18,
         ),
         child: Material(
-          color: Colors.white,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(26),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(18),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.plan == null
-                        ? 'Add installment'
-                        : 'Edit installment',
-                    style: _pageTitleStyle.copyWith(fontSize: 24),
-                  ),
-                  const SizedBox(height: 14),
-                  _InputCard(
-                    label: 'Name',
-                    child: TextFormField(
-                      controller: _titleController,
-                      decoration: const InputDecoration.collapsed(
-                        hintText: 'Phone, laptop, card plan',
-                      ),
-                      validator: (value) =>
-                          value?.trim().isEmpty ?? true ? 'Required' : null,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _InputCard(
-                    label: strings.amount,
-                    child: TextFormField(
-                      controller: _amountController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      inputFormatters: const [_MoneyInputFormatter()],
-                      decoration: InputDecoration.collapsed(
-                        hintText: '${strings.amountPrefix}0',
-                      ),
-                      validator: (value) {
-                        final amount = _parseAmount(value ?? '');
-                        return amount == null || amount <= 0
-                            ? strings.amountValidation
-                            : null;
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _InputCard(
-                          label: 'Total',
-                          child: TextFormField(
-                            controller: _totalController,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                            validator: (value) =>
-                                (int.tryParse(value ?? '') ?? 0) <= 0
-                                ? 'Required'
-                                : null,
-                          ),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFFFFFF),
+                  Color(0xFFEAFBFF),
+                  Color(0xFFFFF4FA),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.86)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x26305472),
+                  blurRadius: 30,
+                  offset: Offset(0, 16),
+                ),
+              ],
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(18),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Align(
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 46,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: const Color(0x2210233F),
+                          borderRadius: BorderRadius.circular(999),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _InputCard(
-                          label: 'Paid',
-                          child: TextFormField(
-                            controller: _paidController,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                            validator: (value) =>
-                                int.tryParse(value ?? '') == null
-                                ? 'Required'
-                                : null,
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const _IconBadge(icon: Icons.credit_card_rounded),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            widget.plan == null
+                                ? 'Add installment'
+                                : 'Edit installment',
+                            style: _pageTitleStyle.copyWith(fontSize: 24),
                           ),
                         ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          icon: const Icon(Icons.close_rounded),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.7,
+                            ),
+                            foregroundColor: const Color(0xFF10233F),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _InputCard(
+                      label: 'Name',
+                      child: TextFormField(
+                        controller: _titleController,
+                        decoration: const InputDecoration.collapsed(
+                          hintText: 'Phone, laptop, card plan',
+                        ),
+                        validator: (value) =>
+                            value?.trim().isEmpty ?? true ? 'Required' : null,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _InputCard(
-                          label: 'Start',
-                          child: InkWell(
-                            onTap: _pickStartMonth,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Text(
-                                strings.formatMonthYear(_startMonth),
-                                style: _inputStyle,
+                    ),
+                    const SizedBox(height: 10),
+                    _InputCard(
+                      label: strings.amount,
+                      child: TextFormField(
+                        controller: _amountController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        inputFormatters: const [_MoneyInputFormatter()],
+                        decoration: InputDecoration.collapsed(
+                          hintText: '${strings.amountPrefix}0',
+                        ),
+                        validator: (value) {
+                          final amount = _parseAmount(value ?? '');
+                          return amount == null || amount <= 0
+                              ? strings.amountValidation
+                              : null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _InputCard(
+                            label: 'Total',
+                            child: TextFormField(
+                              controller: _totalController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: const InputDecoration.collapsed(
+                                hintText: '12',
+                              ),
+                              validator: (value) =>
+                                  (int.tryParse(value ?? '') ?? 0) <= 0
+                                  ? 'Required'
+                                  : null,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _InputCard(
+                            label: 'Paid',
+                            child: TextFormField(
+                              controller: _paidController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: const InputDecoration.collapsed(
+                                hintText: '0',
+                              ),
+                              validator: (value) =>
+                                  int.tryParse(value ?? '') == null
+                                  ? 'Required'
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _InputCard(
+                            label: 'Start',
+                            child: InkWell(
+                              onTap: _pickStartMonth,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 2,
+                                ),
+                                child: Text(
+                                  strings.formatMonthYear(_startMonth),
+                                  style: _inputStyle,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _InputCard(
-                          label: 'Due day',
-                          child: TextFormField(
-                            controller: _dueDayController,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                            validator: (value) {
-                              final day = int.tryParse(value ?? '');
-                              return day == null || day < 1 || day > 31
-                                  ? '1-31'
-                                  : null;
-                            },
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _InputCard(
+                            label: 'Due day',
+                            child: TextFormField(
+                              controller: _dueDayController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: const InputDecoration.collapsed(
+                                hintText: '1',
+                              ),
+                              validator: (value) {
+                                final day = int.tryParse(value ?? '');
+                                return day == null || day < 1 || day > 31
+                                    ? '1-31'
+                                    : null;
+                              },
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _saving ? null : _save,
-                    icon: _saving
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2.2),
-                          )
-                        : const Icon(Icons.save_rounded),
-                    label: Text(
-                      _saving ? strings.saving : strings.saveTransaction,
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: _saving
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                              ),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(
+                        _saving ? strings.saving : strings.saveTransaction,
+                      ),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(54),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

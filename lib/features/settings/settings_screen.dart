@@ -455,23 +455,24 @@ class _AmountClassifierCard extends StatelessWidget {
                   onPressed: () async {
                     final confirmed = await showDialog<bool>(
                       context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: Text(
-                          strings.isThai ? 'ลบข้อมูลโมเดล' : 'Reset Model',
-                        ),
-                        content: Text(
-                          strings.isThai
-                              ? 'ลบข้อมูลการฝึกทั้งหมดและเริ่มใหม่?'
-                              : 'Delete all training data and reset model?',
-                        ),
+                      builder: (ctx) => KimjodDialog(
+                        title: strings.isThai ? 'ลบข้อมูลโมเดล' : 'Reset Model',
+                        icon: Icons.restart_alt_rounded,
+                        message: strings.isThai
+                            ? 'ลบข้อมูลการฝึกทั้งหมดและเริ่มใหม่?'
+                            : 'Delete all training data and reset model?',
                         actions: [
-                          TextButton(
+                          KimjodDialogAction(
+                            label: strings.isThai ? 'ยกเลิก' : 'Cancel',
+                            icon: Icons.close_rounded,
                             onPressed: () => Navigator.pop(ctx, false),
-                            child: Text(strings.isThai ? 'ยกเลิก' : 'Cancel'),
                           ),
-                          FilledButton(
+                          KimjodDialogAction(
+                            label: strings.isThai ? 'ลบ' : 'Delete',
+                            icon: Icons.delete_rounded,
+                            isPrimary: true,
+                            isDestructive: true,
                             onPressed: () => Navigator.pop(ctx, true),
-                            child: Text(strings.isThai ? 'ลบ' : 'Delete'),
                           ),
                         ],
                       ),

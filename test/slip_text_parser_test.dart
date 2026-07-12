@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kimjod/features/scan/slip_amount_classifier.dart';
 import 'package:kimjod/features/scan/slip_text_parser.dart';
 import 'package:kimjod/features/scan/slip_transaction_resolver.dart';
 import 'package:kimjod/features/transactions/transaction_type.dart';
@@ -59,6 +60,33 @@ x-4365
     expect(result.sender, 'นาย ชิษณุชา ส.');
     expect(result.recipient, 'นาย ชิษณุชา สมบูรณ์วรรณะ');
     expect(result.amount, 26000);
+  });
+
+  test('uses SCB amount row instead of reference or account digits', () {
+    final rawText = '''
+SCB
+\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+25 \u0E21\u0E34.\u0E22. 2569 - 06:09
+\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07: 202606250UKVQD6yqY9oIW8kK
+\u0E08\u0E32\u0E01
+\u0E19\u0E32\u0E22 \u0E0A\u0E34\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A.
+xxx-xxx899-2
+\u0E44\u0E1B\u0E22\u0E31\u0E07
+\u0E19\u0E32\u0E22 \u0E0A\u0E34\u0E29\u0E13\u0E38\u0E0A\u0E32 \u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C\u0E27\u0E23\u0E23\u0E13\u0E30
+x-4365
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19
+26,000.00
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 26000);
+    expect(result.reference, '202606250UKVQD6yqY9oIW8kK');
+    expect(candidates, [26000]);
   });
 
   test('classifies SCB same-name transfer as internal transfer', () {
