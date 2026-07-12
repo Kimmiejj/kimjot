@@ -103,6 +103,9 @@ class AppStrings {
   String hello(String name) => isThai ? 'สวัสดี, $name' : 'Hello, $name';
   String get synced => isThai ? 'ซิงก์แล้ว' : 'SYNCED';
   String get thisMonth => isThai ? 'เดือนนี้' : 'This month';
+  String get otherMonth => isThai ? 'เดือนอื่น' : 'Other month';
+  String get previousMonth => isThai ? 'เดือนก่อนหน้า' : 'Previous month';
+  String get nextMonth => isThai ? 'เดือนถัดไป' : 'Next month';
   String get settings => isThai ? 'ตั้งค่า' : 'Settings';
   String get monthlyBalance =>
       isThai ? 'ยอดคงเหลือเดือนนี้' : 'Monthly balance';
@@ -344,5 +347,38 @@ class AppStrings {
     final today = DateUtils.isSameDay(date, DateTime.now());
     final prefix = today ? (isThai ? 'วันนี้, ' : 'Today, ') : '';
     return '$prefix${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
+  String formatMonthYear(DateTime date) {
+    final months = isThai
+        ? const [
+            'ม.ค.',
+            'ก.พ.',
+            'มี.ค.',
+            'เม.ย.',
+            'พ.ค.',
+            'มิ.ย.',
+            'ก.ค.',
+            'ส.ค.',
+            'ก.ย.',
+            'ต.ค.',
+            'พ.ย.',
+            'ธ.ค.',
+          ]
+        : const [
+            'January',
+            'February',
+            'March',
+            'April',
+            'May',
+            'June',
+            'July',
+            'August',
+            'September',
+            'October',
+            'November',
+            'December',
+          ];
+    return '${months[date.month - 1]} ${date.year}';
   }
 }

@@ -16,7 +16,7 @@ import '../transactions/transaction_record.dart';
 import '../transactions/transaction_repository.dart';
 import '../transactions/transaction_type.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({
     required this.user,
     required this.authService,
@@ -28,6 +28,20 @@ class HomeScreen extends StatelessWidget {
   final AuthService authService;
   final TransactionRepository transactionRepository;
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late DateTime _selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _selectedMonth = DateTime(now.year, now.month);
+  }
+
   Future<void> _openPage(BuildContext context, Widget page) async {
     final saved = await Navigator.of(
       context,
@@ -38,6 +52,15 @@ class HomeScreen extends StatelessWidget {
         context,
       ).showSnackBar(SnackBar(content: Text(context.strings.transactionSaved)));
     }
+  }
+
+  void _changeMonth(int delta) {
+    setState(() {
+      _selectedMonth = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month + delta,
+      );
+    });
   }
 
   @override
@@ -52,23 +75,23 @@ class HomeScreen extends StatelessWidget {
         onScan: () => _openPage(
           context,
           ScanHubScreen(
-            user: user,
-            transactionRepository: transactionRepository,
+            user: widget.user,
+            transactionRepository: widget.transactionRepository,
           ),
         ),
         onGraph: () => _openPage(
           context,
           AnalyticsScreen(
-            user: user,
-            transactionRepository: transactionRepository,
+            user: widget.user,
+            transactionRepository: widget.transactionRepository,
           ),
         ),
         onSettings: () => _openPage(
           context,
           SettingsScreen(
-            user: user,
-            authService: authService,
-            transactionRepository: transactionRepository,
+            user: widget.user,
+            authService: widget.authService,
+            transactionRepository: widget.transactionRepository,
           ),
         ),
       ),
@@ -87,13 +110,16 @@ class HomeScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
                 sliver: SliverToBoxAdapter(
                   child: _HomeHeader(
-                    displayName: user.displayName ?? 'Kim',
+                    displayName: widget.user.displayName ?? 'Kim',
+                    selectedMonth: _selectedMonth,
+                    onPreviousMonth: () => _changeMonth(-1),
+                    onNextMonth: () => _changeMonth(1),
                     onSettings: () => _openPage(
                       context,
                       SettingsScreen(
-                        user: user,
-                        authService: authService,
-                        transactionRepository: transactionRepository,
+                        user: widget.user,
+                        authService: widget.authService,
+                        transactionRepository: widget.transactionRepository,
                       ),
                     ),
                   ),
@@ -103,8 +129,9 @@ class HomeScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
                 sliver: SliverToBoxAdapter(
                   child: _SummaryBuilder(
-                    userId: user.uid,
-                    transactionRepository: transactionRepository,
+                    userId: widget.user.uid,
+                    month: _selectedMonth,
+                    transactionRepository: widget.transactionRepository,
                     builder: (summary) => _BalancePanel(summary: summary),
                   ),
                 ),
@@ -116,15 +143,15 @@ class HomeScreen extends StatelessWidget {
                     onAdd: () => _openPage(
                       context,
                       ManualAddScreen(
-                        user: user,
-                        transactionRepository: transactionRepository,
+                        user: widget.user,
+                        transactionRepository: widget.transactionRepository,
                       ),
                     ),
                     onScan: () => _openPage(
                       context,
                       ScanHubScreen(
-                        user: user,
-                        transactionRepository: transactionRepository,
+                        user: widget.user,
+                        transactionRepository: widget.transactionRepository,
                       ),
                     ),
                   ),
@@ -166,13 +193,15 @@ class HomeScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(24, 10, 24, 112),
                 sliver: SliverToBoxAdapter(
                   child: _RecentTransactionsBuilder(
-                    userId: user.uid,
-                    transactionRepository: transactionRepository,
+                    userId: widget.user.uid,
+                    month: _selectedMonth,
+                    transactionRepository: widget.transactionRepository,
                     onSeeMore: () => _openPage(
                       context,
                       TransactionListScreen(
-                        user: user,
-                        transactionRepository: transactionRepository,
+                        user: widget.user,
+                        transactionRepository: widget.transactionRepository,
+                        initialMonth: _selectedMonth,
                       ),
                     ),
                   ),
@@ -189,18 +218,20 @@ class HomeScreen extends StatelessWidget {
 class _SummaryBuilder extends StatelessWidget {
   const _SummaryBuilder({
     required this.userId,
+    required this.month,
     required this.transactionRepository,
     required this.builder,
   });
 
   final String userId;
+  final DateTime month;
   final TransactionRepository transactionRepository;
   final Widget Function(HomeSummary summary) builder;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<HomeSummary>(
-      stream: transactionRepository.watchCurrentMonthSummary(userId),
+      stream: transactionRepository.watchMonthSummary(userId, month),
       builder: (context, snapshot) {
         return builder(snapshot.data ?? const HomeSummary.empty());
       },
@@ -209,9 +240,18 @@ class _SummaryBuilder extends StatelessWidget {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.displayName, required this.onSettings});
+  const _HomeHeader({
+    required this.displayName,
+    required this.selectedMonth,
+    required this.onPreviousMonth,
+    required this.onNextMonth,
+    required this.onSettings,
+  });
 
   final String displayName;
+  final DateTime selectedMonth;
+  final VoidCallback onPreviousMonth;
+  final VoidCallback onNextMonth;
   final VoidCallback onSettings;
 
   @override
@@ -245,12 +285,44 @@ class _HomeHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
+              Row(
+                children: [
+                  _MonthArrowButton(
+                    icon: Icons.chevron_left_rounded,
+                    tooltip: strings.previousMonth,
+                    onTap: onPreviousMonth,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      strings.formatMonthYear(selectedMonth),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF111827),
+                        fontSize: 30,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _MonthArrowButton(
+                    icon: Icons.chevron_right_rounded,
+                    tooltip: strings.nextMonth,
+                    onTap: onNextMonth,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
               Text(
-                strings.thisMonth,
-                style: TextStyle(
-                  color: Color(0xFF111827),
-                  fontSize: 30,
-                  fontWeight: FontWeight.w900,
+                _isSameMonth(selectedMonth, DateTime.now())
+                    ? strings.thisMonth
+                    : strings.otherMonth,
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
                   letterSpacing: 0,
                 ),
               ),
@@ -266,6 +338,39 @@ class _HomeHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _MonthArrowButton extends StatelessWidget {
+  const _MonthArrowButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x2E5D81AD)),
+          ),
+          child: Icon(icon, color: const Color(0xFF3268F6), size: 24),
+        ),
+      ),
     );
   }
 }
@@ -587,18 +692,24 @@ class _SectionHeader extends StatelessWidget {
 class _RecentTransactionsBuilder extends StatelessWidget {
   const _RecentTransactionsBuilder({
     required this.userId,
+    required this.month,
     required this.transactionRepository,
     required this.onSeeMore,
   });
 
   final String userId;
+  final DateTime month;
   final TransactionRepository transactionRepository;
   final VoidCallback onSeeMore;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<TransactionRecord>>(
-      stream: transactionRepository.watchRecentTransactions(userId, limit: 5),
+      stream: transactionRepository.watchMonthTransactions(
+        userId,
+        month,
+        limit: 5,
+      ),
       builder: (context, snapshot) {
         final transactions = snapshot.data ?? const [];
 
@@ -881,4 +992,8 @@ String _formatNumber(double amount) {
     }
   }
   return buffer.toString();
+}
+
+bool _isSameMonth(DateTime left, DateTime right) {
+  return left.year == right.year && left.month == right.month;
 }

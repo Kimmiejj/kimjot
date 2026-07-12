@@ -73,14 +73,20 @@ class FirebaseTransactionRepository implements TransactionRepository {
 
   @override
   Stream<HomeSummary> watchCurrentMonthSummary(String userId) {
-    final now = DateTime.now();
-    final monthStart = DateTime(now.year, now.month);
+    return watchMonthSummary(userId, DateTime.now());
+  }
+
+  @override
+  Stream<HomeSummary> watchMonthSummary(String userId, DateTime month) {
+    final monthStart = DateTime(month.year, month.month);
+    final nextMonth = DateTime(month.year, month.month + 1);
 
     return _userTransactionsCollection(userId)
         .where(
           'transactionDate',
           isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
         )
+        .where('transactionDate', isLessThan: Timestamp.fromDate(nextMonth))
         .orderBy('transactionDate')
         .snapshots()
         .map((snapshot) => _summaryFromSnapshot(snapshot, monthStart));
@@ -95,6 +101,28 @@ class FirebaseTransactionRepository implements TransactionRepository {
         .limit(limit)
         .snapshots()
         .map((snapshot) => snapshot.docs.map(_recordFromDocument).toList());
+  }
+
+  @override
+  Stream<List<TransactionRecord>> watchMonthTransactions(
+    String userId,
+    DateTime month, {
+    int? limit,
+  }) {
+    final monthStart = DateTime(month.year, month.month);
+    final nextMonth = DateTime(month.year, month.month + 1);
+    var query = _userTransactionsCollection(userId)
+        .where(
+          'transactionDate',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
+        )
+        .where('transactionDate', isLessThan: Timestamp.fromDate(nextMonth))
+        .orderBy('transactionDate', descending: true);
+
+    final limited = limit == null ? query : query.limit(limit);
+    return limited.snapshots().map(
+      (snapshot) => snapshot.docs.map(_recordFromDocument).toList(),
+    );
   }
 
   @override

@@ -189,7 +189,7 @@ class _FakeTransactionRepository implements TransactionRepository {
   @override
   Future<void> createManualTransaction(CreateTransactionInput input) async {
     savedInputs.add(input);
-    _summaryController.add(_buildSummary());
+    _summaryController.add(_buildSummary(DateTime.now()));
     _transactionsController.add(_buildTransactions());
   }
 
@@ -207,6 +207,11 @@ class _FakeTransactionRepository implements TransactionRepository {
   }
 
   @override
+  Stream<HomeSummary> watchMonthSummary(String userId, DateTime month) {
+    return _summaryController.stream.map((_) => _buildSummary(month));
+  }
+
+  @override
   Stream<List<TransactionRecord>> watchRecentTransactions(
     String userId, {
     int limit = 5,
@@ -217,15 +222,35 @@ class _FakeTransactionRepository implements TransactionRepository {
   }
 
   @override
+  Stream<List<TransactionRecord>> watchMonthTransactions(
+    String userId,
+    DateTime month, {
+    int? limit,
+  }) {
+    return _transactionsController.stream.map((transactions) {
+      final filtered = transactions
+          .where((record) => _isSameMonth(record.transactionDate, month))
+          .toList();
+      return limit == null ? filtered : filtered.take(limit).toList();
+    });
+  }
+
+  @override
   Stream<List<TransactionRecord>> watchTransactions(String userId) {
     return _transactionsController.stream;
   }
 
-  HomeSummary _buildSummary() {
+  HomeSummary _buildSummary(DateTime month) {
     var incomeTotal = 0.0;
     var expenseTotal = 0.0;
+    var transactionCount = 0;
 
     for (final input in savedInputs) {
+      if (!_isSameMonth(input.transactionDate, month)) {
+        continue;
+      }
+
+      transactionCount++;
       if (input.type == TransactionType.income) {
         incomeTotal += input.amount;
       } else {
@@ -236,7 +261,7 @@ class _FakeTransactionRepository implements TransactionRepository {
     return HomeSummary(
       incomeTotal: incomeTotal,
       expenseTotal: expenseTotal,
-      transactionCount: savedInputs.length,
+      transactionCount: transactionCount,
     );
   }
 
@@ -256,4 +281,8 @@ class _FakeTransactionRepository implements TransactionRepository {
       );
     }).toList();
   }
+}
+
+bool _isSameMonth(DateTime left, DateTime right) {
+  return left.year == right.year && left.month == right.month;
 }

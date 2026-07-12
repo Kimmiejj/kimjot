@@ -9,9 +9,17 @@ abstract class TransactionRepository {
 
   Stream<HomeSummary> watchCurrentMonthSummary(String userId);
 
+  Stream<HomeSummary> watchMonthSummary(String userId, DateTime month);
+
   Stream<List<TransactionRecord>> watchRecentTransactions(
     String userId, {
     int limit = 5,
+  });
+
+  Stream<List<TransactionRecord>> watchMonthTransactions(
+    String userId,
+    DateTime month, {
+    int? limit,
   });
 
   Stream<List<TransactionRecord>> watchTransactions(String userId);

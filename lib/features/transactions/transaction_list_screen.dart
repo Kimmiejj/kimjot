@@ -9,15 +9,40 @@ import 'transaction_record.dart';
 import 'transaction_repository.dart';
 import 'transaction_type.dart';
 
-class TransactionListScreen extends StatelessWidget {
+class TransactionListScreen extends StatefulWidget {
   const TransactionListScreen({
     required this.user,
     required this.transactionRepository,
+    this.initialMonth,
     super.key,
   });
 
   final AuthUser user;
   final TransactionRepository transactionRepository;
+  final DateTime? initialMonth;
+
+  @override
+  State<TransactionListScreen> createState() => _TransactionListScreenState();
+}
+
+class _TransactionListScreenState extends State<TransactionListScreen> {
+  late DateTime _selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialMonth ?? DateTime.now();
+    _selectedMonth = DateTime(initial.year, initial.month);
+  }
+
+  void _changeMonth(int delta) {
+    setState(() {
+      _selectedMonth = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month + delta,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +63,9 @@ class TransactionListScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                 sliver: SliverToBoxAdapter(
                   child: _TransactionsHeader(
+                    selectedMonth: _selectedMonth,
+                    onPreviousMonth: () => _changeMonth(-1),
+                    onNextMonth: () => _changeMonth(1),
                     onBack: () => Navigator.of(context).maybePop(),
                   ),
                 ),
@@ -45,7 +73,10 @@ class TransactionListScreen extends StatelessWidget {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
                 sliver: StreamBuilder<List<TransactionRecord>>(
-                  stream: transactionRepository.watchTransactions(user.uid),
+                  stream: widget.transactionRepository.watchMonthTransactions(
+                    widget.user.uid,
+                    _selectedMonth,
+                  ),
                   builder: (context, snapshot) {
                     final transactions = snapshot.data ?? const [];
 
@@ -93,8 +124,16 @@ class TransactionListScreen extends StatelessWidget {
 }
 
 class _TransactionsHeader extends StatelessWidget {
-  const _TransactionsHeader({required this.onBack});
+  const _TransactionsHeader({
+    required this.selectedMonth,
+    required this.onPreviousMonth,
+    required this.onNextMonth,
+    required this.onBack,
+  });
 
+  final DateTime selectedMonth;
+  final VoidCallback onPreviousMonth;
+  final VoidCallback onNextMonth;
   final VoidCallback onBack;
 
   @override
@@ -142,13 +181,45 @@ class _TransactionsHeader extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          context.strings.allTransactions,
+          context.strings.formatMonthYear(selectedMonth),
           style: const TextStyle(
             color: Color(0xFF10233F),
             fontSize: 30,
             fontWeight: FontWeight.w900,
             letterSpacing: 0,
           ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _MonthControlButton(
+              icon: Icons.chevron_left_rounded,
+              tooltip: context.strings.previousMonth,
+              onTap: onPreviousMonth,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                DateTime.now().year == selectedMonth.year &&
+                        DateTime.now().month == selectedMonth.month
+                    ? context.strings.thisMonth
+                    : context.strings.otherMonth,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF65748B),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _MonthControlButton(
+              icon: Icons.chevron_right_rounded,
+              tooltip: context.strings.nextMonth,
+              onTap: onNextMonth,
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         Container(
@@ -177,6 +248,33 @@ class _TransactionsHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _MonthControlButton extends StatelessWidget {
+  const _MonthControlButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: onTap,
+        icon: Icon(icon),
+        color: const Color(0xFF3268F6),
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.white.withValues(alpha: 0.72),
+        ),
+      ),
     );
   }
 }
