@@ -65,6 +65,25 @@ void main() {
     },
   );
 
+  test(
+    'treats OCR Thai vowel variants of the same real name as internal transfer',
+    () {
+      final result = SlipScanResult(
+        rawText: 'SCB โอนเงินสำเร็จ จำนวนเงิน 26000.00',
+        bankName: 'SCB EASY',
+        sender: 'นาย ชีษณุชา ส.',
+        recipient: 'นาย ชิษณุชา สมบูรณ์วรรณะ',
+        amount: 26000,
+        category: SlipCategory.detail,
+      );
+
+      final decision = resolveLocalSlipDecision(result);
+
+      expect(decision?.type, TransactionType.internalTransfer);
+      expect(decision?.categoryId, 'internal_transfer');
+    },
+  );
+
   test('does not treat biller recipient as internal transfer', () {
     final result = SlipScanResult(
       rawText: 'SCB จ่ายบิลสำเร็จ FOOD PATIO รหัสอ้างอิง 20260711',

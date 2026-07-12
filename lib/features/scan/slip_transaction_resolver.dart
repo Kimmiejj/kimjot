@@ -210,7 +210,13 @@ bool partiesLookLikeSamePerson(String? sender, String? recipient) {
   final senderTokens = _nameTokens(_withoutThaiTitles(sender));
   final recipientTokens = _nameTokens(_withoutThaiTitles(recipient));
   if (senderTokens.isEmpty || recipientTokens.isEmpty) return false;
-  return senderTokens.intersection(recipientTokens).isNotEmpty;
+  if (senderTokens.intersection(recipientTokens).isNotEmpty) return true;
+
+  final normalizedSenderTokens = _normalizedThaiNameTokens(senderTokens);
+  final normalizedRecipientTokens = _normalizedThaiNameTokens(recipientTokens);
+  return normalizedSenderTokens
+      .intersection(normalizedRecipientTokens)
+      .isNotEmpty;
 }
 
 String? _withoutThaiTitles(String? value) {
@@ -386,5 +392,16 @@ Set<String> _nameTokens(String? value) {
       .split(RegExp(r'[^a-z0-9\u0E00-\u0E7F]+'))
       .map((token) => token.trim())
       .where((token) => token.length >= 2 && !ignored.contains(token))
+      .toSet();
+}
+
+Set<String> _normalizedThaiNameTokens(Set<String> tokens) {
+  return tokens
+      .where((token) => RegExp(r'[\u0E00-\u0E7F]').hasMatch(token))
+      .map(
+        (token) =>
+            token.replaceAll(RegExp(r'[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]'), ''),
+      )
+      .where((token) => token.length >= 4)
       .toSet();
 }
