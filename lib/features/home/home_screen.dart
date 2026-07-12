@@ -430,7 +430,6 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
-    final currentMonth = DateTime.now();
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 24),
@@ -526,13 +525,10 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                 final isSelected =
                     widget.initialMonth.year == _year &&
                     widget.initialMonth.month == month;
-                final isCurrent =
-                    currentMonth.year == _year && currentMonth.month == month;
 
                 return _MonthChoiceButton(
                   label: _monthLabel(context, month),
                   isSelected: isSelected,
-                  isCurrent: isCurrent,
                   onTap: () => Navigator.of(
                     context,
                   ).pop(DateTime(_year, month)),
@@ -550,24 +546,19 @@ class _MonthChoiceButton extends StatelessWidget {
   const _MonthChoiceButton({
     required this.label,
     required this.isSelected,
-    required this.isCurrent,
     required this.onTap,
   });
 
   final String label;
   final bool isSelected;
-  final bool isCurrent;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    const currentMonthColor = Color(0xFF006699);
     const selectedBorderColor = Color(0xFF8EDCF2);
-    final textColor = isCurrent ? currentMonthColor : const Color(0xFF111827);
+    const textColor = Color(0xFF111827);
     final borderColor = isSelected
         ? selectedBorderColor
-        : isCurrent
-        ? currentMonthColor
         : const Color(0x245D81AD);
 
     return InkWell(
@@ -581,7 +572,7 @@ class _MonthChoiceButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: borderColor,
-            width: isSelected || isCurrent ? 1.8 : 1,
+            width: isSelected ? 1.8 : 1,
           ),
         ),
         child: Center(
