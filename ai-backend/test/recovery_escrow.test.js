@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const test = require("node:test");
 
 const {
+  buildGmailRawMessage,
   decodeFirestoreDocument,
   encodeFirestoreFields,
   decryptEscrow,
@@ -12,6 +13,30 @@ const {
   parseEscrowMasterKey,
   recoveryEmailProviderError,
 } = require("../server")._test;
+
+test("Gmail recovery message preserves headers and UTF-8 text", () => {
+  const raw = buildGmailRawMessage({
+    from: "Kimjod <kiminosystem@gmail.com>",
+    to: "owner@gmail.com",
+    subject: "Kimjod recovery key",
+    text: "Recovery key: คีย์-ทดสอบ",
+  });
+  const message = Buffer.from(raw, "base64url").toString("utf8");
+  const [headers, encodedBody] = message.split("\r\n\r\n");
+
+  assert.match(headers, /From: Kimjod <kiminosystem@gmail\.com>/);
+  assert.match(headers, /To: owner@gmail\.com/);
+  assert.equal(
+    Buffer.from(encodedBody.replace(/\s/g, ""), "base64").toString("utf8"),
+    "Recovery key: คีย์-ทดสอบ",
+  );
+  assert.throws(() => buildGmailRawMessage({
+    from: "Kimjod <kiminosystem@gmail.com>",
+    to: "owner@gmail.com\r\nBcc: attacker@example.com",
+    subject: "Kimjod recovery key",
+    text: "secret",
+  }));
+});
 
 test("recovery escrow round-trips only with the matching owner metadata", () => {
   const masterKey = crypto.randomBytes(32);

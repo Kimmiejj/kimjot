@@ -29,8 +29,14 @@ caches financial analysis, and returns every AI result to the Kimjod UI.
   64 hexadecimal characters. It encrypts recovery keys with AES-256-GCM before
   Firestore storage. Generate it once, back it up outside the repository, and
   do not rotate it without first migrating existing escrow records.
+- `RECOVERY_GMAIL_USER`: Gmail sender for recovery email. The production sender
+  is `kiminosystem@gmail.com`.
+- `RECOVERY_GMAIL_CLIENT_ID`, `RECOVERY_GMAIL_CLIENT_SECRET`, and
+  `RECOVERY_GMAIL_REFRESH_TOKEN`: server-only Google OAuth 2.0 credentials with
+  offline `https://www.googleapis.com/auth/gmail.send` access. When all four
+  Gmail values are present, Gmail is preferred over the Resend fallback.
 - `RESEND_API_KEY`: server-only Resend API key used only by the recovery-email
-  route.
+  route when Gmail OAuth is not configured.
 - `RECOVERY_FROM_EMAIL`: sender on a Resend-verified domain, for example
   `Kimjod <recovery@your-domain.example>`.
 
@@ -38,7 +44,8 @@ The default `onboarding@resend.dev` sender is test-only and can deliver only to
 the email address that owns the Resend account. Production recovery email must
 use a verified custom domain in `RECOVERY_FROM_EMAIL`.
 
-Recovery routes require the three recovery variables above. They use the
+Recovery routes require the escrow master key and one configured email
+provider. They use the
 signed-in user's Firebase token for narrowly scoped Firestore REST access, so
 they do not require a long-lived Firebase Admin private key. Firestore stores
 only AES-GCM ciphertext; `RECOVERY_ESCROW_MASTER_KEY` stays on the backend.

@@ -25,6 +25,10 @@ const RECOVERY_ESCROW_MASTER_KEY = parseEscrowMasterKey(
 );
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RECOVERY_FROM_EMAIL = process.env.RECOVERY_FROM_EMAIL;
+const RECOVERY_GMAIL_USER = String(process.env.RECOVERY_GMAIL_USER || "").trim();
+const RECOVERY_GMAIL_CLIENT_ID = process.env.RECOVERY_GMAIL_CLIENT_ID;
+const RECOVERY_GMAIL_CLIENT_SECRET = process.env.RECOVERY_GMAIL_CLIENT_SECRET;
+const RECOVERY_GMAIL_REFRESH_TOKEN = process.env.RECOVERY_GMAIL_REFRESH_TOKEN;
 const RECOVERY_EMAIL_COOLDOWN_MS = 5 * 60 * 1000;
 const DAILY_LIMIT = Number.parseInt(process.env.AI_DAILY_LIMIT || "300", 10);
 const ALLOWED_EMAILS = new Set(
@@ -42,13 +46,28 @@ initializeFirebase();
 const db = FIREBASE_SERVICE_ACCOUNT_JSON ? admin.firestore() : null;
 const localUsage = new Map();
 const modelHealth = new Map();
+const gmailRecoveryConfigured = Boolean(
+  RECOVERY_GMAIL_USER &&
+  RECOVERY_GMAIL_CLIENT_ID &&
+  RECOVERY_GMAIL_CLIENT_SECRET &&
+  RECOVERY_GMAIL_REFRESH_TOKEN,
+);
+const resendRecoveryConfigured = Boolean(RESEND_API_KEY && RECOVERY_FROM_EMAIL);
+let gmailAccessToken = "";
+let gmailAccessTokenExpiresAt = 0;
 
 app.get("/health", (_request, response) => {
   response.json({
     status: GEMINI_API_KEY ? "ready" : "setup_required",
-    recovery: RECOVERY_ESCROW_MASTER_KEY && RESEND_API_KEY && RECOVERY_FROM_EMAIL
+    recovery: RECOVERY_ESCROW_MASTER_KEY &&
+      (gmailRecoveryConfigured || resendRecoveryConfigured)
       ? "ready"
       : "setup_required",
+    recoveryProvider: gmailRecoveryConfigured
+      ? "gmail"
+      : resendRecoveryConfigured
+        ? "resend"
+        : null,
     provider: "gemini",
     model: GEMINI_MODEL,
     models: GEMINI_MODEL_POOL,
@@ -170,29 +189,11 @@ app.post("/v1/recovery-key/email", recoveryRoute(async (request) => {
   const recoveryKey = decryptEscrow(escrow, RECOVERY_ESCROW_MASTER_KEY, aad);
   const windowId = Math.floor(Date.now() / RECOVERY_EMAIL_COOLDOWN_MS);
   try {
-    await axios.post(
-      "https://api.resend.com/emails",
-      {
-        from: RECOVERY_FROM_EMAIL,
-        to: [email],
-        subject: "Kimjod recovery key",
-        text: [
-          "You requested your Kimjod recovery key.",
-          "",
-          recoveryKey,
-          "",
-          "Keep this key private. If you did not request this email, sign in to Kimjod and change the recovery key.",
-        ].join("\n"),
-      },
-      {
-        headers: {
-          authorization: `Bearer ${RESEND_API_KEY}`,
-          "content-type": "application/json",
-          "idempotency-key": sha256(`${uid}|${escrowId}|${windowId}`),
-        },
-        timeout: 10000,
-      },
-    );
+    await sendRecoveryEmail({
+      email,
+      recoveryKey,
+      idempotencyKey: sha256(`${uid}|${escrowId}|${windowId}`),
+    });
   } catch (error) {
     throw recoveryEmailProviderError(error);
   }
@@ -559,9 +560,110 @@ function aiRoute(handler) {
   };
 }
 
+async function sendRecoveryEmail({ email, recoveryKey, idempotencyKey }) {
+  const text = [
+    "You requested your Kimjod recovery key.",
+    "",
+    recoveryKey,
+    "",
+    "Keep this key private. If you did not request this email, sign in to Kimjod and change the recovery key.",
+  ].join("\n");
+  if (gmailRecoveryConfigured) {
+    const accessToken = await getGmailAccessToken();
+    const raw = buildGmailRawMessage({
+      from: `Kimjod <${RECOVERY_GMAIL_USER}>`,
+      to: email,
+      subject: "Kimjod recovery key",
+      text,
+    });
+    await axios.post(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+      { raw },
+      {
+        headers: { authorization: `Bearer ${accessToken}` },
+        timeout: 10000,
+      },
+    );
+    return;
+  }
+
+  await axios.post(
+    "https://api.resend.com/emails",
+    {
+      from: RECOVERY_FROM_EMAIL,
+      to: [email],
+      subject: "Kimjod recovery key",
+      text,
+    },
+    {
+      headers: {
+        authorization: `Bearer ${RESEND_API_KEY}`,
+        "content-type": "application/json",
+        "idempotency-key": idempotencyKey,
+      },
+      timeout: 10000,
+    },
+  );
+}
+
+async function getGmailAccessToken() {
+  if (gmailAccessToken && Date.now() < gmailAccessTokenExpiresAt) {
+    return gmailAccessToken;
+  }
+  try {
+    const response = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        client_id: RECOVERY_GMAIL_CLIENT_ID,
+        client_secret: RECOVERY_GMAIL_CLIENT_SECRET,
+        refresh_token: RECOVERY_GMAIL_REFRESH_TOKEN,
+        grant_type: "refresh_token",
+      }),
+      {
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        timeout: 10000,
+      },
+    );
+    gmailAccessToken = String(response.data?.access_token || "");
+    if (!gmailAccessToken) throw new Error("gmail_access_token_missing");
+    const expiresIn = Number(response.data?.expires_in || 3600);
+    gmailAccessTokenExpiresAt = Date.now() + Math.max(0, expiresIn - 60) * 1000;
+    return gmailAccessToken;
+  } catch (error) {
+    throw Object.assign(new Error(error.message), {
+      httpStatus: 503,
+      publicError: "recovery_email_auth_failed",
+    });
+  }
+}
+
+function buildGmailRawMessage({ from, to, subject, text }) {
+  for (const value of [from, to, subject]) {
+    if (/\r|\n/.test(value)) throw new Error("invalid_email_header");
+  }
+  const encodedText = Buffer.from(text, "utf8")
+    .toString("base64")
+    .match(/.{1,76}/g)
+    ?.join("\r\n") || "";
+  const message = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    encodedText,
+  ].join("\r\n");
+  return Buffer.from(message, "utf8").toString("base64url");
+}
+
 function recoveryRoute(handler) {
   return async (request, response) => {
-    if (!RECOVERY_ESCROW_MASTER_KEY || !RESEND_API_KEY || !RECOVERY_FROM_EMAIL) {
+    if (
+      !RECOVERY_ESCROW_MASTER_KEY ||
+      (!gmailRecoveryConfigured && !resendRecoveryConfigured)
+    ) {
       return response.status(503).json({ error: "recovery_service_not_configured" });
     }
     try {
@@ -591,10 +693,23 @@ function verifiedRecoveryIdentity(user) {
 }
 
 function recoveryEmailProviderError(error) {
+  if (error.publicError) return error;
   const status = error.response?.status;
   const providerMessage = String(
     error.response?.data?.message || error.response?.data?.error || error.message || "",
   );
+  if (gmailRecoveryConfigured && (status === 401 || status === 403)) {
+    return Object.assign(new Error(providerMessage), {
+      httpStatus: 503,
+      publicError: "recovery_email_auth_failed",
+    });
+  }
+  if (gmailRecoveryConfigured && status === 400) {
+    return Object.assign(new Error(providerMessage), {
+      httpStatus: 422,
+      publicError: "recovery_email_rejected",
+    });
+  }
   if (
     status === 403 &&
     /own email|testing emails|verify(?: a)? domain/i.test(providerMessage)
@@ -1057,6 +1172,7 @@ if (require.main === module) {
 
 module.exports = app;
 module.exports._test = {
+  buildGmailRawMessage,
   decodeFirestoreDocument,
   encodeFirestoreFields,
   GEMINI_MODEL_POOL,
