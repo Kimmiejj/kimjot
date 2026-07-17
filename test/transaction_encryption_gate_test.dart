@@ -137,13 +137,43 @@ void main() {
       final nextController = _FakeEncryptionController(
         TransactionEncryptionAccess.recoveryKeyRequired,
       );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpWidget(_app(user, nextController, biometricStore));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.pumpAndSettle();
 
       expect(biometricStore.authenticationRequests, 1);
       expect(find.text('ENCRYPTED APP'), findsOneWidget);
     },
   );
+
+  testWidgets('recovers when unlocking after biometrics throws', (
+    tester,
+  ) async {
+    final biometricStore = _FakeBiometricRecoveryKeyStore()
+      ..savedKey = _FakeEncryptionController.recoveryKey;
+    final controller = _FakeEncryptionController(
+      TransactionEncryptionAccess.recoveryKeyRequired,
+    )..unlockError = Exception('temporary unlock failure');
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpWidget(_app(user, controller, biometricStore));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Could not unlock. Try again.'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('biometric-unlock')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
 
   testWidgets('requests the existing key by verified email', (tester) async {
     final controller = _FakeEncryptionController(
@@ -215,6 +245,7 @@ class _FakeEncryptionController implements TransactionEncryptionController {
 
   TransactionEncryptionAccess access;
   String? createdRecoveryKey;
+  Object? unlockError;
   int emailRequests = 0;
 
   @override
@@ -252,6 +283,7 @@ class _FakeEncryptionController implements TransactionEncryptionController {
     String userId,
     String submittedRecoveryKey,
   ) async {
+    if (unlockError case final error?) throw error;
     return submittedRecoveryKey == recoveryKey;
   }
 }

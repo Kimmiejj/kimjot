@@ -51,6 +51,8 @@ telemetry.
 Prerequisites:
 
 - Flutter and Firebase CLI installed.
+- Git signed in through Git Credential Manager with write access to
+  `Kimmiejj/kimjot` (or set `KIMJOD_GITHUB_TOKEN`).
 - `firebase login` completed with access to the `kimjot` project.
 - The Android signing certificate must match the certificate used by installed
   copies of the app.
@@ -62,8 +64,8 @@ node release-center/server.js
 ```
 
 Then open `http://127.0.0.1:4173`. **Build APK** updates `pubspec.yaml` and stages
-the versioned release without affecting users. **Send update** deploys the APK
-and Firestore rules, records the release, and only then raises
+the versioned release without affecting users. **Send update** deploys Firestore
+rules, uploads the APK to GitHub Releases, records the release, and only then raises
 `app_config/android.minimumVersionCode`. The staged build survives a Release
 Center restart. If build or Hosting deploy fails, the required-version document
 is not changed and the staged APK can be retried.

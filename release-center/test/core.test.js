@@ -6,6 +6,8 @@ const assert = require('node:assert/strict');
 const {
   aggregateUsage,
   decodeFirestoreFields,
+  githubReleaseDownloadUrl,
+  githubReleaseTag,
   nextPatchVersion,
   parsePubspecVersion,
   replacePubspecVersion,
@@ -20,6 +22,14 @@ test('parses and increments Flutter version', () => {
   assert.match(
     replacePubspecVersion('name: kimjod\nversion: 1.1.0+2\n', '1.2.0', 4),
     /version: 1\.2\.0\+4/,
+  );
+});
+
+test('builds a stable GitHub Release APK URL', () => {
+  assert.equal(githubReleaseTag('1.1.2', 5), 'android-v1.1.2-5');
+  assert.equal(
+    githubReleaseDownloadUrl('Kimmiejj/kimjot', '1.1.2', 5, 'kimjod-1.1.2-5.apk'),
+    'https://github.com/Kimmiejj/kimjot/releases/download/android-v1.1.2-5/kimjod-1.1.2-5.apk',
   );
 });
 

@@ -53,7 +53,6 @@ class DeviceBiometricRecoveryKeyStore implements BiometricRecoveryKeyStore {
             ? 'ยืนยันด้วยใบหน้าหรือลายนิ้วมือเพื่อปลดล็อกข้อมูลรายการ'
             : 'Use face or fingerprint recognition to unlock transaction data.',
         biometricOnly: true,
-        persistAcrossBackgrounding: true,
       );
       if (!authenticated) return null;
       return _storage.read(key: '$_keyPrefix$userId');

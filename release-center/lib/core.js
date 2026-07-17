@@ -46,6 +46,19 @@ function validateReleaseVersion(versionName, versionCode) {
   }
 }
 
+function githubReleaseTag(versionName, versionCode) {
+  validateReleaseVersion(versionName, versionCode);
+  return `android-v${versionName}-${versionCode}`;
+}
+
+function githubReleaseDownloadUrl(repository, versionName, versionCode, apkName) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(repository))) {
+    throw new Error('GitHub repository must use owner/name format');
+  }
+  const tag = githubReleaseTag(versionName, versionCode);
+  return `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(apkName)}`;
+}
+
 function decodeFirestoreValue(value) {
   if (!value || typeof value !== 'object') return null;
   if ('nullValue' in value) return null;
@@ -178,6 +191,8 @@ module.exports = {
   decodeFirestoreFields,
   encodeFirestoreFields,
   formatDateKey,
+  githubReleaseDownloadUrl,
+  githubReleaseTag,
   nextPatchVersion,
   parsePubspecVersion,
   parseVersion,

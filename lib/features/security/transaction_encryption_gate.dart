@@ -26,7 +26,10 @@ class TransactionEncryptionGate extends StatefulWidget {
       _TransactionEncryptionGateState();
 }
 
-class _TransactionEncryptionGateState extends State<TransactionEncryptionGate> {
+class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
+    with WidgetsBindingObserver {
+  static const _automaticBiometricDelay = Duration(milliseconds: 300);
+
   final _recoveryController = TextEditingController();
   final _newRecoveryController = TextEditingController();
   final _confirmRecoveryController = TextEditingController();
@@ -46,7 +49,15 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _prepare();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _scheduleAutomaticBiometricUnlock();
+    }
   }
 
   @override
@@ -66,6 +77,7 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _recoveryController.dispose();
     _newRecoveryController.dispose();
     _confirmRecoveryController.dispose();
@@ -83,18 +95,39 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate> {
           _access = access;
           _hasBiometricKey = hasBiometricKey;
         });
-        if (hasBiometricKey && !_autoBiometricRequested) {
-          _autoBiometricRequested = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _unlockWithBiometrics();
-          });
-        }
+        _scheduleAutomaticBiometricUnlock();
       }
     } catch (error) {
       if (mounted) {
         setState(() => _error = error.toString());
       }
     }
+  }
+
+  void _scheduleAutomaticBiometricUnlock() {
+    if (!mounted ||
+        !_hasBiometricKey ||
+        _autoBiometricRequested ||
+        _access != TransactionEncryptionAccess.recoveryKeyRequired) {
+      return;
+    }
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    if (lifecycleState != null && lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    _autoBiometricRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future<void>.delayed(_automaticBiometricDelay);
+      if (!mounted) return;
+      final currentLifecycleState = WidgetsBinding.instance.lifecycleState;
+      if (currentLifecycleState != null &&
+          currentLifecycleState != AppLifecycleState.resumed) {
+        _autoBiometricRequested = false;
+        return;
+      }
+      await _unlockWithBiometrics();
+    });
   }
 
   Future<void> _createRecoveryKey(String requestedRecoveryKey) async {
@@ -190,36 +223,50 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate> {
   }
 
   Future<void> _unlockWithBiometrics() async {
+    if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
     });
-    final recoveryKey = await _biometricKeyStore.authenticateAndReadKey(
-      userId: widget.user.uid,
-      isThai: context.strings.isThai,
-    );
-    final unlocked =
-        recoveryKey != null &&
-        await widget.controller.unlockWithRecoveryKey(
-          widget.user.uid,
-          recoveryKey,
-        );
-    if (!mounted) return;
-    if (recoveryKey != null && !unlocked) {
-      await _biometricKeyStore.deleteKey(widget.user.uid);
-    }
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
+    try {
+      final recoveryKey = await _biometricKeyStore.authenticateAndReadKey(
+        userId: widget.user.uid,
+        isThai: context.strings.isThai,
+      );
+      if (recoveryKey == null) return;
+
+      final unlocked = await widget.controller.unlockWithRecoveryKey(
+        widget.user.uid,
+        recoveryKey,
+      );
+      if (!mounted) return;
       if (unlocked) {
-        _access = TransactionEncryptionAccess.unlocked;
-      } else if (recoveryKey != null) {
+        setState(() => _access = TransactionEncryptionAccess.unlocked);
+        return;
+      }
+
+      try {
+        await _biometricKeyStore.deleteKey(widget.user.uid);
+      } catch (_) {
+        // The unlock result is more important than removing a stale key.
+      }
+      if (!mounted) return;
+      setState(() {
         _hasBiometricKey = false;
         _error = context.strings.isThai
             ? 'คีย์ที่จำไว้ใช้ไม่ได้ กรุณากรอกคีย์ใหม่'
             : 'The saved key no longer works. Enter your key again.';
-      }
-    });
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = context.strings.isThai
+            ? 'ปลดล็อกไม่สำเร็จ กรุณาลองใหม่'
+            : 'Could not unlock. Try again.';
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _sendRecoveryEmail() async {

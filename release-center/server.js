@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
+const https = require('node:https');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
@@ -11,6 +12,8 @@ const {
   dateKeys,
   decodeFirestoreFields,
   encodeFirestoreFields,
+  githubReleaseDownloadUrl,
+  githubReleaseTag,
   nextPatchVersion,
   parsePubspecVersion,
   replacePubspecVersion,
@@ -20,8 +23,8 @@ const {
 const HOST = process.env.RELEASE_CENTER_HOST || '127.0.0.1';
 const PORT = Number(process.env.RELEASE_CENTER_PORT || 4173);
 const PROJECT_ID = process.env.KIMJOD_FIREBASE_PROJECT || 'kimjot';
-const HOSTING_SITE = process.env.KIMJOD_HOSTING_SITE || 'kimjot';
-const HOSTING_BASE_URL = process.env.KIMJOD_HOSTING_URL || 'https://kimjot.web.app';
+const GITHUB_REPOSITORY = process.env.KIMJOD_GITHUB_REPOSITORY || 'Kimmiejj/kimjot';
+const RELEASES_BASE_URL = `https://github.com/${GITHUB_REPOSITORY}/releases`;
 const ROOT = path.resolve(__dirname, '..');
 const WEB_DIR = path.join(__dirname, 'web');
 const PUBLISH_DIR = path.join(__dirname, 'publish');
@@ -155,7 +158,7 @@ async function statusPayload() {
     : nextPatchVersion(current);
   return {
     projectId: PROJECT_ID,
-    hostingUrl: HOSTING_BASE_URL,
+    hostingUrl: RELEASES_BASE_URL,
     current,
     suggested,
     updateConfig,
@@ -429,6 +432,128 @@ async function googleJson(url, token, options = {}) {
   return data;
 }
 
+async function githubAccessToken() {
+  const explicit = process.env.KIMJOD_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+  if (explicit) return explicit;
+  const output = await runCapturedCommand('git', ['credential', 'fill'], {
+    cwd: ROOT,
+    input: 'protocol=https\nhost=github.com\n\n',
+    sensitive: true,
+  });
+  const credentials = {};
+  for (const line of output.split(/\r?\n/)) {
+    const separator = line.indexOf('=');
+    if (separator > 0) credentials[line.slice(0, separator)] = line.slice(separator + 1);
+  }
+  if (!credentials.password) {
+    throw new Error('GitHub sign-in was not found. Sign in with Git Credential Manager or set KIMJOD_GITHUB_TOKEN.');
+  }
+  return credentials.password;
+}
+
+async function githubJson(url, token, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'Kimjod-Release-Center',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(options.headers || {}),
+    },
+  });
+  if (response.status === 404 && options.allow404) return null;
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_) {
+    data = { message: text };
+  }
+  if (!response.ok) {
+    throw new Error(data.message || `GitHub API returned ${response.status}`);
+  }
+  return data;
+}
+
+async function validateGitHubAccess(token) {
+  const repository = await githubJson(`https://api.github.com/repos/${GITHUB_REPOSITORY}`, token);
+  if (repository.permissions && repository.permissions.push !== true) {
+    throw new Error(`GitHub credential does not have write access to ${GITHUB_REPOSITORY}`);
+  }
+}
+
+async function ensureGitHubRelease(release, token) {
+  const tag = githubReleaseTag(release.versionName, release.versionCode);
+  const tagUrl = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${encodeURIComponent(tag)}`;
+  const existing = await githubJson(tagUrl, token, { allow404: true });
+  if (existing) return existing;
+  return githubJson(`https://api.github.com/repos/${GITHUB_REPOSITORY}/releases`, token, {
+    method: 'POST',
+    body: JSON.stringify({
+      tag_name: tag,
+      name: `Kimjod ${release.versionName} (${release.versionCode})`,
+      body: 'Android update published by Kimjod Release Center.',
+      draft: false,
+      prerelease: false,
+    }),
+  });
+}
+
+async function publishGitHubApk(release, apkPath, token) {
+  const githubRelease = await ensureGitHubRelease(release, token);
+  const existingAsset = (githubRelease.assets || []).find((asset) => asset.name === release.apkName);
+  if (existingAsset?.state === 'uploaded' && Number(existingAsset.size) === Number(release.sizeBytes)) {
+    return existingAsset;
+  }
+  if (existingAsset) {
+    await githubJson(
+      `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${existingAsset.id}`,
+      token,
+      { method: 'DELETE' },
+    );
+  }
+  return uploadGitHubReleaseAsset(githubRelease.upload_url, apkPath, release.apkName, token);
+}
+
+function uploadGitHubReleaseAsset(uploadUrl, apkPath, apkName, token) {
+  const target = new URL(uploadUrl.replace(/\{.*$/, ''));
+  target.searchParams.set('name', apkName);
+  const size = fs.statSync(apkPath).size;
+  return new Promise((resolve, reject) => {
+    const request = https.request(target, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'Content-Length': size,
+        'Content-Type': 'application/vnd.android.package-archive',
+        'User-Agent': 'Kimjod-Release-Center',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => { body += chunk; });
+      response.on('end', () => {
+        let data = {};
+        try {
+          data = body ? JSON.parse(body) : {};
+        } catch (_) {
+          data = { message: body };
+        }
+        if (response.statusCode >= 200 && response.statusCode < 300) resolve(data);
+        else reject(new Error(data.message || `GitHub upload returned ${response.statusCode}`));
+      });
+    });
+    request.on('error', reject);
+    const input = fs.createReadStream(apkPath);
+    input.on('error', (error) => request.destroy(error));
+    input.pipe(request);
+  });
+}
+
 function firestoreDocumentUrl(documentPath) {
   const encoded = documentPath
     .split('/')
@@ -551,13 +676,20 @@ async function buildPipeline(job, release) {
     fs.copyFileSync(APK_PATH, publishedApk);
     const apkBuffer = fs.readFileSync(publishedApk);
     const sha256 = crypto.createHash('sha256').update(apkBuffer).digest('hex');
-    const updateUrl = `${HOSTING_BASE_URL}/downloads/${apkName}`;
+    const updateUrl = githubReleaseDownloadUrl(
+      GITHUB_REPOSITORY,
+      release.versionName,
+      release.versionCode,
+      apkName,
+    );
     const builtAt = new Date().toISOString();
     const manifest = {
       applicationId: 'com.kimjot.project',
       versionName: release.versionName,
       versionCode: release.versionCode,
       updateUrl,
+      downloadProvider: 'github-releases',
+      releaseTag: githubReleaseTag(release.versionName, release.versionCode),
       sha256,
       sizeBytes: apkBuffer.length,
       builtAt,
@@ -620,14 +752,45 @@ async function beginPublish() {
 
 async function publishPipeline(job, release) {
   try {
+    release.downloadProvider = 'github-releases';
+    release.releaseTag = githubReleaseTag(release.versionName, release.versionCode);
+    release.updateUrl = githubReleaseDownloadUrl(
+      GITHUB_REPOSITORY,
+      release.versionName,
+      release.versionCode,
+      release.apkName,
+    );
     logJob(job, `Sending ${release.versionName}+${release.versionCode} to users`);
-    setJobStep(job, 'Check Firebase');
-    const token = await firebaseAccessToken();
+    setJobStep(job, 'Check Firebase and GitHub');
+    const [token, githubToken] = await Promise.all([
+      firebaseAccessToken(),
+      githubAccessToken(),
+    ]);
+    await validateGitHubAccess(githubToken);
     if (!executableLooksAvailable(FIREBASE_BIN)) throw new Error(`Firebase CLI was not found at ${FIREBASE_BIN}`);
     const currentConfig = await getFirestoreDocument('app_config/android', token) || {};
     if (release.versionCode < Number(currentConfig.minimumVersionCode || 0)) {
       throw new Error(`Cannot send versionCode ${release.versionCode}; users already require ${currentConfig.minimumVersionCode}`);
     }
+
+    setJobStep(job, 'Deploy Firestore rules');
+    await runLoggedCommand(
+      job,
+      FIREBASE_BIN,
+      ['deploy', '--only', 'firestore:rules', '--project', PROJECT_ID, '--non-interactive'],
+      { cwd: ROOT },
+    );
+
+    setJobStep(job, 'Upload APK to GitHub Releases');
+    const apkPath = path.join(PUBLISH_DIR, 'downloads', release.apkName);
+    const asset = await publishGitHubApk(release, apkPath, githubToken);
+    release.updateUrl = asset.browser_download_url || githubReleaseDownloadUrl(
+      GITHUB_REPOSITORY,
+      release.versionName,
+      release.versionCode,
+      release.apkName,
+    );
+    logJob(job, `Uploaded APK: ${release.updateUrl}`);
 
     const publishedAt = new Date().toISOString();
     const manifest = { ...release, publishedAt };
@@ -635,15 +798,6 @@ async function publishPipeline(job, release) {
     delete manifest.messageTh;
     delete manifest.messageEn;
     fs.writeFileSync(path.join(PUBLISH_DIR, 'release.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-
-    setJobStep(job, 'Deploy APK and rules');
-    await runLoggedCommand(
-      job,
-      FIREBASE_BIN,
-      ['deploy', '--only', `hosting:${HOSTING_SITE},firestore:rules`, '--project', PROJECT_ID, '--non-interactive'],
-      { cwd: ROOT },
-    );
-    logJob(job, `Uploaded APK: ${release.updateUrl}`);
 
     setJobStep(job, 'Record release');
     const releaseId = `${publishedAt.replace(/[^0-9]/g, '').slice(0, 14)}_${release.versionCode}`;
@@ -704,6 +858,7 @@ function runCapturedCommand(executable, args, options = {}) {
     let errorOutput = '';
     child.stdout.on('data', (chunk) => { output += chunk.toString(); });
     child.stderr.on('data', (chunk) => { errorOutput += chunk.toString(); });
+    if (options.input) child.stdin.end(options.input);
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) return resolve(output);
