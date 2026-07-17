@@ -2,22 +2,23 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kimjod/app/app_language.dart';
-import 'package:kimjod/features/auth/auth_gate.dart';
-import 'package:kimjod/features/auth/auth_service.dart';
-import 'package:kimjod/features/auth/auth_user.dart';
-import 'package:kimjod/features/auth/login_screen.dart';
-import 'package:kimjod/features/scan/album_sync_review_screen.dart';
-import 'package:kimjod/features/scan/slip_scan_result.dart';
-import 'package:kimjod/features/transactions/create_transaction_input.dart';
-import 'package:kimjod/features/transactions/home_summary.dart';
-import 'package:kimjod/features/transactions/manual_transaction_sheet.dart';
-import 'package:kimjod/features/transactions/transaction_list_screen.dart';
-import 'package:kimjod/features/transactions/transaction_repository.dart';
-import 'package:kimjod/features/transactions/transaction_record.dart';
-import 'package:kimjod/features/transactions/transaction_source.dart';
-import 'package:kimjod/features/transactions/transaction_type.dart';
-import 'package:kimjod/features/transactions/update_transaction_input.dart';
+import 'package:kimjot/app/app_language.dart';
+import 'package:kimjot/features/auth/auth_gate.dart';
+import 'package:kimjot/features/auth/auth_service.dart';
+import 'package:kimjot/features/auth/auth_user.dart';
+import 'package:kimjot/features/auth/login_screen.dart';
+import 'package:kimjot/features/scan/album_sync_review_screen.dart';
+import 'package:kimjot/features/scan/slip_scan_result.dart';
+import 'package:kimjot/features/transactions/create_transaction_input.dart';
+import 'package:kimjot/features/transactions/home_summary.dart';
+import 'package:kimjot/features/transactions/manual_transaction_sheet.dart';
+import 'package:kimjot/features/transactions/transaction_list_screen.dart';
+import 'package:kimjot/features/transactions/transaction_repository.dart';
+import 'package:kimjot/features/transactions/transaction_record.dart';
+import 'package:kimjot/features/transactions/transaction_source.dart';
+import 'package:kimjot/features/transactions/transaction_sync_status.dart';
+import 'package:kimjot/features/transactions/transaction_type.dart';
+import 'package:kimjot/features/transactions/update_transaction_input.dart';
 
 void main() {
   testWidgets('shows the kimjod login screen', (WidgetTester tester) async {
@@ -89,7 +90,7 @@ void main() {
     authService.signInWithGoogle();
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('+\nAdd'));
+    await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
 
     expect(find.text('Add transaction'), findsOneWidget);
@@ -201,6 +202,36 @@ void main() {
     expect(find.text('Taxi'), findsNothing);
   });
 
+  testWidgets('history can filter by month and year', (
+    WidgetTester tester,
+  ) async {
+    final transactionRepository = _FakeTransactionRepository();
+    const user = AuthUser(uid: 'test-user', email: 'test@example.com');
+    final initialMonth = DateTime(2026, 7);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        TransactionListScreen(
+          user: user,
+          transactionRepository: transactionRepository,
+          initialMonth: initialMonth,
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('July 2026'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select month and year'), findsOneWidget);
+    expect(find.text('2026'), findsOneWidget);
+
+    await tester.tap(find.text('January'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('January 2026'), findsOneWidget);
+    expect(find.text('Select month and year'), findsNothing);
+  });
+
   testWidgets('slip form updates to internal transfer after OCR decision', (
     WidgetTester tester,
   ) async {
@@ -287,6 +318,8 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.text('Save all'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.text('Internal Transfer'), findsOneWidget);
 
     await tester.tap(find.text('Save all'));
     await tester.pumpAndSettle();
@@ -300,6 +333,46 @@ void main() {
       transactionRepository.savedInputs.single.categoryId,
       'internal_transfer',
     );
+  });
+
+  testWidgets('album sync can be cancelled before the active scan completes', (
+    WidgetTester tester,
+  ) async {
+    final scanCompleter = Completer<SlipScanResult>();
+    final transactionRepository = _FakeTransactionRepository();
+    const user = AuthUser(
+      uid: 'test-user',
+      displayName: 'Test User',
+      email: 'test@example.com',
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        AlbumSyncReviewScreen(
+          user: user,
+          transactionRepository: transactionRepository,
+          imagePaths: const ['slow-slip.png'],
+          scanImagePath: (_) => scanCompleter.future,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Cancel sync'), findsOneWidget);
+    await tester.tap(find.text('Cancel sync'));
+    await tester.pump();
+
+    expect(find.text('Cancel sync'), findsNothing);
+    expect(find.text('Sync cancelled'), findsWidgets);
+    expect(transactionRepository.savedInputs, isEmpty);
+
+    scanCompleter.complete(
+      const SlipScanResult(rawText: 'late result', amount: 100),
+    );
+    await tester.pumpAndSettle();
+
+    expect(transactionRepository.savedInputs, isEmpty);
+    expect(find.text('Sync cancelled'), findsWidgets);
   });
 }
 
@@ -348,6 +421,11 @@ class _FakeTransactionRepository implements TransactionRepository {
   final _summaryController = StreamController<HomeSummary>.broadcast();
   final _transactionsController =
       StreamController<List<TransactionRecord>>.broadcast();
+
+  @override
+  Stream<TransactionSyncStatus> watchSyncStatus(String userId) {
+    return Stream.value(const TransactionSyncStatus.synced());
+  }
 
   @override
   Future<void> createManualTransaction(CreateTransactionInput input) async {

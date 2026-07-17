@@ -15,6 +15,7 @@ class TransactionRecord {
     this.merchantName,
     this.slipFingerprint,
     this.slipReference,
+    this.updatedAt,
   });
 
   final String id;
@@ -29,6 +30,7 @@ class TransactionRecord {
   final String? merchantName;
   final String? slipFingerprint;
   final String? slipReference;
+  final DateTime? updatedAt;
 
   bool get isIncome => type.isIncome;
 

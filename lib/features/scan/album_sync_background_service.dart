@@ -8,7 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../transactions/transaction_type.dart';
-import 'external_ai_client.dart';
+import 'album_sync_ai_analyzer.dart';
 import 'slip_fingerprint.dart';
 import 'slip_scan_result.dart';
 import 'slip_text_recognizer.dart';
@@ -23,13 +23,20 @@ const _albumSyncProgressNotificationId = 73030;
 const _albumSyncCompleteNotificationId = 73031;
 
 final _albumSyncOpenController = StreamController<void>.broadcast();
+final _albumSyncJobController =
+    StreamController<AlbumSyncJobSnapshot?>.broadcast();
 bool _pendingAlbumSyncOpenRequest = false;
 bool _isAlbumSyncJobRunning = false;
+final _cancelledAlbumSyncJobIds = <String>{};
+StreamSubscription<AlbumSyncJobSnapshot>? _albumSyncProgressSubscription;
 
 class AlbumSyncBackgroundService {
   const AlbumSyncBackgroundService._();
 
   static Stream<void> get openRequests => _albumSyncOpenController.stream;
+
+  static Stream<AlbumSyncJobSnapshot?> get watchJob =>
+      _albumSyncJobController.stream;
 
   static Stream<AlbumSyncJobSnapshot> get jobUpdates {
     return FlutterBackgroundService().on('albumSyncProgress').asyncMap((
@@ -112,6 +119,11 @@ class AlbumSyncBackgroundService {
         onBackground: _onAlbumSyncIosBackground,
       ),
     );
+
+    _albumSyncProgressSubscription ??= jobUpdates.listen(
+      _albumSyncJobController.add,
+      onError: (_) {},
+    );
   }
 
   static bool consumeOpenRequest() {
@@ -155,6 +167,7 @@ class AlbumSyncBackgroundService {
     );
 
     await _saveJob(snapshot);
+    _albumSyncJobController.add(snapshot);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       _albumSyncFingerprintsKey,
@@ -173,13 +186,48 @@ class AlbumSyncBackgroundService {
     return snapshot;
   }
 
+  static Future<AlbumSyncJobSnapshot?> requestCancel() async {
+    final current = await loadJob();
+    if (current == null || !current.isScanning) {
+      return current;
+    }
+
+    final cancelled = current.copyWith(
+      state: AlbumSyncJobState.cancelled,
+      items: current.items
+          .map(
+            (item) => item.status == AlbumSyncItemStatus.reading
+                ? item.copyWith(status: AlbumSyncItemStatus.cancelled)
+                : item,
+          )
+          .toList(growable: false),
+      updatedAt: DateTime.now(),
+    );
+    await _saveJob(cancelled);
+    _albumSyncJobController.add(cancelled);
+
+    FlutterBackgroundService().invoke('cancelAlbumSync', {
+      'jobId': cancelled.jobId,
+    });
+    await FlutterLocalNotificationsPlugin().cancel(
+      id: _albumSyncProgressNotificationId,
+    );
+    return cancelled;
+  }
+
   static Future<void> clearFinishedJob() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_albumSyncJobKey);
     await prefs.remove(_albumSyncFingerprintsKey);
-    await FlutterLocalNotificationsPlugin().cancel(
-      id: _albumSyncCompleteNotificationId,
-    );
+    _albumSyncJobController.add(null);
+    try {
+      await FlutterLocalNotificationsPlugin()
+          .cancel(id: _albumSyncCompleteNotificationId)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // The saved result is already cleared. Notification cleanup must never
+      // keep the review route stuck on devices that detach the plugin briefly.
+    }
   }
 }
 
@@ -214,6 +262,13 @@ class AlbumSyncJobSnapshot {
 
   int get failedCount =>
       items.where((item) => item.status == AlbumSyncItemStatus.failed).length;
+
+  int get cancelledCount => items
+      .where((item) => item.status == AlbumSyncItemStatus.cancelled)
+      .length;
+
+  double get progress =>
+      totalCount == 0 ? 0 : (completedCount / totalCount).clamp(0.0, 1.0);
 
   bool get isScanning => state == AlbumSyncJobState.scanning;
 
@@ -341,9 +396,9 @@ class AlbumSyncItemSnapshot {
   }
 }
 
-enum AlbumSyncJobState { scanning, completed, failed }
+enum AlbumSyncJobState { scanning, completed, failed, cancelled }
 
-enum AlbumSyncItemStatus { reading, ready, duplicate, failed }
+enum AlbumSyncItemStatus { reading, ready, duplicate, failed, cancelled }
 
 extension SlipScanResultAlbumSyncJson on SlipScanResult {
   Map<String, dynamic> toAlbumSyncJson() {
@@ -420,6 +475,13 @@ void _onAlbumSyncServiceStart(ServiceInstance service) async {
     unawaited(_runPendingAlbumSyncJob(service));
   });
 
+  service.on('cancelAlbumSync').listen((event) {
+    final jobId = event?['jobId'] as String?;
+    if (jobId != null && jobId.isNotEmpty) {
+      _cancelledAlbumSyncJobIds.add(jobId);
+    }
+  });
+
   service.on('stopService').listen((_) {
     service.stopSelf();
   });
@@ -449,9 +511,15 @@ Future<void> _runPendingAlbumSyncJob(ServiceInstance service) async {
         (prefs.getStringList(_albumSyncFingerprintsKey) ?? const <String>[])
             .toSet();
 
-    await _publishProgress(service, snapshot);
+    if (!await _publishProgress(service, snapshot)) {
+      return;
+    }
 
     for (var i = 0; i < snapshot.items.length; i++) {
+      if (await _isAlbumSyncCancellationRequested(snapshot.jobId)) {
+        return;
+      }
+
       final item = snapshot.items[i];
       if (item.status != AlbumSyncItemStatus.reading) {
         continue;
@@ -460,12 +528,26 @@ Future<void> _runPendingAlbumSyncJob(ServiceInstance service) async {
       await _showProgressNotification(snapshot);
 
       try {
-        final result = await recognizer.scanImagePath(item.path);
+        final scannedResult = await recognizer.scanImagePath(item.path);
+        if (await _isAlbumSyncCancellationRequested(snapshot.jobId)) {
+          return;
+        }
+        final analysis = await analyzeAlbumSyncSlip(
+          result: scannedResult,
+          imagePath: item.path,
+        );
+        if (await _isAlbumSyncCancellationRequested(snapshot.jobId)) {
+          return;
+        }
+        final result = analysis.result;
         final fingerprint = await buildSlipFingerprint(
           imagePath: item.path,
           result: result,
         );
-        final decision = await _resolveDecision(result);
+        if (await _isAlbumSyncCancellationRequested(snapshot.jobId)) {
+          return;
+        }
+        final decision = analysis.decision;
         final amount = result.amount;
 
         var status = AlbumSyncItemStatus.ready;
@@ -488,6 +570,9 @@ Future<void> _runPendingAlbumSyncJob(ServiceInstance service) async {
           updatedAt: DateTime.now(),
         );
       } catch (_) {
+        if (await _isAlbumSyncCancellationRequested(snapshot.jobId)) {
+          return;
+        }
         final nextItems = snapshot.items.toList(growable: false);
         nextItems[i] = item.copyWith(status: AlbumSyncItemStatus.failed);
         snapshot = snapshot.copyWith(
@@ -496,24 +581,35 @@ Future<void> _runPendingAlbumSyncJob(ServiceInstance service) async {
         );
       }
 
-      await _publishProgress(service, snapshot);
+      if (!await _publishProgress(service, snapshot)) {
+        return;
+      }
     }
 
+    if (await _isAlbumSyncCancellationRequested(snapshot.jobId)) {
+      return;
+    }
     snapshot = snapshot.copyWith(
       state: AlbumSyncJobState.completed,
       updatedAt: DateTime.now(),
     );
-    await _publishProgress(service, snapshot);
-    await _showCompletedNotification(snapshot);
+    if (await _publishProgress(service, snapshot)) {
+      await _showCompletedNotification(snapshot);
+    }
   } catch (_) {
+    if (await _isAlbumSyncCancellationRequested(snapshot.jobId)) {
+      return;
+    }
     snapshot = snapshot.copyWith(
       state: AlbumSyncJobState.failed,
       updatedAt: DateTime.now(),
     );
-    await _publishProgress(service, snapshot);
-    await _showFailedNotification(snapshot);
+    if (await _publishProgress(service, snapshot)) {
+      await _showFailedNotification(snapshot);
+    }
   } finally {
     _isAlbumSyncJobRunning = false;
+    _cancelledAlbumSyncJobIds.remove(snapshot.jobId);
     await recognizer.close();
     if (service is AndroidServiceInstance) {
       await FlutterLocalNotificationsPlugin().cancel(
@@ -524,54 +620,29 @@ Future<void> _runPendingAlbumSyncJob(ServiceInstance service) async {
   }
 }
 
-Future<SlipTransactionDecision?> _resolveDecision(SlipScanResult result) async {
-  final localDecision = resolveBestEffortSlipDecision(result);
-  if (localDecision?.type == TransactionType.internalTransfer) {
-    return localDecision;
-  }
-
-  final aiDecision = await ExternalAiClient.instance.analyzeSlip(
-    result: result,
-    allowedCategoryIds: kSlipAnalysisCategoryIds,
-  );
-  if (aiDecision == null) {
-    return localDecision;
-  }
-
-  if (aiDecision.type == TransactionType.internalTransfer) {
-    return SlipTransactionDecision(
-      type: TransactionType.internalTransfer,
-      categoryId: 'internal_transfer',
-      categoryName: 'Internal Transfer',
-      note: buildSlipNote(result, overrideNote: aiDecision.note),
-    );
-  }
-
-  if (aiDecision.type == TransactionType.income) {
-    return localDecision ??
-        SlipTransactionDecision(
-          type: TransactionType.expense,
-          categoryId: 'transfer',
-          categoryName: 'Transfer',
-          note: buildSlipNote(result, overrideNote: aiDecision.note),
-        );
-  }
-
-  return SlipTransactionDecision(
-    type: TransactionType.expense,
-    categoryId: aiDecision.categoryId,
-    categoryName: savedCategoryNameForId(aiDecision.categoryId),
-    note: buildSlipNote(result, overrideNote: aiDecision.note),
-  );
-}
-
-Future<void> _publishProgress(
+Future<bool> _publishProgress(
   ServiceInstance service,
   AlbumSyncJobSnapshot snapshot,
 ) async {
+  final current = await AlbumSyncBackgroundService.loadJob();
+  if (current?.jobId != snapshot.jobId ||
+      (current?.state == AlbumSyncJobState.cancelled &&
+          snapshot.state != AlbumSyncJobState.cancelled)) {
+    return false;
+  }
   await _saveJob(snapshot);
   await _showProgressNotification(snapshot);
   service.invoke('albumSyncProgress', {'job': snapshot.toJson()});
+  return true;
+}
+
+Future<bool> _isAlbumSyncCancellationRequested(String jobId) async {
+  if (_cancelledAlbumSyncJobIds.contains(jobId)) {
+    return true;
+  }
+  final current = await AlbumSyncBackgroundService.loadJob();
+  return current?.jobId != jobId ||
+      current?.state == AlbumSyncJobState.cancelled;
 }
 
 Future<void> _saveJob(AlbumSyncJobSnapshot snapshot) async {

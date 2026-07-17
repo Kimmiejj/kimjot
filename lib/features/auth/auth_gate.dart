@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../app/app_shell.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/loading_screen.dart';
+import '../security/transaction_encryption_gate.dart';
+import '../security/transaction_encryption_manager.dart';
 import '../transactions/transaction_repository.dart';
 import 'auth_service.dart';
 import 'auth_user.dart';
@@ -29,14 +31,25 @@ class AuthGate extends StatelessWidget {
 
         final user = snapshot.data;
         if (user == null) {
+          if (transactionRepository case final TransactionEncryptionController controller) {
+            controller.clearEncryptionKey();
+          }
           return LoginScreen(authService: authService);
         }
 
-        return AppShell(
+        final appShell = AppShell(
           user: user,
           authService: authService,
           transactionRepository: transactionRepository,
         );
+        if (transactionRepository case final TransactionEncryptionController controller) {
+          return TransactionEncryptionGate(
+            user: user,
+            controller: controller,
+            child: appShell,
+          );
+        }
+        return appShell;
       },
     );
   }

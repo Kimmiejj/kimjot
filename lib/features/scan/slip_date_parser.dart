@@ -27,7 +27,8 @@ DateTime parseTransactionDateFrom({
     }
   }
 
-  final inferredDate = _parseDateFromReferenceText(referenceText) ??
+  final inferredDate =
+      _parseDateFromReferenceText(referenceText) ??
       _parseDateFromReferenceText(rawText);
   if (inferredDate != null) {
     return DateTime(
@@ -201,9 +202,7 @@ String? _extractTimeValue(String? dateText) {
     return null;
   }
 
-  return RegExp(
-    r'(\d{1,2}:\d{2}(?::\d{2})?)',
-  ).firstMatch(dateText)?.group(1);
+  return RegExp(r'(\d{1,2}:\d{2}(?::\d{2})?)').firstMatch(dateText)?.group(1);
 }
 
 String _removeTimeFromDateText(String dateText) {

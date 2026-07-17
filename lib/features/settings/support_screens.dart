@@ -1,9 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/formatters/money_formatter.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../auth/auth_user.dart';
 import '../transactions/category_icons.dart';
+import '../transactions/create_transaction_input.dart';
+import '../transactions/custom_category_store.dart';
+import '../transactions/transaction_repository.dart';
+import '../transactions/transaction_source.dart';
+import '../transactions/transaction_type.dart';
 import 'money_settings_store.dart';
 
 class BudgetsScreen extends StatefulWidget {
@@ -188,7 +197,14 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
 }
 
 class InstallmentsScreen extends StatefulWidget {
-  const InstallmentsScreen({super.key});
+  const InstallmentsScreen({
+    required this.user,
+    required this.transactionRepository,
+    super.key,
+  });
+
+  final AuthUser user;
+  final TransactionRepository transactionRepository;
 
   @override
   State<InstallmentsScreen> createState() => _InstallmentsScreenState();
@@ -197,6 +213,7 @@ class InstallmentsScreen extends StatefulWidget {
 class _InstallmentsScreenState extends State<InstallmentsScreen> {
   final _store = MoneySettingsStore.instance;
   late Future<MoneySettingsSnapshot> _settingsFuture;
+  String? _payingPlanId;
 
   @override
   void initState() {
@@ -218,6 +235,56 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
       builder: (context) => _InstallmentEditor(plan: plan),
     );
     if (saved == true && mounted) _reload();
+  }
+
+  Future<void> _markPaid(InstallmentPlan plan) async {
+    if (_payingPlanId != null) return;
+    setState(() => _payingPlanId = plan.id);
+    final now = DateTime.now();
+    final due = plan.nextDueDateFrom(now) ?? now;
+    final transactionDate = DateTime(
+      due.year,
+      due.month,
+      due.day,
+      now.hour,
+      now.minute,
+    );
+    try {
+      await widget.transactionRepository.createManualTransaction(
+        CreateTransactionInput(
+          userId: widget.user.uid,
+          amount: plan.amount,
+          type: TransactionType.expense,
+          categoryId: 'bills',
+          categoryName: 'Bills',
+          transactionDate: transactionDate,
+          transactionDateText: context.strings.formatDateTime(transactionDate),
+          source: TransactionSource.manual,
+          note:
+              '${context.strings.isThai ? 'ค่างวด' : 'Installment'}: ${plan.title} '
+              '(${plan.paidInstallments + 1}/${plan.totalInstallments})',
+        ),
+      );
+      await _store.markInstallmentPaid(plan.id);
+      if (!mounted) return;
+      _reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.isThai
+                ? 'บันทึกค่างวดเป็นรายจ่ายแล้ว'
+                : 'Installment payment saved as an expense.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.couldNotSaveTransaction)),
+      );
+    } finally {
+      if (mounted) setState(() => _payingPlanId = null);
+    }
   }
 
   @override
@@ -298,10 +365,9 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
                   _InstallmentTile(
                     plan: plan,
                     onEdit: () => _openEditor(plan),
-                    onPaid: () async {
-                      await _store.markInstallmentPaid(plan.id);
-                      _reload();
-                    },
+                    onPaid: _payingPlanId == null
+                        ? () => _markPaid(plan)
+                        : null,
                     onDelete: () async {
                       await _store.deleteInstallment(plan.id);
                       _reload();
@@ -317,8 +383,147 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
   }
 }
 
-class CategoriesScreen extends StatelessWidget {
-  const CategoriesScreen({super.key});
+class CategoriesScreen extends StatefulWidget {
+  const CategoriesScreen({required this.user, super.key});
+
+  final AuthUser user;
+
+  @override
+  State<CategoriesScreen> createState() => _CategoriesScreenState();
+}
+
+class _CategoriesScreenState extends State<CategoriesScreen> {
+  final _store = CustomCategoryStore.instance;
+  late Future<List<CustomCategory>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _store.load(widget.user.uid);
+  }
+
+  Future<void> _addCategory() async {
+    final nameController = TextEditingController();
+    var type = TransactionType.expense;
+    final result = await showDialog<(String, TransactionType)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final strings = context.strings;
+          return KimjodDialog(
+            title: strings.isThai ? 'เพิ่มหมวดหมู่ใหม่' : 'Add category',
+            icon: Icons.category_rounded,
+            message: strings.isThai
+                ? 'ตั้งชื่อและเลือกประเภทรายการ หมวดใหม่นี้จะใช้ได้ทันที'
+                : 'Name it and choose a transaction type. It will be ready immediately.',
+            content: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.42,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    KimjodDialogTextField(
+                      controller: nameController,
+                      hintText: strings.isThai
+                          ? 'ชื่อหมวดหมู่'
+                          : 'Category name',
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0x245D81AD)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<TransactionType>(
+                          value: type,
+                          isExpanded: true,
+                          borderRadius: BorderRadius.circular(18),
+                          menuMaxHeight:
+                              MediaQuery.sizeOf(context).height * 0.34,
+                          icon: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: Color(0xFF496582),
+                          ),
+                          style: const TextStyle(
+                            color: Color(0xFF10233F),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0,
+                          ),
+                          items: TransactionType.values
+                              .map(
+                                (value) => DropdownMenuItem(
+                                  value: value,
+                                  child: Text(
+                                    _typeLabel(context, value),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setDialogState(() => type = value);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              KimjodDialogAction(
+                label: strings.isThai ? 'ยกเลิก' : 'Cancel',
+                icon: Icons.close_rounded,
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              KimjodDialogAction(
+                label: strings.isThai ? 'เพิ่ม' : 'Add',
+                icon: Icons.add_rounded,
+                isPrimary: true,
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  if (name.isNotEmpty) {
+                    Navigator.of(context).pop((name, type));
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    unawaited(
+      Future<void>.delayed(kThemeAnimationDuration, nameController.dispose),
+    );
+    if (result == null) return;
+    await _store.add(userId: widget.user.uid, name: result.$1, type: result.$2);
+    if (mounted) {
+      setState(() {
+        _future = _store.load(widget.user.uid);
+      });
+    }
+  }
+
+  Future<void> _deleteCategory(CustomCategory category) async {
+    await _store.delete(widget.user.uid, category.id);
+    if (mounted) {
+      setState(() {
+        _future = _store.load(widget.user.uid);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -327,79 +532,149 @@ class CategoriesScreen extends StatelessWidget {
         _expenseCategoryDefinitions.length + _incomeCategoryDefinitions.length;
 
     return _SupportScaffold(
-      status: 'READY',
+      status: strings.isThai ? 'พร้อมใช้' : 'READY',
       smallLabel: strings.category,
       title: strings.manageCategories,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          MascotTip(message: strings.categoriesHeroMessage),
-          const SizedBox(height: 14),
-          _HeroPanel(
-            title: '$totalCategories present categories',
-            message:
-                'These categories are already used by manual entries and slip imports. Budget and installment usage is separated below.',
-          ),
-          const SizedBox(height: 16),
-          _SupportStatStrip(
+      child: FutureBuilder<List<CustomCategory>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final customCategories = snapshot.data ?? const [];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _SupportStatCard(
-                label: 'Expense',
-                value: '${_expenseCategoryDefinitions.length}',
-                tone: _SupportTone.sky,
+              MascotTip(message: strings.categoriesHeroMessage),
+              const SizedBox(height: 14),
+              _HeroPanel(
+                title: strings.isThai
+                    ? '$totalCategories หมวดหมู่พร้อมใช้งาน'
+                    : '$totalCategories present categories',
+                message: strings.isThai
+                    ? 'ใช้กับรายการที่เพิ่มเองและนำเข้าจากสลิปได้ทันที ส่วนงบประมาณและรายการผ่อนจะติดตามแยกกัน'
+                    : 'These categories are already used by manual entries and slip imports. Budget and installment usage is separated below.',
               ),
-              const _SupportStatCard(
-                label: 'Budget ready',
-                value: 'Expense only',
-                tone: _SupportTone.mint,
+              const SizedBox(height: 16),
+              _PrimaryActionButton(
+                onPressed: _addCategory,
+                icon: const Icon(Icons.add_rounded),
+                label: strings.isThai
+                    ? 'เพิ่มหมวดหมู่สำหรับทุกประเภทรายการ'
+                    : 'Add a category for any transaction type',
               ),
-              const _SupportStatCard(
-                label: 'Installment ready',
-                value: 'Tracked separately',
-                tone: _SupportTone.rose,
+              if (customCategories.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _SectionCaption(
+                  title: strings.isThai
+                      ? 'หมวดหมู่ที่เพิ่มเอง'
+                      : 'Custom categories',
+                  subtitle: strings.isThai
+                      ? 'ใช้ได้ทันทีในหน้าเพิ่มและแก้ไขรายการ'
+                      : 'Available immediately when adding or editing transactions.',
+                ),
+                const SizedBox(height: 10),
+                for (final category in customCategories) ...[
+                  Container(
+                    decoration: _cardDecoration(),
+                    child: ListTile(
+                      leading: Icon(categoryIconData(category.id)),
+                      title: Text(category.name, style: _rowTitleStyle),
+                      subtitle: Text(_typeLabel(context, category.type)),
+                      trailing: IconButton(
+                        onPressed: () => _deleteCategory(category),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        tooltip: strings.isThai
+                            ? 'ลบหมวดหมู่'
+                            : 'Delete category',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ],
+              const SizedBox(height: 16),
+              _SupportStatStrip(
+                children: [
+                  _SupportStatCard(
+                    label: strings.isThai ? 'รายจ่าย' : 'Expense',
+                    value: '${_expenseCategoryDefinitions.length}',
+                    tone: _SupportTone.sky,
+                  ),
+                  _SupportStatCard(
+                    label: strings.isThai ? 'ใช้งบประมาณ' : 'Budget ready',
+                    value: strings.isThai ? 'เฉพาะรายจ่าย' : 'Expense only',
+                    tone: _SupportTone.mint,
+                  ),
+                  _SupportStatCard(
+                    label: strings.isThai
+                        ? 'ใช้กับรายการผ่อน'
+                        : 'Installment ready',
+                    value: strings.isThai
+                        ? 'ติดตามแยกกัน'
+                        : 'Tracked separately',
+                    tone: _SupportTone.rose,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _SectionCaption(
+                title: strings.isThai
+                    ? 'หมวดหมู่รายจ่าย'
+                    : 'Expense categories',
+                subtitle: strings.isThai
+                    ? 'ใช้บันทึกรายจ่าย จัดกลุ่มงบประมาณ และลงค่างวด'
+                    : 'These are the present categories used for expense records, budget grouping, and installment payment posts.',
+              ),
+              const SizedBox(height: 10),
+              for (final category in _expenseCategoryDefinitions) ...[
+                _CategoryUsageTile(
+                  definition: category,
+                  subtitle: strings.defaultExpense,
+                  tags: strings.isThai
+                      ? const ['รายจ่าย', 'งบประมาณ', 'รายการผ่อน']
+                      : const ['Expense', 'Budget', 'Installment'],
+                ),
+                const SizedBox(height: 10),
+              ],
+              const SizedBox(height: 8),
+              _SectionCaption(
+                title: strings.isThai ? 'หมวดหมู่รายรับ' : 'Income categories',
+                subtitle: strings.isThai
+                    ? 'แยกจากงบประมาณและรายการผ่อน เพื่อให้ดูเงินเข้าได้ง่าย'
+                    : 'Kept separate from budget and installments so money-in stays easy to scan.',
+              ),
+              const SizedBox(height: 10),
+              for (final category in _incomeCategoryDefinitions) ...[
+                _CategoryUsageTile(
+                  definition: category,
+                  subtitle: strings.isThai
+                      ? 'หมวดหมู่รายรับพร้อมใช้'
+                      : 'Present income category',
+                  tags: strings.isThai ? const ['รายรับ'] : const ['Income'],
+                ),
+                const SizedBox(height: 10),
+              ],
+              _SoftNoteCard(
+                icon: Icons.account_tree_rounded,
+                title: strings.isThai
+                    ? 'งบประมาณกับรายการผ่อน'
+                    : 'Budget vs installment',
+                message: strings.isThai
+                    ? 'หน้างบประมาณใช้กำหนดวงเงิน หน้ารายการผ่อนใช้จัดการแผนชำระ ส่วนหมวดหมู่ใช้ระบุประเภทของรายการ'
+                    : 'Budget page controls the limit. Installments page controls payment plans. Categories only label where each record belongs.',
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          const _SectionCaption(
-            title: 'Expense categories',
-            subtitle:
-                'These are the present categories used for expense records, budget grouping, and installment payment posts.',
-          ),
-          const SizedBox(height: 10),
-          for (final category in _expenseCategoryDefinitions) ...[
-            _CategoryUsageTile(
-              definition: category,
-              subtitle: strings.defaultExpense,
-              tags: const ['Expense', 'Budget', 'Installment'],
-            ),
-            const SizedBox(height: 10),
-          ],
-          const SizedBox(height: 8),
-          const _SectionCaption(
-            title: 'Income categories',
-            subtitle:
-                'Kept separate from budget and installments so money-in stays easy to scan.',
-          ),
-          const SizedBox(height: 10),
-          for (final category in _incomeCategoryDefinitions) ...[
-            _CategoryUsageTile(
-              definition: category,
-              subtitle: 'Present income category',
-              tags: const ['Income'],
-            ),
-            const SizedBox(height: 10),
-          ],
-          const _SoftNoteCard(
-            icon: Icons.account_tree_rounded,
-            title: 'Budget vs installment',
-            message:
-                'Budget page controls the limit. Installments page controls payment plans. Categories only label where each record belongs.',
-          ),
-        ],
+          );
+        },
       ),
     );
   }
+}
+
+String _typeLabel(BuildContext context, TransactionType type) {
+  return switch (type) {
+    TransactionType.expense => context.strings.expense,
+    TransactionType.income => context.strings.income,
+    TransactionType.internalTransfer => context.strings.internalTransfer,
+  };
 }
 
 class _InstallmentEditor extends StatefulWidget {
@@ -579,6 +854,11 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                         controller: _titleController,
                         decoration: const InputDecoration.collapsed(
                           hintText: 'Phone, laptop, card plan',
+                          hintStyle: TextStyle(
+                            color: Color(0x6665748B),
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0,
+                          ),
                         ),
                         validator: (value) =>
                             value?.trim().isEmpty ?? true ? 'Required' : null,
@@ -792,7 +1072,7 @@ class _InstallmentTile extends StatelessWidget {
 
   final InstallmentPlan plan;
   final VoidCallback onEdit;
-  final VoidCallback onPaid;
+  final VoidCallback? onPaid;
   final VoidCallback onDelete;
 
   @override
@@ -1382,7 +1662,7 @@ class _CircleActionButton extends StatelessWidget {
 
   final IconData icon;
   final String tooltip;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final _SupportTone palette;
 
   @override
@@ -1485,13 +1765,7 @@ double? _parseAmount(String value) {
 }
 
 String _formatAmount(double amount) {
-  final fixed = amount.toStringAsFixed(
-    amount == amount.roundToDouble() ? 0 : 2,
-  );
-  final parts = fixed.split('.');
-  final whole = parts.first;
-  final decimal = parts.length > 1 ? '.${parts[1]}' : '';
-  return '${_addThousandsSeparators(whole)}$decimal';
+  return formatOriginalNumber(amount);
 }
 
 String _formatMoney(double amount) {

@@ -4,16 +4,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/formatters/money_formatter.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import '../transactions/category_localization.dart';
-import '../transactions/create_transaction_input.dart';
 import '../transactions/transaction_repository.dart';
-import '../transactions/transaction_source.dart';
 import '../transactions/transaction_type.dart';
+import 'album_sync_ai_analyzer.dart';
 import 'album_sync_background_service.dart';
-import 'external_ai_client.dart';
-import 'slip_date_parser.dart';
+import 'album_sync_job_actions.dart';
 import 'slip_fingerprint.dart';
 import 'slip_scan_result.dart';
 import 'slip_text_recognizer.dart';
@@ -44,14 +43,9 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
 
   bool _isScanning = false;
   bool _isSaving = false;
-
-  DateTime? _fallbackImageDate(String imagePath) {
-    try {
-      return File(imagePath).lastModifiedSync();
-    } catch (_) {
-      return null;
-    }
-  }
+  bool _isCancelling = false;
+  bool _cancelRequested = false;
+  bool _wasCancelled = false;
 
   @override
   void initState() {
@@ -104,6 +98,8 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
 
     setState(() {
       _isScanning = true;
+      _cancelRequested = false;
+      _wasCancelled = false;
       _items
         ..clear()
         ..addAll(
@@ -138,6 +134,8 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
 
     setState(() {
       _isScanning = true;
+      _cancelRequested = false;
+      _wasCancelled = false;
       _items
         ..clear()
         ..addAll(
@@ -152,20 +150,37 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
 
     final activeFingerprints = await widget.transactionRepository
         .loadActiveSlipFingerprints(widget.user.uid);
+    if (_cancelRequested) {
+      return;
+    }
 
     for (var i = 0; i < _items.length; i++) {
       final item = _items[i];
       try {
         final scanImagePath = widget.scanImagePath;
-        final result = await (scanImagePath == null
+        final scannedResult = await (scanImagePath == null
             ? _recognizer.scanImagePath(item.path)
             : scanImagePath(item.path));
+        if (_cancelRequested || !mounted) {
+          return;
+        }
+        final analysis = await analyzeAlbumSyncSlip(
+          result: scannedResult,
+          imagePath: item.path,
+        );
+        if (_cancelRequested || !mounted) {
+          return;
+        }
+        final result = analysis.result;
         final fingerprint = await buildSlipFingerprint(
           imagePath: item.path,
           result: result,
         );
+        if (_cancelRequested || !mounted) {
+          return;
+        }
         final amount = result.amount;
-        final decision = await _resolveDecision(result);
+        final decision = analysis.decision;
 
         var status = _AlbumReviewStatus.ready;
         if (activeFingerprints.contains(fingerprint)) {
@@ -187,7 +202,12 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
             decision: decision,
           );
         });
-      } catch (_) {
+      } catch (error, stackTrace) {
+        debugPrint('Album sync failed for ${item.path}: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (_cancelRequested) {
+          return;
+        }
         if (!mounted) {
           return;
         }
@@ -207,6 +227,43 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
     });
   }
 
+  Future<void> _cancelSync() async {
+    if (!_isScanning || _isCancelling) {
+      return;
+    }
+
+    setState(() {
+      _cancelRequested = true;
+      _isCancelling = true;
+      _isScanning = false;
+      _wasCancelled = true;
+      for (var i = 0; i < _items.length; i++) {
+        if (_items[i].status == _AlbumReviewStatus.reading) {
+          _items[i] = _items[i].copyWith(
+            status: _AlbumReviewStatus.cancelled,
+          );
+        }
+      }
+    });
+
+    if (widget.scanImagePath == null) {
+      final snapshot = await AlbumSyncBackgroundService.requestCancel();
+      if (snapshot != null && mounted) {
+        _applyBackgroundSnapshot(snapshot);
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isCancelling = false;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(context.strings.albumSyncCancelled)));
+  }
+
   void _applyBackgroundSnapshot(AlbumSyncJobSnapshot snapshot) {
     if (!mounted || snapshot.userId != widget.user.uid) {
       return;
@@ -219,6 +276,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
 
     setState(() {
       _isScanning = snapshot.isScanning;
+      _wasCancelled = snapshot.state == AlbumSyncJobState.cancelled;
       _items
         ..clear()
         ..addAll(snapshot.items.map(_itemFromBackgroundSnapshot));
@@ -239,6 +297,14 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
   }
 
   _AlbumReviewItem _itemFromBackgroundSnapshot(AlbumSyncItemSnapshot item) {
+    var decision = item.decision;
+    final result = item.result;
+    if (result != null) {
+      final localDecision = resolveBestEffortSlipDecision(result);
+      if (localDecision?.type == TransactionType.internalTransfer) {
+        decision = localDecision;
+      }
+    }
     return _AlbumReviewItem(
       path: item.path,
       status: switch (item.status) {
@@ -246,54 +312,12 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
         AlbumSyncItemStatus.ready => _AlbumReviewStatus.ready,
         AlbumSyncItemStatus.duplicate => _AlbumReviewStatus.duplicate,
         AlbumSyncItemStatus.failed => _AlbumReviewStatus.failed,
+        AlbumSyncItemStatus.cancelled => _AlbumReviewStatus.cancelled,
       },
       result: item.result,
       fingerprint: item.fingerprint,
       amount: item.amount,
-      decision: item.decision,
-    );
-  }
-
-  Future<SlipTransactionDecision?> _resolveDecision(
-    SlipScanResult result,
-  ) async {
-    final localDecision = resolveBestEffortSlipDecision(result);
-    if (localDecision?.type == TransactionType.internalTransfer) {
-      return localDecision;
-    }
-
-    final aiDecision = await ExternalAiClient.instance.analyzeSlip(
-      result: result,
-      allowedCategoryIds: kSlipAnalysisCategoryIds,
-    );
-    if (aiDecision == null) {
-      return localDecision;
-    }
-
-    if (aiDecision.type == TransactionType.internalTransfer) {
-      return SlipTransactionDecision(
-        type: TransactionType.internalTransfer,
-        categoryId: 'internal_transfer',
-        categoryName: 'Internal Transfer',
-        note: buildSlipNote(result, overrideNote: aiDecision.note),
-      );
-    }
-
-    if (aiDecision.type == TransactionType.income) {
-      return localDecision ??
-          SlipTransactionDecision(
-            type: TransactionType.expense,
-            categoryId: 'transfer',
-            categoryName: 'Transfer',
-            note: buildSlipNote(result, overrideNote: aiDecision.note),
-          );
-    }
-
-    return SlipTransactionDecision(
-      type: TransactionType.expense,
-      categoryId: aiDecision.categoryId,
-      categoryName: savedCategoryNameForId(aiDecision.categoryId),
-      note: buildSlipNote(result, overrideNote: aiDecision.note),
+      decision: decision,
     );
   }
 
@@ -320,49 +344,21 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
       _isSaving = true;
     });
 
-    var savedCount = 0;
-    for (final item in readyItems) {
-      try {
-        final result = item.result!;
-        var decision = item.decision!;
-        final localDecision = resolveBestEffortSlipDecision(result);
-        if (localDecision?.type == TransactionType.internalTransfer) {
-          decision = localDecision!;
-        }
-        final transactionDate = parseTransactionDateFrom(
-          dateText: result.dateText,
-          timeText: result.timeText,
-          referenceText: result.reference,
-          rawText: result.rawText,
-          fallbackDate: _fallbackImageDate(item.path),
-        );
-
-        final localizedCategory = localizedCategoryName(
-          strings: context.strings,
-          categoryId: decision.categoryId,
-          fallbackName: decision.categoryName,
-        );
-
-        await widget.transactionRepository.createManualTransaction(
-          CreateTransactionInput(
-            userId: widget.user.uid,
-            amount: item.amount!,
-            type: decision.type,
-            categoryId: decision.categoryId,
-            categoryName: localizedCategory,
-            transactionDate: transactionDate,
-            transactionDateText: context.strings.formatDate(transactionDate),
-            source: TransactionSource.gallerySlip,
-            note: decision.note,
-            slipFingerprint: item.fingerprint,
-            slipReference: result.reference,
-          ),
-        );
-        savedCount++;
-      } catch (_) {
-        // Keep going; failed entries remain unsaved.
-      }
-    }
+    final savedCount = await saveAlbumSyncItems(
+      user: widget.user,
+      transactionRepository: widget.transactionRepository,
+      strings: context.strings,
+      items: readyItems.map(
+        (item) => AlbumSyncItemSnapshot(
+          path: item.path,
+          status: AlbumSyncItemStatus.ready,
+          result: item.result,
+          fingerprint: item.fingerprint,
+          amount: item.amount,
+          decision: item.decision,
+        ),
+      ),
+    );
 
     if (!mounted) {
       return;
@@ -398,12 +394,18 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
     final failedCount = _items
         .where((item) => item.status == _AlbumReviewStatus.failed)
         .length;
+    final cancelledCount = _items
+        .where((item) => item.status == _AlbumReviewStatus.cancelled)
+        .length;
+    final completedCount =
+        readyCount + duplicateCount + failedCount + cancelledCount;
 
     return Scaffold(
       backgroundColor: const Color(0xFFEAFBFF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         title: Text(strings.syncAlbumTitle),
+        leading: const BackButton(),
         elevation: 0,
       ),
       body: DecoratedBox(
@@ -423,16 +425,40 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
                 MascotTip(
                   message: _isScanning
                       ? strings.readingSlip
-                      : 'AI finished scanning this album. You can save all now.',
+                      : _wasCancelled
+                      ? strings.albumSyncCancelled
+                      : strings.isThai
+                      ? '\u0E2A\u0E41\u0E01\u0E19\u0E2D\u0E31\u0E25\u0E1A\u0E31\u0E49\u0E21\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27 \u0E01\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22'
+                      : 'Album scan complete. Review it or save everything now.',
                   mood: MascotMood.calm,
                 ),
                 const SizedBox(height: 16),
                 _AlbumSummaryCard(
                   totalCount: _items.length,
+                  completedCount: completedCount,
                   readyCount: readyCount,
                   duplicateCount: duplicateCount,
                   failedCount: failedCount,
+                  cancelledCount: cancelledCount,
+                  isScanning: _isScanning,
+                  wasCancelled: _wasCancelled,
                 ),
+                if (_isScanning) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _isCancelling ? null : _cancelSync,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: Text(strings.cancelAlbumSync),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFD94768),
+                      side: const BorderSide(color: Color(0xFFD94768)),
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(17),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Expanded(
                   child: ListView.separated(
@@ -593,18 +619,30 @@ class _SaveAllButton extends StatelessWidget {
 class _AlbumSummaryCard extends StatelessWidget {
   const _AlbumSummaryCard({
     required this.totalCount,
+    required this.completedCount,
     required this.readyCount,
     required this.duplicateCount,
     required this.failedCount,
+    required this.cancelledCount,
+    required this.isScanning,
+    required this.wasCancelled,
   });
 
   final int totalCount;
+  final int completedCount;
   final int readyCount;
   final int duplicateCount;
   final int failedCount;
+  final int cancelledCount;
+  final bool isScanning;
+  final bool wasCancelled;
 
   @override
   Widget build(BuildContext context) {
+    final progress = totalCount == 0
+        ? 0.0
+        : (completedCount / totalCount).clamp(0.0, 1.0);
+    final percent = (progress * 100).round();
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -612,40 +650,87 @@ class _AlbumSummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0x2E5D81AD)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _SummaryPill(label: 'Total', value: '$totalCount'),
+          Row(
+            children: [
+              Text(
+                isScanning
+                    ? (context.strings.isThai
+                          ? '\u0E01\u0E33\u0E25\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B'
+                          : 'Reading slips')
+                    : wasCancelled
+                    ? context.strings.albumSyncCancelled
+                    : (context.strings.isThai
+                          ? '\u0E2D\u0E48\u0E32\u0E19\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27'
+                          : 'Scan complete'),
+                style: const TextStyle(
+                  color: Color(0xFF10233F),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$percent%',
+                style: const TextStyle(
+                  color: Color(0xFF0F766E),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _SummaryPill(
-              label: 'Done',
-              value: '$readyCount',
-              tint: const Color(0xFFEAF8F1),
-              valueColor: const Color(0xFF1B8F73),
-              labelColor: const Color(0xFF1B8F73),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 9,
+              backgroundColor: const Color(0xFFE6EDF2),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFF28B78D)),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _SummaryPill(
-              label: 'Dup',
-              value: '$duplicateCount',
-              tint: const Color(0xFFFFF6DD),
-              valueColor: const Color(0xFFB8942D),
-              labelColor: const Color(0xFFB8942D),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _SummaryPill(
-              label: 'Fail',
-              value: '$failedCount',
-              tint: const Color(0xFFFFEFF1),
-              valueColor: const Color(0xFFD94768),
-              labelColor: const Color(0xFFD94768),
-            ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryPill(label: 'Total', value: '$totalCount'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _SummaryPill(
+                  label: 'Ready',
+                  value: '$readyCount',
+                  tint: const Color(0xFFEAF8F1),
+                  valueColor: const Color(0xFF1B8F73),
+                  labelColor: const Color(0xFF1B8F73),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _SummaryPill(
+                  label: 'Dup',
+                  value: '$duplicateCount',
+                  tint: const Color(0xFFFFF6DD),
+                  valueColor: const Color(0xFFB8942D),
+                  labelColor: const Color(0xFFB8942D),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _SummaryPill(
+                  label: cancelledCount > 0 ? 'Stop' : 'Fail',
+                  value: cancelledCount > 0
+                      ? '$cancelledCount'
+                      : '$failedCount',
+                  tint: const Color(0xFFFFEFF1),
+                  valueColor: const Color(0xFFD94768),
+                  labelColor: const Color(0xFFD94768),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -742,6 +827,14 @@ class _AlbumResultTile extends StatelessWidget {
         'Fail',
         const Color(0xFFFFEFF1),
       ),
+      _AlbumReviewStatus.cancelled => (
+        Icons.stop_circle_rounded,
+        const Color(0xFFD94768),
+        context.strings.isThai
+            ? '\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01'
+            : 'Stopped',
+        const Color(0xFFFFEFF1),
+      ),
     };
     final detailText = item.amount == null
         ? switch (item.status) {
@@ -750,8 +843,10 @@ class _AlbumResultTile extends StatelessWidget {
             _AlbumReviewStatus.duplicate =>
               context.strings.skippedDuplicateSlip,
             _AlbumReviewStatus.failed => context.strings.couldNotReadSlip,
+            _AlbumReviewStatus.cancelled =>
+              context.strings.albumSyncCancelled,
           }
-        : '${item.result?.bankDisplayName ?? 'Slip'}  •  ${item.amount!.toStringAsFixed(2)}';
+        : '${item.result?.bankDisplayName ?? 'Slip'}  •  ${formatOriginalNumber(item.amount!)}';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -856,7 +951,7 @@ class _AlbumResultTile extends StatelessWidget {
   }
 }
 
-enum _AlbumReviewStatus { reading, ready, duplicate, failed }
+enum _AlbumReviewStatus { reading, ready, duplicate, failed, cancelled }
 
 class _AlbumReviewItem {
   const _AlbumReviewItem({

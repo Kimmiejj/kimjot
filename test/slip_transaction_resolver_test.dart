@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kimjod/features/scan/slip_scan_result.dart';
-import 'package:kimjod/features/scan/slip_transaction_resolver.dart';
-import 'package:kimjod/features/transactions/transaction_type.dart';
+import 'package:kimjot/features/scan/slip_scan_result.dart';
+import 'package:kimjot/features/scan/slip_transaction_resolver.dart';
+import 'package:kimjot/features/transactions/transaction_type.dart';
 
 void main() {
   test('treats contained sender and recipient names as internal transfer', () {
@@ -16,6 +16,42 @@ void main() {
 
     expect(decision?.type, TransactionType.internalTransfer);
     expect(decision?.categoryId, 'internal_transfer');
+  });
+
+  test('uses the matching first name even when surnames differ', () {
+    final result = SlipScanResult(
+      rawText: 'SCB transfer success',
+      sender: 'Mr Kim Jaidee',
+      recipient: 'Mr Kim Somboon',
+      amount: 400,
+      category: SlipCategory.expense,
+    );
+
+    final decision = resolveBestEffortSlipDecision(result);
+
+    expect(decision?.type, TransactionType.internalTransfer);
+    expect(decision?.categoryId, 'internal_transfer');
+    expect(decision?.categoryName, 'Internal Transfer');
+  });
+
+  test('keeps an AI internal transfer as internal transfer', () {
+    final result = SlipScanResult(
+      rawText: 'SCB transfer success',
+      sender: 'Mr Kim Jaidee',
+      recipient: 'Mr Somchai Somboon',
+      amount: 400,
+      category: SlipCategory.expense,
+    );
+
+    final decision = resolveSlipDecisionWithAi(
+      result: result,
+      aiType: TransactionType.internalTransfer,
+      aiCategoryId: 'internal_transfer',
+    );
+
+    expect(decision.type, TransactionType.internalTransfer);
+    expect(decision.categoryId, 'internal_transfer');
+    expect(decision.categoryName, 'Internal Transfer');
   });
 
   test(
@@ -83,6 +119,28 @@ void main() {
       expect(decision?.categoryId, 'internal_transfer');
     },
   );
+
+  test('matches generic first names with one OCR character error', () {
+    final result = SlipScanResult(
+      rawText: 'K PLUS transfer success',
+      sender: 'Mr Nattapol Jaidee',
+      recipient: 'Mr Natapol Somboon',
+      amount: 750,
+      category: SlipCategory.expense,
+    );
+
+    final decision = resolveBestEffortSlipDecision(result);
+
+    expect(decision?.type, TransactionType.internalTransfer);
+    expect(decision?.categoryId, 'internal_transfer');
+  });
+
+  test('does not merge clearly different generic first names', () {
+    expect(
+      partiesLookLikeSamePerson('Mr Nattapol Jaidee', 'Mr Somchai Somboon'),
+      isFalse,
+    );
+  });
 
   test(
     'uses repeated Thai person names in raw text when parsed parties are accounts',

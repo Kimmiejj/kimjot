@@ -15,6 +15,8 @@ class UpdateTransactionInput {
     this.note,
     this.slipFingerprint,
     this.slipReference,
+    this.baseUpdatedAt,
+    this.forceOverwrite = false,
   });
 
   final String transactionId;
@@ -29,4 +31,6 @@ class UpdateTransactionInput {
   final String? note;
   final String? slipFingerprint;
   final String? slipReference;
+  final DateTime? baseUpdatedAt;
+  final bool forceOverwrite;
 }

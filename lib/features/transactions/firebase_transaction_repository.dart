@@ -2,21 +2,32 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../security/transaction_encryption_manager.dart';
+import '../security/transaction_payload_cipher.dart';
 import 'create_transaction_input.dart';
 import 'home_summary.dart';
 import 'transaction_record.dart';
 import 'transaction_repository.dart';
 import 'transaction_source.dart';
+import 'transaction_sync_status.dart';
 import 'transaction_type.dart';
 import 'update_transaction_input.dart';
 
-class FirebaseTransactionRepository implements TransactionRepository {
-  FirebaseTransactionRepository({FirebaseFirestore? firestore})
-    : this._(firestore);
+class FirebaseTransactionRepository
+    implements TransactionRepository, TransactionEncryptionController {
+  FirebaseTransactionRepository({
+    FirebaseFirestore? firestore,
+    TransactionEncryptionManager? encryptionManager,
+  }) : this._(
+         firestore,
+         encryptionManager ??
+             TransactionEncryptionManager(firestore: firestore),
+       );
 
-  FirebaseTransactionRepository._(this._firestore);
+  FirebaseTransactionRepository._(this._firestore, this._encryption);
 
   final FirebaseFirestore? _firestore;
+  final TransactionEncryptionManager _encryption;
 
   FirebaseFirestore get _db => _firestore ?? FirebaseFirestore.instance;
 
@@ -28,19 +39,28 @@ class FirebaseTransactionRepository implements TransactionRepository {
         .doc(input.userId)
         .collection('transactions')
         .doc();
+    final payload = await _encryption.encryptPayload(
+      userId: input.userId,
+      documentId: document.id,
+      transactionDate: input.transactionDate,
+      payload: <String, Object?>{
+        'amount': input.amount,
+        'type': input.type.firestoreValue,
+        'categoryId': input.categoryId,
+        'categoryName': input.categoryName,
+        'transactionDateText': input.transactionDateText,
+        'source': input.source.firestoreValue,
+        'note': note == null || note.isEmpty ? null : note,
+        'slipFingerprint': input.slipFingerprint,
+        'slipReference': input.slipReference,
+      },
+    );
 
     final write = document.set({
-      'user': input.userId,
-      'amount': input.amount,
-      'type': input.type.firestoreValue,
-      'categoryId': input.categoryId,
-      'categoryName': input.categoryName,
-      'note': note == null || note.isEmpty ? null : note,
       'transactionDate': Timestamp.fromDate(input.transactionDate),
-      'transactionDateText': input.transactionDateText,
-      'source': input.source.firestoreValue,
-      'slipFingerprint': input.slipFingerprint,
-      'slipReference': input.slipReference,
+      'encryptionVersion': 1,
+      'payload': payload,
+      'clientUpdatedAt': Timestamp.fromDate(DateTime.now()),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -60,52 +80,109 @@ class FirebaseTransactionRepository implements TransactionRepository {
     final document = _userTransactionsCollection(
       input.userId,
     ).doc(input.transactionId);
-
-    final write = document.update({
-      'amount': input.amount,
-      'type': input.type.firestoreValue,
-      'categoryId': input.categoryId,
-      'categoryName': input.categoryName,
-      'note': note == null || note.isEmpty ? null : note,
-      'transactionDate': Timestamp.fromDate(input.transactionDate),
-      'transactionDateText': input.transactionDateText,
-      'source': input.source.firestoreValue,
-      'slipFingerprint': input.slipFingerprint,
-      'slipReference': input.slipReference,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-
-    await write.timeout(
-      const Duration(seconds: 4),
-      onTimeout: () {},
+    final payload = await _encryption.encryptPayload(
+      userId: input.userId,
+      documentId: input.transactionId,
+      transactionDate: input.transactionDate,
+      payload: <String, Object?>{
+        'amount': input.amount,
+        'type': input.type.firestoreValue,
+        'categoryId': input.categoryId,
+        'categoryName': input.categoryName,
+        'transactionDateText': input.transactionDateText,
+        'source': input.source.firestoreValue,
+        'note': note == null || note.isEmpty ? null : note,
+        'slipFingerprint': input.slipFingerprint,
+        'slipReference': input.slipReference,
+      },
     );
+    final data = <String, Object?>{
+      'transactionDate': Timestamp.fromDate(input.transactionDate),
+      'encryptionVersion': 1,
+      'payload': payload,
+      'clientUpdatedAt': Timestamp.fromDate(DateTime.now()),
+      'updatedAt': FieldValue.serverTimestamp(),
+      ..._legacyFieldDeletes,
+    };
+
+    if (input.baseUpdatedAt != null && !input.forceOverwrite) {
+      try {
+        await _db
+            .runTransaction((transaction) async {
+              final current = await transaction.get(document);
+              final serverData = current.data();
+              final serverUpdatedAt = (serverData?['updatedAt'] as Timestamp?)
+                  ?.toDate();
+              if (serverUpdatedAt != null &&
+                  serverUpdatedAt.millisecondsSinceEpoch !=
+                      input.baseUpdatedAt!.millisecondsSinceEpoch) {
+                final clearServerData = await _clearDocumentData(
+                  userId: input.userId,
+                  documentId: input.transactionId,
+                  data: serverData!,
+                );
+                throw TransactionConflictException(
+                  clearServerData.map(
+                    (key, value) => MapEntry<String, Object?>(key, value),
+                  ),
+                );
+              }
+              transaction.update(document, data);
+            })
+            .timeout(const Duration(seconds: 4));
+        return;
+      } on TransactionConflictException {
+        rethrow;
+      } on TransactionEncryptionException {
+        rethrow;
+      } catch (_) {
+        // Transactions need a server round-trip. Fall back to Firestore's
+        // durable local queue when the device is offline.
+      }
+    }
+
+    final write = document.update(data);
+
+    await write.timeout(const Duration(seconds: 4), onTimeout: () {});
   }
 
   @override
   Future<void> deleteTransaction({
     required String userId,
     required String transactionId,
-  }) {
-    return _userTransactionsCollection(userId).doc(transactionId).delete();
+  }) async {
+    final write = _userTransactionsCollection(
+      userId,
+    ).doc(transactionId).delete();
+    await write.timeout(const Duration(seconds: 4), onTimeout: () {});
   }
 
   @override
   Future<Set<String>> loadActiveSlipFingerprints(String userId) async {
-    final snapshot = await _db
-        .collection('users')
-        .doc(userId)
-        .collection('transactions')
-        .where(
-          'source',
-          isEqualTo: TransactionSource.gallerySlip.firestoreValue,
-        )
-        .get();
+    final query = _userTransactionsCollection(userId);
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await query.get().timeout(const Duration(seconds: 3));
+    } catch (_) {
+      snapshot = await query.get(const GetOptions(source: Source.cache));
+    }
 
-    return snapshot.docs
-        .map((document) => document.data()['slipFingerprint'] as String?)
-        .whereType<String>()
-        .where((value) => value.trim().isNotEmpty)
-        .toSet();
+    final fingerprints = <String>{};
+    for (final document in snapshot.docs) {
+      final clear = await _clearDocumentData(
+        userId: userId,
+        documentId: document.id,
+        data: document.data(),
+      );
+      if (clear['source'] != TransactionSource.gallerySlip.firestoreValue) {
+        continue;
+      }
+      final fingerprint = clear['slipFingerprint'] as String?;
+      if (fingerprint != null && fingerprint.trim().isNotEmpty) {
+        fingerprints.add(fingerprint);
+      }
+    }
+    return fingerprints;
   }
 
   @override
@@ -126,7 +203,13 @@ class FirebaseTransactionRepository implements TransactionRepository {
         .where('transactionDate', isLessThan: Timestamp.fromDate(nextMonth))
         .orderBy('transactionDate')
         .snapshots()
-        .map((snapshot) => _summaryFromSnapshot(snapshot, monthStart));
+        .asyncMap(
+          (snapshot) => _summaryFromSnapshot(
+            snapshot,
+            userId: userId,
+            monthStart: monthStart,
+          ),
+        );
   }
 
   @override
@@ -137,7 +220,13 @@ class FirebaseTransactionRepository implements TransactionRepository {
     return _transactionsQuery(userId)
         .limit(limit)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map(_recordFromDocument).toList());
+        .asyncMap(
+          (snapshot) => Future.wait(
+            snapshot.docs.map(
+              (document) => _recordFromDocument(document, userId),
+            ),
+          ),
+        );
   }
 
   @override
@@ -157,16 +246,34 @@ class FirebaseTransactionRepository implements TransactionRepository {
         .orderBy('transactionDate', descending: true);
 
     final limited = limit == null ? query : query.limit(limit);
-    return limited.snapshots().map(
-      (snapshot) => snapshot.docs.map(_recordFromDocument).toList(),
+    return limited.snapshots().asyncMap(
+      (snapshot) => Future.wait(
+        snapshot.docs.map((document) => _recordFromDocument(document, userId)),
+      ),
     );
   }
 
   @override
   Stream<List<TransactionRecord>> watchTransactions(String userId) {
-    return _transactionsQuery(userId).snapshots().map(
-      (snapshot) => snapshot.docs.map(_recordFromDocument).toList(),
+    return _transactionsQuery(userId).snapshots().asyncMap(
+      (snapshot) => Future.wait(
+        snapshot.docs.map((document) => _recordFromDocument(document, userId)),
+      ),
     );
+  }
+
+  @override
+  Stream<TransactionSyncStatus> watchSyncStatus(String userId) {
+    return _userTransactionsCollection(userId)
+        .snapshots(includeMetadataChanges: true)
+        .map(
+          (snapshot) => TransactionSyncStatus(
+            pendingWrites: snapshot.docs
+                .where((document) => document.metadata.hasPendingWrites)
+                .length,
+            isFromCache: snapshot.metadata.isFromCache,
+          ),
+        );
   }
 
   CollectionReference<Map<String, dynamic>> _userTransactionsCollection(
@@ -181,16 +288,21 @@ class FirebaseTransactionRepository implements TransactionRepository {
     ).orderBy('transactionDate', descending: true);
   }
 
-  HomeSummary _summaryFromSnapshot(
-    QuerySnapshot<Map<String, dynamic>> snapshot,
-    DateTime monthStart,
-  ) {
+  Future<HomeSummary> _summaryFromSnapshot(
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required String userId,
+    required DateTime monthStart,
+  }) async {
     var incomeTotal = 0.0;
     var expenseTotal = 0.0;
     var transactionCount = 0;
 
     for (final document in snapshot.docs) {
-      final data = document.data();
+      final data = await _clearDocumentData(
+        userId: userId,
+        documentId: document.id,
+        data: document.data(),
+      );
       if (!_matchesCurrentMonth(data, monthStart)) {
         continue;
       }
@@ -218,15 +330,20 @@ class FirebaseTransactionRepository implements TransactionRepository {
     return transactionDate != null && !transactionDate.isBefore(monthStart);
   }
 
-  TransactionRecord _recordFromDocument(
+  Future<TransactionRecord> _recordFromDocument(
     QueryDocumentSnapshot<Map<String, dynamic>> document,
-  ) {
-    final data = document.data();
+    String userId,
+  ) async {
+    final data = await _clearDocumentData(
+      userId: userId,
+      documentId: document.id,
+      data: document.data(),
+    );
     final timestamp = data['transactionDate'] as Timestamp?;
 
     return TransactionRecord(
       id: document.id,
-      userId: data['user'] as String? ?? '',
+      userId: userId,
       amount: (data['amount'] as num?)?.toDouble() ?? 0,
       type: _typeFromFirestore(data['type'] as String?),
       categoryId: data['categoryId'] as String? ?? 'other',
@@ -238,14 +355,173 @@ class FirebaseTransactionRepository implements TransactionRepository {
       merchantName: data['merchantName'] as String?,
       slipFingerprint: data['slipFingerprint'] as String?,
       slipReference: data['slipReference'] as String?,
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
+
+  Future<Map<String, dynamic>> _clearDocumentData({
+    required String userId,
+    required String documentId,
+    required Map<String, dynamic> data,
+  }) async {
+    final envelope = data['payload'];
+    if (envelope is! Map) {
+      return data;
+    }
+    final transactionDate = (data['transactionDate'] as Timestamp?)?.toDate();
+    if (transactionDate == null) {
+      throw const TransactionEncryptionException(
+        'Encrypted transaction is missing its date metadata.',
+      );
+    }
+    final payload = await _encryption.decryptPayload(
+      userId: userId,
+      documentId: documentId,
+      transactionDate: transactionDate,
+      envelope: Map<String, dynamic>.from(envelope),
+    );
+    return <String, dynamic>{...data, ...payload};
+  }
+
+  @override
+  Future<TransactionEncryptionAccess> prepareEncryption(String userId) async {
+    final access = await _encryption.prepareEncryption(userId);
+    if (access == TransactionEncryptionAccess.unlocked) {
+      try {
+        await _migrateLegacyTransactions(userId);
+      } catch (_) {
+        // Retry on the next launch; all new writes are encrypted immediately.
+      }
+    }
+    return access;
+  }
+
+  @override
+  Future<String> createRecoveryKey(String userId, {String? recoveryKey}) async {
+    final createdRecoveryKey = await _encryption.createRecoveryKey(
+      userId,
+      recoveryKey: recoveryKey,
+    );
+    try {
+      await _migrateLegacyTransactions(userId);
+    } catch (_) {
+      // The recovery key must still be shown even if an offline migration waits.
+    }
+    return createdRecoveryKey;
+  }
+
+  @override
+  Future<bool> unlockWithRecoveryKey(String userId, String recoveryKey) async {
+    final unlocked = await _encryption.unlockWithRecoveryKey(
+      userId,
+      recoveryKey,
+    );
+    if (unlocked) {
+      try {
+        await _migrateLegacyTransactions(userId);
+      } catch (_) {
+        // Retry on the next launch.
+      }
+    }
+    return unlocked;
+  }
+
+  @override
+  Future<bool> changeRecoveryKey({
+    required String userId,
+    required String currentRecoveryKey,
+    required String newRecoveryKey,
+  }) {
+    return _encryption.changeRecoveryKey(
+      userId: userId,
+      currentRecoveryKey: currentRecoveryKey,
+      newRecoveryKey: newRecoveryKey,
+    );
+  }
+
+  @override
+  Future<String> sendRecoveryKeyEmail(String userId) {
+    return _encryption.sendRecoveryKeyEmail(userId);
+  }
+
+  @override
+  void clearEncryptionKey() => _encryption.clearEncryptionKey();
+
+  Future<void> _migrateLegacyTransactions(String userId) async {
+    final snapshot = await _userTransactionsCollection(userId).get();
+    var batch = _db.batch();
+    var batchSize = 0;
+
+    for (final document in snapshot.docs) {
+      final data = document.data();
+      if (data['payload'] is Map) {
+        continue;
+      }
+      final transactionDate = (data['transactionDate'] as Timestamp?)?.toDate();
+      if (transactionDate == null) {
+        continue;
+      }
+      final payload = await _encryption.encryptPayload(
+        userId: userId,
+        documentId: document.id,
+        transactionDate: transactionDate,
+        payload: _legacyPayload(data),
+      );
+      batch.update(document.reference, <String, Object?>{
+        'encryptionVersion': 1,
+        'payload': payload,
+        'clientUpdatedAt': Timestamp.fromDate(DateTime.now()),
+        'updatedAt': FieldValue.serverTimestamp(),
+        ..._legacyFieldDeletes,
+      });
+      batchSize++;
+
+      if (batchSize == 400) {
+        await batch.commit();
+        batch = _db.batch();
+        batchSize = 0;
+      }
+    }
+
+    if (batchSize > 0) {
+      await batch.commit();
+    }
+  }
+
+  Map<String, Object?> _legacyPayload(Map<String, dynamic> data) {
+    return <String, Object?>{
+      'amount': data['amount'],
+      'type': data['type'],
+      'categoryId': data['categoryId'],
+      'categoryName': data['categoryName'],
+      'transactionDateText': data['transactionDateText'],
+      'source': data['source'],
+      'note': data['note'],
+      'merchantName': data['merchantName'],
+      'slipFingerprint': data['slipFingerprint'],
+      'slipReference': data['slipReference'],
+    };
+  }
+
+  Map<String, Object?> get _legacyFieldDeletes => <String, Object?>{
+    'user': FieldValue.delete(),
+    'amount': FieldValue.delete(),
+    'type': FieldValue.delete(),
+    'categoryId': FieldValue.delete(),
+    'categoryName': FieldValue.delete(),
+    'transactionDateText': FieldValue.delete(),
+    'source': FieldValue.delete(),
+    'note': FieldValue.delete(),
+    'merchantName': FieldValue.delete(),
+    'slipFingerprint': FieldValue.delete(),
+    'slipReference': FieldValue.delete(),
+  };
 
   TransactionType _typeFromFirestore(String? value) {
     return switch (value) {
       'income' => TransactionType.income,
-      'internalTransfer' || 'internal_transfer' =>
-        TransactionType.internalTransfer,
+      'internalTransfer' ||
+      'internal_transfer' => TransactionType.internalTransfer,
       _ => TransactionType.expense,
     };
   }

@@ -3,8 +3,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../ai/ai_settings_screen.dart';
 import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
+import '../security/change_recovery_key_screen.dart';
+import '../security/transaction_encryption_manager.dart';
 import '../transactions/transaction_repository.dart';
 import 'support_screens.dart';
 
@@ -43,25 +46,57 @@ class SettingsScreen extends StatelessWidget {
           _SettingsCard(
             children: [
               _SettingsRow(
-                icon: 'CT',
+                icon: Icons.category_outlined,
                 title: strings.category,
                 subtitle: strings.fixedCustom,
-                onTap: () => _open(context, const CategoriesScreen()),
+                onTap: () => _open(context, CategoriesScreen(user: user)),
               ),
               _SettingsRow(
-                icon: 'BG',
+                icon: Icons.savings_outlined,
                 title: strings.budget,
                 subtitle: strings.monthlyAndCategory,
                 onTap: () => _open(context, const BudgetsScreen()),
               ),
               _SettingsRow(
-                icon: 'IN',
+                icon: Icons.calendar_month_outlined,
                 title: strings.installments,
                 subtitle: strings.fixedInstallment,
-                onTap: () => _open(context, const InstallmentsScreen()),
+                onTap: () => _open(
+                  context,
+                  InstallmentsScreen(
+                    user: user,
+                    transactionRepository: transactionRepository,
+                  ),
+                ),
               ),
               _SettingsRow(
-                icon: 'SY',
+                icon: Icons.auto_awesome_rounded,
+                title: strings.isThai ? 'AI และ Gemini' : 'AI & Gemini',
+                subtitle: strings.isThai
+                    ? 'เชื่อมต่อ โมเดล Voice, Slip และความเป็นส่วนตัว'
+                    : 'Connection, models, Voice, Slip, and privacy',
+                onTap: () => _open(context, const AiSettingsScreen()),
+              ),
+              if (transactionRepository
+                  case final TransactionEncryptionController controller)
+                _SettingsRow(
+                  icon: Icons.key_rounded,
+                  title: strings.isThai
+                      ? 'เปลี่ยน Recovery key'
+                      : 'Change recovery key',
+                  subtitle: strings.isThai
+                      ? 'ต้องยืนยันคีย์ปัจจุบันก่อนเปลี่ยน'
+                      : 'Requires your current key',
+                  onTap: () => _open(
+                    context,
+                    ChangeRecoveryKeyScreen(
+                      userId: user.uid,
+                      controller: controller,
+                    ),
+                  ),
+                ),
+              _SettingsRow(
+                icon: Icons.cloud_done_outlined,
                 title: strings.syncStatus,
                 subtitle: strings.firestoreOffline,
               ),
@@ -210,7 +245,7 @@ class _LanguageCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const _IconBadge(label: 'LA'),
+              const _IconBadge(icon: Icons.translate_rounded),
               const SizedBox(width: 12),
               Expanded(child: Text(strings.language, style: _rowTitleStyle)),
             ],
@@ -252,7 +287,7 @@ class _SettingsRow extends StatelessWidget {
     this.onTap,
   });
 
-  final String icon;
+  final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
@@ -265,7 +300,7 @@ class _SettingsRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 15),
         child: Row(
           children: [
-            _IconBadge(label: icon),
+            _IconBadge(icon: icon),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -315,7 +350,7 @@ class _SettingsScaffold extends StatelessWidget {
         ),
         child: SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -348,9 +383,9 @@ class _SettingsScaffold extends StatelessWidget {
 }
 
 class _IconBadge extends StatelessWidget {
-  const _IconBadge({required this.label});
+  const _IconBadge({required this.icon});
 
-  final String label;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -364,15 +399,7 @@ class _IconBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: Center(
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF145CC8),
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0,
-          ),
-        ),
+        child: Icon(icon, color: const Color(0xFF145CC8), size: 22),
       ),
     );
   }
@@ -430,11 +457,13 @@ class _AmountClassifierCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const _IconBadge(label: 'AI'),
+              const _IconBadge(icon: Icons.document_scanner_outlined),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  strings.isThai ? 'โมเดล AI' : 'AI Model',
+                  strings.isThai
+                      ? 'ตัวอ่านยอดสลิปในเครื่อง'
+                      : 'On-device slip reader',
                   style: _rowTitleStyle,
                 ),
               ),
@@ -443,8 +472,8 @@ class _AmountClassifierCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             strings.isThai
-                ? 'ปรับปรุงการทำงานของ AI โดยการฝึกและตั้งค่า'
-                : 'Improve AI by training and configuring model weights',
+                ? 'รีเซ็ตการเรียนรู้เฉพาะตัวอ่านยอดบนเครื่อง ไม่เกี่ยวกับ Gemini ด้านบน'
+                : 'Reset local amount-reader learning. This is separate from the Gemini setting above.',
             style: _mutedStyle,
           ),
           const SizedBox(height: 14),

@@ -1,6 +1,7 @@
 import 'create_transaction_input.dart';
 import 'home_summary.dart';
 import 'transaction_record.dart';
+import 'transaction_sync_status.dart';
 import 'update_transaction_input.dart';
 
 abstract class TransactionRepository {
@@ -31,4 +32,12 @@ abstract class TransactionRepository {
   });
 
   Stream<List<TransactionRecord>> watchTransactions(String userId);
+
+  Stream<TransactionSyncStatus> watchSyncStatus(String userId);
+}
+
+class TransactionConflictException implements Exception {
+  const TransactionConflictException(this.serverData);
+
+  final Map<String, Object?> serverData;
 }

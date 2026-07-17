@@ -184,6 +184,67 @@ SlipTransactionDecision? resolveBestEffortSlipDecision(SlipScanResult result) {
   return _decision(TransactionType.expense, 'transfer', 'Transfer', result);
 }
 
+SlipTransactionDecision resolveSlipDecisionWithAi({
+  required SlipScanResult result,
+  required TransactionType aiType,
+  required String aiCategoryId,
+  String? aiNote,
+}) {
+  final localDecision = resolveBestEffortSlipDecision(result);
+  if (localDecision?.type == TransactionType.internalTransfer ||
+      aiType == TransactionType.internalTransfer ||
+      aiCategoryId == 'internal_transfer') {
+    return SlipTransactionDecision(
+      type: TransactionType.internalTransfer,
+      categoryId: 'internal_transfer',
+      categoryName: 'Internal Transfer',
+      note: buildSlipNote(result, overrideNote: aiNote),
+    );
+  }
+
+  if (aiType == TransactionType.income) {
+    return localDecision ??
+        SlipTransactionDecision(
+          type: TransactionType.expense,
+          categoryId: 'transfer',
+          categoryName: 'Transfer',
+          note: buildSlipNote(result, overrideNote: aiNote),
+        );
+  }
+
+  return SlipTransactionDecision(
+    type: TransactionType.expense,
+    categoryId: aiCategoryId,
+    categoryName: savedCategoryNameForId(aiCategoryId),
+    note: buildSlipNote(result, overrideNote: aiNote),
+  );
+}
+
+SlipTransactionDecision resolveSlipDecisionAfterAi({
+  required SlipScanResult originalResult,
+  required SlipScanResult enhancedResult,
+  required TransactionType aiType,
+  required String aiCategoryId,
+  String? aiNote,
+}) {
+  final originalDecision = resolveBestEffortSlipDecision(originalResult);
+  if (originalDecision?.type == TransactionType.internalTransfer) {
+    return SlipTransactionDecision(
+      type: TransactionType.internalTransfer,
+      categoryId: 'internal_transfer',
+      categoryName: 'Internal Transfer',
+      note: buildSlipNote(enhancedResult, overrideNote: aiNote),
+    );
+  }
+
+  return resolveSlipDecisionWithAi(
+    result: enhancedResult,
+    aiType: aiType,
+    aiCategoryId: aiCategoryId,
+    aiNote: aiNote,
+  );
+}
+
 bool looksLikePaymentSlip(SlipScanResult result) {
   final text = SlipTextParser.repairThaiMojibake(result.rawText).toLowerCase();
   return result.bankName != null ||
@@ -208,16 +269,34 @@ bool looksLikePaymentSlip(SlipScanResult result) {
 }
 
 bool partiesLookLikeSamePerson(String? sender, String? recipient) {
-  final senderTokens = _nameTokens(_withoutThaiTitles(sender));
-  final recipientTokens = _nameTokens(_withoutThaiTitles(recipient));
-  if (senderTokens.isEmpty || recipientTokens.isEmpty) return false;
-  if (senderTokens.intersection(recipientTokens).isNotEmpty) return true;
+  final senderFirstName = _normalizedFirstName(sender);
+  final recipientFirstName = _normalizedFirstName(recipient);
+  if (senderFirstName == null || recipientFirstName == null) return false;
+  if (senderFirstName == recipientFirstName) return true;
+  final longest = senderFirstName.length > recipientFirstName.length
+      ? senderFirstName.length
+      : recipientFirstName.length;
+  if (longest < 4) return false;
+  final distance = _editDistance(senderFirstName, recipientFirstName);
+  return distance <= 1 || distance / longest <= 0.2;
+}
 
-  final normalizedSenderTokens = _normalizedThaiNameTokens(senderTokens);
-  final normalizedRecipientTokens = _normalizedThaiNameTokens(recipientTokens);
-  return normalizedSenderTokens
-      .intersection(normalizedRecipientTokens)
-      .isNotEmpty;
+int _editDistance(String left, String right) {
+  var previous = List<int>.generate(right.length + 1, (index) => index);
+  for (var leftIndex = 0; leftIndex < left.length; leftIndex++) {
+    final current = List<int>.filled(right.length + 1, 0);
+    current[0] = leftIndex + 1;
+    for (var rightIndex = 0; rightIndex < right.length; rightIndex++) {
+      final substitution = previous[rightIndex] +
+          (left[leftIndex] == right[rightIndex] ? 0 : 1);
+      final insertion = current[rightIndex] + 1;
+      final deletion = previous[rightIndex + 1] + 1;
+      current[rightIndex + 1] = [substitution, insertion, deletion]
+          .reduce((best, value) => value < best ? value : best);
+    }
+    previous = current;
+  }
+  return previous.last;
 }
 
 bool _rawTextLooksLikeSamePersonParties(String rawText) {
@@ -238,7 +317,7 @@ bool _rawTextLooksLikeSamePersonParties(String rawText) {
 List<String> _personNameCandidatesFromRawText(String rawText) {
   final candidates = <String>{};
   final personName = RegExp(
-    r'(?:\u0E19\u0E32\u0E22|\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27|\u0E19\u0E32\u0E07|\u0E04\u0E38\u0E13)\s*[\u0E00-\u0E7F.]{2,}(?:\s+[\u0E00-\u0E7F.]{1,})?',
+    r'(?:[\u0E19\u0E07]\u0E32\u0E22|\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27|\u0E19\u0E32\u0E07|\u0E04\u0E38\u0E13)\s*[\u0E00-\u0E7F.]{2,}(?:\s+[\u0E00-\u0E7F.]{1,})?',
   );
   for (final match in personName.allMatches(rawText)) {
     candidates.add(match.group(0)!.replaceAll(RegExp(r'\s+'), ' ').trim());
@@ -250,7 +329,8 @@ String? _withoutThaiTitles(String? value) {
   if (value == null) return null;
   return SlipTextParser.repairThaiMojibake(value).replaceAll(
     RegExp(
-      r'\b(account|mr|mrs|ms|miss|bank|wallet)\b|\u0E19\u0E32\u0E22|\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27|\u0E19\u0E32\u0E07|\u0E04\u0E38\u0E13|\u0E14\u0E23\.?|\u0E18\.?|\u0E18\u0E19\u0E32\u0E04\u0E32\u0E23',
+      r'\b(account|mr|mrs|ms|miss|bank|wallet)\b|[\u0E19\u0E07]\u0E32\u0E22|\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27|\u0E19\u0E32\u0E07|\u0E04\u0E38\u0E13|\u0E14\u0E23\.?|\u0E18\.?|\u0E18\u0E19\u0E32\u0E04\u0E32\u0E23',
+      caseSensitive: false,
     ),
     ' ',
   );
@@ -422,13 +502,31 @@ Set<String> _nameTokens(String? value) {
       .toSet();
 }
 
-Set<String> _normalizedThaiNameTokens(Set<String> tokens) {
-  return tokens
-      .where((token) => RegExp(r'[\u0E00-\u0E7F]').hasMatch(token))
-      .map(
-        (token) =>
-            token.replaceAll(RegExp(r'[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]'), ''),
-      )
-      .where((token) => token.length >= 4)
-      .toSet();
+String? _normalizedFirstName(String? value) {
+  final withoutTitles = _withoutThaiTitles(value);
+  if (withoutTitles == null) return null;
+  const ignored = <String>{
+    'account',
+    'bank',
+    'wallet',
+    'from',
+    'sender',
+    'recipient',
+    'to',
+    '\u0E08\u0E32\u0E01',
+    '\u0E44\u0E1B\u0E22\u0E31\u0E07',
+    '\u0E1C\u0E39\u0E49\u0E42\u0E2D\u0E19',
+    '\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A',
+  };
+  final tokens = withoutTitles
+      .toLowerCase()
+      .split(RegExp(r'[^a-z0-9\u0E00-\u0E7F]+'))
+      .map((token) => token.trim())
+      .where((token) => token.length >= 2 && !ignored.contains(token))
+      .toList(growable: false);
+  return tokens.isEmpty ? null : _normalizeOcrNameToken(tokens.first);
+}
+
+String _normalizeOcrNameToken(String value) {
+  return value.replaceAll(RegExp(r'[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]'), '');
 }

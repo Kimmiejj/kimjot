@@ -46,3 +46,4 @@ app.*.map.json
 
 # Local secrets
 gemini-proxy/.env
+ai-backend/.env.local

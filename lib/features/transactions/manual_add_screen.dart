@@ -12,11 +12,21 @@ class ManualAddScreen extends StatelessWidget {
   const ManualAddScreen({
     required this.user,
     required this.transactionRepository,
+    this.initialType = TransactionType.expense,
+    this.initialDate,
+    this.initialAmount,
+    this.initialNote,
+    this.initialCategoryId,
     super.key,
   });
 
   final AuthUser user;
   final TransactionRepository transactionRepository;
+  final TransactionType initialType;
+  final DateTime? initialDate;
+  final double? initialAmount;
+  final String? initialNote;
+  final String? initialCategoryId;
 
   @override
   Widget build(BuildContext context) {
@@ -24,13 +34,13 @@ class ManualAddScreen extends StatelessWidget {
     final strings = context.strings;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FFFF),
+      backgroundColor: const Color(0xFFF7F5EF),
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
+            colors: [Color(0xFFF7F5EF), Color(0xFFEAF8F2), Color(0xFFFFF4ED)],
           ),
         ),
         child: SafeArea(
@@ -61,7 +71,11 @@ class ManualAddScreen extends StatelessWidget {
                   source: TransactionSource.manual,
                   title: strings.addTransaction,
                   description: strings.addTransactionTip,
-                  initialType: TransactionType.expense,
+                  initialType: initialType,
+                  initialDate: initialDate,
+                  initialAmount: initialAmount,
+                  initialNote: initialNote,
+                  initialCategoryId: initialCategoryId,
                   onSaved: () => Navigator.of(context).pop(true),
                 ),
               ],

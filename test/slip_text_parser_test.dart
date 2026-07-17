@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kimjod/features/scan/slip_amount_classifier.dart';
-import 'package:kimjod/features/scan/slip_text_parser.dart';
-import 'package:kimjod/features/scan/slip_transaction_resolver.dart';
-import 'package:kimjod/features/transactions/transaction_type.dart';
+import 'package:kimjot/features/scan/slip_amount_classifier.dart';
+import 'package:kimjot/features/scan/slip_text_parser.dart';
+import 'package:kimjot/features/scan/slip_transaction_resolver.dart';
+import 'package:kimjot/features/transactions/transaction_type.dart';
 
 void main() {
   final parser = SlipTextParser();

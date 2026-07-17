@@ -16,6 +16,16 @@ class SlipTextRecognizer {
       _parser = parser ?? SlipTextParser();
 
   static const OCRConfig _thaiOcrConfig = OCRConfig(language: 'tha+eng');
+  static const OCRConfig _scbSenderOcrConfig = OCRConfig(
+    language: 'tha+eng',
+    options: {
+      'crop_left': 0.24,
+      'crop_top': 0.30,
+      'crop_right': 0.98,
+      'crop_bottom': 0.47,
+      'scale': 2.0,
+    },
+  );
 
   final TextRecognizer _mlKitRecognizer;
   final SlipTextParser _parser;
@@ -33,6 +43,15 @@ class SlipTextRecognizer {
       );
       if (text.trim().isNotEmpty) {
         rawTexts.add(text);
+        if (_needsScbSenderPass(text)) {
+          final senderText = await TesseractOcr.extractText(
+            imagePath,
+            config: _scbSenderOcrConfig,
+          );
+          if (senderText.trim().isNotEmpty) {
+            rawTexts.add(senderText);
+          }
+        }
       }
     } catch (error) {
       firstError ??= error;
@@ -59,6 +78,13 @@ class SlipTextRecognizer {
     }
 
     return parseRawTexts(rawTexts);
+  }
+
+  bool _needsScbSenderPass(String text) {
+    final repaired = SlipTextParser.repairThaiMojibake(text);
+    return repaired.contains('\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19') &&
+        repaired.contains('\u0E08\u0E32\u0E01') &&
+        repaired.contains('\u0E44\u0E1B\u0E22\u0E31\u0E07');
   }
 
   Future<SlipScanResult> parseRawTexts(Iterable<String> rawTexts) async {

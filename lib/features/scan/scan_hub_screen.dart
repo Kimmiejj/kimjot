@@ -14,11 +14,11 @@ import '../transactions/category_localization.dart';
 import '../transactions/transaction_repository.dart';
 import '../transactions/transaction_source.dart';
 import '../transactions/transaction_type.dart';
+import 'album_sync_ai_analyzer.dart';
 import 'album_sync_review_screen.dart';
 import 'slip_fingerprint.dart';
 import 'slip_scan_result.dart';
 import 'slip_review_screen.dart';
-import 'slip_transaction_resolver.dart';
 import 'slip_text_recognizer.dart';
 import 'slip_date_parser.dart';
 import 'slip_amount_classifier.dart';
@@ -28,12 +28,14 @@ class ScanHubScreen extends StatefulWidget {
     required this.user,
     required this.transactionRepository,
     this.showBackButton = true,
+    this.onReturnHome,
     super.key,
   });
 
   final AuthUser user;
   final TransactionRepository transactionRepository;
   final bool showBackButton;
+  final VoidCallback? onReturnHome;
 
   @override
   State<ScanHubScreen> createState() => _ScanHubScreenState();
@@ -168,6 +170,8 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
 
       if (!mounted) return;
 
+      widget.onReturnHome?.call();
+
       if (saved == true) {
         messenger.showSnackBar(
           SnackBar(content: Text(strings.transactionSaved)),
@@ -217,7 +221,12 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
       });
 
       try {
-        final result = await _recognizer.scanImagePath(image.path);
+        final scannedResult = await _recognizer.scanImagePath(image.path);
+        final analysis = await analyzeAlbumSyncSlip(
+          result: scannedResult,
+          imagePath: image.path,
+        );
+        final result = analysis.result;
         final fingerprint = await buildSlipFingerprint(
           imagePath: image.path,
           result: result,
@@ -251,7 +260,7 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
         }
 
         // Use the detected category (income/expense). If unknown or detail, fall back to heuristics.
-        final decision = resolveBestEffortSlipDecision(result);
+        final decision = analysis.decision;
         if (decision == null) {
           failed++;
           if (!mounted) return;
@@ -286,7 +295,7 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
             categoryId: decision.categoryId,
             categoryName: localizedCategory,
             transactionDate: transactionDate,
-            transactionDateText: strings.formatDate(transactionDate),
+            transactionDateText: strings.formatDateTime(transactionDate),
             source: TransactionSource.gallerySlip,
             note: decision.note,
             slipFingerprint: fingerprint,
@@ -468,7 +477,7 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
     final strings = context.strings;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFEAFBFF),
+      backgroundColor: const Color(0xFFF7F5EF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         automaticallyImplyLeading: widget.showBackButton,
@@ -480,7 +489,7 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
+            colors: [Color(0xFFF7F5EF), Color(0xFFEAF8F2), Color(0xFFFFF4ED)],
           ),
         ),
         child: SafeArea(
@@ -830,16 +839,29 @@ class _ScanOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.82),
-      borderRadius: BorderRadius.circular(22),
+      color: Colors.white.withValues(alpha: 0.9),
+      borderRadius: BorderRadius.circular(26),
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
+        onTap: onTap == null
+            ? null
+            : () {
+                HapticFeedback.selectionClick();
+                onTap!();
+              },
+        borderRadius: BorderRadius.circular(26),
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(20),
           child: Row(
             children: [
-              Icon(icon, color: const Color(0xFF3268F6), size: 30),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF172826),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(icon, color: const Color(0xFFCFF7E9), size: 26),
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -848,7 +870,7 @@ class _ScanOption extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        color: Color(0xFF071844),
+                        color: Color(0xFF172826),
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0,
@@ -858,7 +880,7 @@ class _ScanOption extends StatelessWidget {
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Color(0xFF65748B),
+                        color: Color(0xFF6D7975),
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         height: 1.35,
@@ -868,7 +890,7 @@ class _ScanOption extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Color(0xFF65748B)),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF6D7975)),
             ],
           ),
         ),

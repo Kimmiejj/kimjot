@@ -36,6 +36,9 @@ class TesseractOcr {
       'tessData': tessDataPath,
       'language': actualConfig.language,
     };
+    if (actualConfig.options != null) {
+      args.addAll(actualConfig.options!);
+    }
 
     final String extractedText = await _channel.invokeMethod(
       'extractText',

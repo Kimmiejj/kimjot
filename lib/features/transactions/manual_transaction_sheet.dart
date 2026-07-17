@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/formatters/money_formatter.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import 'category_icons.dart';
 import 'create_transaction_input.dart';
+import 'custom_category_store.dart';
 import 'transaction_record.dart';
 import 'transaction_repository.dart';
 import 'transaction_source.dart';
@@ -24,6 +26,7 @@ class ManualTransactionSheet extends StatefulWidget {
     this.initialDateText,
     this.initialAmount,
     this.initialNote,
+    this.initialCategoryId,
     this.slipFingerprint,
     this.slipReference,
     this.existingRecord,
@@ -40,6 +43,7 @@ class ManualTransactionSheet extends StatefulWidget {
   final TransactionType initialType;
   final double? initialAmount;
   final String? initialNote;
+  final String? initialCategoryId;
   final String? slipFingerprint;
   final String? slipReference;
   final VoidCallback? onSaved;
@@ -73,6 +77,7 @@ class _ManualTransactionSheetState extends State<ManualTransactionSheet> {
             initialType: widget.initialType,
             initialAmount: widget.initialAmount,
             initialNote: widget.initialNote,
+            initialCategoryId: widget.initialCategoryId,
             initialDate: widget.initialDate,
             initialDateText: widget.initialDateText,
             slipFingerprint: widget.slipFingerprint,
@@ -100,6 +105,7 @@ class ManualTransactionForm extends StatefulWidget {
     this.description,
     this.initialAmount,
     this.initialNote,
+    this.initialCategoryId,
     this.slipFingerprint,
     this.slipReference,
     this.existingRecord,
@@ -116,6 +122,7 @@ class ManualTransactionForm extends StatefulWidget {
   final TransactionType initialType;
   final double? initialAmount;
   final String? initialNote;
+  final String? initialCategoryId;
   final String? slipFingerprint;
   final String? slipReference;
   final VoidCallback? onSaved;
@@ -140,8 +147,20 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
   late DateTime _selectedDate;
   bool _isSaving = false;
   bool _isDeleting = false;
+  List<CustomCategory> _customCategories = const [];
 
-  List<_CategoryOption> get _categories => _categoriesFor(_type);
+  List<_CategoryOption> get _categories => [
+    ..._categoriesFor(_type),
+    ..._customCategories
+        .where((category) => category.type == _type)
+        .map(
+          (category) => _CategoryOption(
+            id: category.id,
+            savedName: category.name,
+            customLabel: category.name,
+          ),
+        ),
+  ];
 
   @override
   void initState() {
@@ -153,6 +172,74 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
         DateTime.now();
     _category = _resolveInitialCategory();
     _applyInitialValues(force: true);
+    _loadCustomCategories();
+  }
+
+  Future<void> _loadCustomCategories() async {
+    final categories = await CustomCategoryStore.instance.load(widget.user.uid);
+    if (!mounted) return;
+    setState(() {
+      _customCategories = categories;
+      final categoryId =
+          widget.existingRecord?.categoryId ?? widget.initialCategoryId;
+      if (categoryId != null) {
+        for (final option in _categories) {
+          if (option.id == categoryId) {
+            _category = option;
+            break;
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _addCategory() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          context.strings.isThai ? 'เพิ่มหมวดหมู่ใหม่' : 'Add category',
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+            labelText: context.strings.isThai ? 'ชื่อหมวดหมู่' : 'Category name',
+          ),
+          onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(context.strings.isThai ? 'ยกเลิก' : 'Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: Text(context.strings.isThai ? 'เพิ่ม' : 'Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
+    final category = await CustomCategoryStore.instance.add(
+      userId: widget.user.uid,
+      name: name,
+      type: _type,
+    );
+    if (!mounted) return;
+    final categories = await CustomCategoryStore.instance.load(widget.user.uid);
+    if (!mounted) return;
+    setState(() {
+      _customCategories = List.of(categories);
+      _category = _CategoryOption(
+        id: category.id,
+        savedName: category.name,
+        customLabel: category.name,
+      );
+    });
   }
 
   @override
@@ -181,7 +268,8 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
   }
 
   _CategoryOption _resolveInitialCategory() {
-    final categoryId = widget.existingRecord?.categoryId;
+    final categoryId =
+        widget.existingRecord?.categoryId ?? widget.initialCategoryId;
     if (categoryId != null) {
       for (final option in _categoriesFor(_type)) {
         if (option.id == categoryId) {
@@ -220,9 +308,32 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
 
     if (picked != null) {
       setState(() {
-        _selectedDate = picked;
+        _selectedDate = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          _selectedDate.hour,
+          _selectedDate.minute,
+        );
       });
     }
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selectedDate),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedDate = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
   }
 
   void _setType(TransactionType type) {
@@ -232,7 +343,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
     });
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool forceOverwrite = false}) async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -243,7 +354,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
 
     final note = _noteController.text.trim();
     final amount = _parseAmount(_amountController.text);
-    final transactionDateText = context.strings.formatDate(_selectedDate);
+    final transactionDateText = context.strings.formatDateTime(_selectedDate);
 
     try {
       if (widget.isEditing) {
@@ -262,6 +373,8 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
             note: note.isEmpty ? null : note,
             slipFingerprint: existing.slipFingerprint,
             slipReference: existing.slipReference,
+            baseUpdatedAt: existing.updatedAt,
+            forceOverwrite: forceOverwrite,
           ),
         );
       } else {
@@ -285,6 +398,13 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
       if (mounted) {
         widget.onSaved?.call();
       }
+    } on TransactionConflictException catch (conflict) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      final overwrite = await _showConflictDialog(conflict);
+      if (overwrite == true && mounted) {
+        await _save(forceOverwrite: true);
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -297,6 +417,62 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
         SnackBar(content: Text(context.strings.couldNotSaveTransaction)),
       );
     }
+  }
+
+  Future<bool?> _showConflictDialog(TransactionConflictException conflict) {
+    final serverAmount = (conflict.serverData['amount'] as num?)?.toDouble();
+    final serverNote = conflict.serverData['note']?.toString();
+    final localAmount = _parseAmount(_amountController.text);
+    final localNote = _noteController.text.trim();
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          context.strings.isThai
+              ? 'พบข้อมูลที่แก้จากอีกเครื่อง'
+              : 'Cloud version changed',
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              context.strings.isThai
+                  ? 'เลือกว่าจะเก็บข้อมูลใด ระบบจะไม่เขียนทับให้เอง'
+                  : 'Choose which version to keep. Nothing is overwritten automatically.',
+            ),
+            const SizedBox(height: 14),
+            _ConflictVersion(
+              label: context.strings.isThai ? 'ในเครื่องนี้' : 'This device',
+              amount: localAmount,
+              note: localNote,
+            ),
+            const SizedBox(height: 8),
+            _ConflictVersion(
+              label: context.strings.isThai ? 'บน cloud' : 'Cloud',
+              amount: serverAmount,
+              note: serverNote,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              context.strings.isThai ? 'เก็บข้อมูล cloud' : 'Keep cloud',
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              context.strings.isThai
+                  ? 'ใช้ข้อมูลเครื่องนี้'
+                  : 'Use this device',
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _delete() async {
@@ -448,6 +624,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
                 _category = category;
               });
             },
+            onAdd: _addCategory,
           ),
           const SizedBox(height: 12),
           _DateField(
@@ -455,6 +632,13 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
             value: context.strings.formatDate(_selectedDate),
             enabled: !_isBusy,
             onTap: _pickDate,
+          ),
+          const SizedBox(height: 12),
+          _DateField(
+            label: context.strings.isThai ? 'เวลา' : 'Time',
+            value: context.strings.formatTime(_selectedDate),
+            enabled: !_isBusy,
+            onTap: _pickTime,
           ),
           const SizedBox(height: 12),
           _TextFieldBlock(
@@ -829,12 +1013,14 @@ class _CategoryField extends StatelessWidget {
     required this.selected,
     required this.enabled,
     required this.onChanged,
+    required this.onAdd,
   });
 
   final List<_CategoryOption> categories;
   final _CategoryOption selected;
   final bool enabled;
   final ValueChanged<_CategoryOption> onChanged;
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -851,8 +1037,25 @@ class _CategoryField extends StatelessWidget {
               enabled: enabled,
               onTap: () => onChanged(category),
             ),
+          _AddCategoryButton(enabled: enabled, onTap: onAdd),
         ],
       ),
+    );
+  }
+}
+
+class _AddCategoryButton extends StatelessWidget {
+  const _AddCategoryButton({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      onPressed: enabled ? onTap : null,
+      avatar: const Icon(Icons.add_rounded, size: 18),
+      label: Text(context.strings.isThai ? 'เพิ่มหมวด' : 'Add category'),
     );
   }
 }
@@ -873,7 +1076,8 @@ class _CategoryIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = category.label(context.strings);
-    final color = selected ? Colors.white : const Color(0xFF1D3C6C);
+    final accent = categoryAccentColor(category.id);
+    final foreground = selected ? accent : const Color(0xFF40524C);
 
     return Tooltip(
       message: label,
@@ -882,27 +1086,24 @@ class _CategoryIconButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
-          constraints: const BoxConstraints(minHeight: 46),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.fromLTRB(8, 7, 12, 7),
           decoration: BoxDecoration(
-            gradient: selected
-                ? const LinearGradient(
-                    colors: [Color(0xFF1FC9DC), Color(0xFF3268F6)],
-                  )
-                : null,
-            color: selected ? null : Colors.white.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(20),
+            color: selected
+                ? accent.withValues(alpha: 0.12)
+                : Colors.white.withValues(alpha: 0.58),
+            borderRadius: BorderRadius.circular(22),
             border: Border.all(
               color: selected
-                  ? Colors.white.withValues(alpha: 0.82)
-                  : const Color(0x2E5D81AD),
+                  ? accent.withValues(alpha: 0.36)
+                  : const Color(0x1870807A),
             ),
             boxShadow: selected
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x241FC9DC),
-                      blurRadius: 18,
-                      offset: Offset(0, 8),
+                      color: accent.withValues(alpha: 0.12),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
                     ),
                   ]
                 : null,
@@ -910,16 +1111,24 @@ class _CategoryIconButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(categoryIconData(category.id), color: color, size: 21),
-              const SizedBox(width: 7),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: selected ? 0.17 : 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(categoryIconData(category.id), color: accent, size: 18),
+              ),
+              const SizedBox(width: 8),
               Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: color,
+                  color: foreground,
                   fontSize: 13,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
                   letterSpacing: 0,
                 ),
               ),
@@ -1134,12 +1343,18 @@ class _DangerButton extends StatelessWidget {
 }
 
 class _CategoryOption {
-  const _CategoryOption({required this.id, required this.savedName});
+  const _CategoryOption({
+    required this.id,
+    required this.savedName,
+    this.customLabel,
+  });
 
   final String id;
   final String savedName;
+  final String? customLabel;
 
   String label(AppStrings strings) {
+    if (customLabel != null) return customLabel!;
     return switch (id) {
       'food' => strings.food,
       'drink' => strings.drink,
@@ -1219,6 +1434,40 @@ const _internalTransferCategories = [
   _CategoryOption(id: 'internal_transfer', savedName: 'Internal Transfer'),
 ];
 
+class _ConflictVersion extends StatelessWidget {
+  const _ConflictVersion({
+    required this.label,
+    required this.amount,
+    required this.note,
+  });
+
+  final String label;
+  final double? amount;
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4F2),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text(
+            '${amount == null ? '-' : formatOriginalNumber(amount!)} THB · '
+            '${(note?.trim().isNotEmpty ?? false) ? note!.trim() : '-'}',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 double _parseAmount(String value) {
   return _tryParseAmount(value)!;
 }
@@ -1228,13 +1477,7 @@ double? _tryParseAmount(String? value) {
 }
 
 String _formatNumber(double amount) {
-  final fixed = amount.toStringAsFixed(
-    amount == amount.roundToDouble() ? 0 : 2,
-  );
-  final parts = fixed.split('.');
-  final whole = parts.first;
-  final decimal = parts.length > 1 ? '.${parts[1]}' : '';
-  return '${_addThousandsSeparators(whole)}$decimal';
+  return formatOriginalNumber(amount);
 }
 
 class _AmountTextInputFormatter extends TextInputFormatter {

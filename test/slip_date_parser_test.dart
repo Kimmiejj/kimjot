@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kimjod/features/scan/slip_date_parser.dart';
+import 'package:kimjot/features/scan/slip_date_parser.dart';
 
 void main() {
   test('parses Thai Buddhist Era date from slip text', () {

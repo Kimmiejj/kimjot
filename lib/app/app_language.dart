@@ -222,12 +222,18 @@ class AppStrings {
       isThai ? 'เลือกรูปสลิปจากเครื่อง' : 'Choose slip from gallery';
   String get syncAlbumTitle => isThai ? 'ซิงก์จากอัลบัม' : 'Sync album';
   String get syncAlbumSubtitle => isThai
-      ? 'เลือกทั้งโฟลเดอร์ แล้ว kimjod จะข้ามรูปที่ไม่ใช่สลิปและสลิปที่เคยเพิ่มแล้ว'
-      : 'Choose a whole folder. kimjod skips non-payment images and slips already added.';
+      ? 'เลือกโฟลเดอร์ครั้งแรก แล้ว Kimjod จะตรวจรูปใหม่อัตโนมัติ แจ้งเตือนให้ตรวจและกดบันทึกเอง'
+      : 'Choose a folder once. Kimjod detects new slips automatically, then notifies you to review and save them yourself.';
   String get syncAlbum =>
       isThai ? 'อ่านและซิงก์โฟลเดอร์' : 'Read and sync folder';
   String get syncingAlbum =>
       isThai ? 'กำลังอ่านโฟลเดอร์...' : 'Syncing folder...';
+  String get cancelAlbumSync => isThai
+      ? '\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E01\u0E32\u0E23\u0E0B\u0E34\u0E07\u0E01\u0E4C'
+      : 'Cancel sync';
+  String get albumSyncCancelled => isThai
+      ? '\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E01\u0E32\u0E23\u0E0B\u0E34\u0E07\u0E01\u0E4C\u0E41\u0E25\u0E49\u0E27'
+      : 'Sync cancelled';
   String selectedSlipCount(int count) =>
       isThai ? 'เลือกรูปสลิป $count รูป' : '$count slip photos selected';
   String moreSlipImages(int count) =>
@@ -336,8 +342,8 @@ class AppStrings {
   String get defaultCategoriesReady =>
       isThai ? 'หมวดเริ่มต้นพร้อมใช้' : 'Default categories ready';
   String get categoriesHeroMessage => isThai
-      ? 'Food, Transport, Bills และ Other ถูกใช้กับ transaction จริงแล้ว ส่วน custom category จะต่อกับ Firestore ในขั้นถัดไป'
-      : 'Food, Transport, Bills, and Other are already used by real transactions. Custom categories will connect to Firestore next.';
+      ? 'หมวดหมู่พื้นฐานและหมวดที่เพิ่มเองใช้กับรายการจริงได้ทันที'
+      : 'Default and custom categories are available for real transactions immediately.';
   String get defaultExpense => isThai ? 'รายจ่ายพื้นฐาน' : 'default expense';
   String get defaultCategory => isThai ? 'พื้นฐาน' : 'default';
 
@@ -375,6 +381,16 @@ class AppStrings {
     final prefix = today ? (isThai ? 'วันนี้, ' : 'Today, ') : '';
     final year = isThai ? date.year + 543 : date.year;
     return '$prefix${date.day} ${months[date.month - 1]} $year';
+  }
+
+  String formatTime(DateTime date) {
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  String formatDateTime(DateTime date) {
+    return '${formatDate(date)} · ${formatTime(date)}';
   }
 
   String formatMonthYear(DateTime date) {

@@ -1,274 +1,301 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
+import '../ai/ai_models.dart';
+import '../ai/ai_settings_store.dart';
 import '../transactions/transaction_type.dart';
 import 'slip_scan_result.dart';
 
-/// External AI client helper.
+/// Authenticated client for the Kimjod AI backend.
 ///
-/// This supports two modes:
-/// - If environment variable EXTERNAL_AI_PROVIDER is 'openai' and EXTERNAL_AI_KEY is set,
-///   we call OpenAI Chat Completions endpoint (v1/chat/completions) with a structured prompt
-///   and expect the assistant to return a JSON object containing
-///   `{"chosen": number, "confidence": 0..1}`.
-/// - Otherwise, if EXTERNAL_AI_URL and EXTERNAL_AI_KEY are provided, we POST {"text":..., "candidates": [...]} to that URL
-///   and expect a JSON response `{"chosen": number, "confidence": 0..1}`.
-///
-/// Configure keys using flutter run --dart-define=EXTERNAL_AI_PROVIDER=openai --dart-define=EXTERNAL_AI_KEY=...
-/// or --dart-define=EXTERNAL_AI_URL=https://your-endpoint --dart-define=EXTERNAL_AI_KEY=...
+/// No Gemini credential is ever shipped in the application. Configure only
+/// the public backend origin with `--dart-define=AI_BACKEND_URL=https://...`.
 class ExternalAiClient {
   ExternalAiClient._();
+
   static final ExternalAiClient instance = ExternalAiClient._();
 
-  final _provider = const String.fromEnvironment('EXTERNAL_AI_PROVIDER');
-  final _key = const String.fromEnvironment('EXTERNAL_AI_KEY');
-  final _url = const String.fromEnvironment('EXTERNAL_AI_URL');
+  static const _requestTimeout = Duration(seconds: 35);
+
+  String get _backendUrl => AiSettingsStore.instance.backendUrl;
+  bool get isConfigured => _backendUrl.isNotEmpty;
+
+  Future<AiBackendStatus> checkStatus() async {
+    if (!isConfigured) return AiBackendStatus.notConfigured;
+    try {
+      final response = await http
+          .get(
+            Uri.parse('${_backendUrl.replaceAll(RegExp(r'/+$'), '')}/health'),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return AiBackendStatus.unreachable;
+      }
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic> || body['provider'] != 'gemini') {
+        return AiBackendStatus.unreachable;
+      }
+      if (body['status'] == 'ready') {
+        return AiBackendStatus.ready;
+      }
+      return AiBackendStatus.missingApiKey;
+    } catch (_) {
+      return AiBackendStatus.unreachable;
+    }
+  }
 
   Future<ExternalSlipAnalysis?> analyzeSlip({
     required SlipScanResult result,
     required List<String> allowedCategoryIds,
+    String? imagePath,
+    bool includeImage = false,
   }) async {
-    if (_key.isEmpty && _url.isEmpty) {
+    final body = <String, Object?>{
+      'rawText': _trimForAi(result.rawText, 8000),
+      'allowedCategoryIds': allowedCategoryIds,
+      'mode': AiSettingsStore.instance.mode.wireValue,
+      'extracted': <String, Object?>{
+        'bankName': result.bankName,
+        'amount': result.amount,
+        'dateText': result.dateText,
+        'timeText': result.timeText,
+        'recipient': result.recipient,
+        'sender': result.sender,
+        'reference': result.reference,
+      },
+    };
+
+    if (includeImage && imagePath != null) {
+      final image = await _smallEnoughImage(imagePath);
+      if (image != null) body['imageBase64'] = image;
+    }
+
+    final json = await _postJson('/v1/slip/analyze', body);
+    if (json == null) return null;
+
+    final type = switch (json['type']?.toString()) {
+      'income' => TransactionType.income,
+      'internal_transfer' ||
+      'internalTransfer' => TransactionType.internalTransfer,
+      'expense' => TransactionType.expense,
+      _ => null,
+    };
+    final categoryId = json['categoryId']?.toString().trim();
+    if (type == null ||
+        categoryId == null ||
+        !allowedCategoryIds.contains(categoryId)) {
       return null;
     }
 
-    try {
-      if (_provider == 'openai' && _key.isNotEmpty) {
-        return await _callOpenAiSlipAnalysis(
-          result: result,
-          allowedCategoryIds: allowedCategoryIds,
-        );
-      }
-    } catch (_) {
-      // Ignore errors and let caller fall back to local heuristics.
-    }
-
-    return null;
+    return ExternalSlipAnalysis(
+      type: type,
+      categoryId: categoryId,
+      note: _nullableString(json['note']),
+      confidence: (json['confidence'] as num?)?.toDouble(),
+      amount: (json['amount'] as num?)?.toDouble(),
+      dateText: _nullableString(json['dateText']),
+      timeText: _nullableString(json['timeText']),
+      sender: _nullableString(json['sender']),
+      recipient: _nullableString(json['recipient']),
+      reference: _nullableString(json['reference']),
+    );
   }
 
   Future<ExternalPrediction?> analyzeAmounts({
     required String rawText,
     required List<double> candidates,
   }) async {
-    if (_key.isEmpty && _url.isEmpty) {
-      // no external AI configured
-      return null;
-    }
+    final json = await _postJson('/v1/slip/amount', <String, Object?>{
+      'rawText': _trimForAi(rawText, 6000),
+      'candidates': candidates.take(24).toList(growable: false),
+      'mode': AiSettingsStore.instance.mode.wireValue,
+    });
+    if (json == null) return null;
 
-    try {
-      if (_provider == 'openai' && _key.isNotEmpty) {
-        return await _callOpenAi(rawText: rawText, candidates: candidates);
-      }
-
-      if (_url.isNotEmpty && _key.isNotEmpty) {
-        final resp = await http.post(
-          Uri.parse(_url),
-          headers: {
-            'content-type': 'application/json',
-            'authorization': 'Bearer $_key',
-          },
-          body: jsonEncode({'text': rawText, 'candidates': candidates}),
-        );
-        if (resp.statusCode >= 200 && resp.statusCode < 300) {
-          final body = jsonDecode(resp.body) as Map<String, dynamic>;
-          final chosen = body['chosen'];
-          final confidence = body['confidence'];
-          if (chosen is num) {
-            return ExternalPrediction(
-              chosen.toDouble(),
-              (confidence is num) ? confidence.toDouble() : null,
-            );
-          }
-        }
-      }
-    } catch (e) {
-      // ignore errors, caller will fallback to local classifier
-    }
-
-    return null;
+    return ExternalPrediction(
+      (json['chosen'] as num?)?.toDouble(),
+      (json['confidence'] as num?)?.toDouble(),
+    );
   }
 
-  Future<ExternalPrediction?> _callOpenAi({
-    required String rawText,
-    required List<double> candidates,
-  }) async {
-    final openAiUrl = 'https://api.openai.com/v1/chat/completions';
-    final model = const String.fromEnvironment(
-      'OPENAI_MODEL',
-      defaultValue: 'gpt-3.5-turbo',
-    );
+  Future<VoiceTransactionDraft?> parseVoice(String transcript) async {
+    final drafts = await parseVoiceTransactions(transcript);
+    return drafts.isEmpty ? null : drafts.first;
+  }
 
-    final system =
-        '''You are an assistant that extracts the correct payment amount from OCR text.
-Return a JSON object only, like {"chosen": 396.0, "confidence": 0.92} where "chosen" is the numeric amount chosen from the candidates list and "confidence" is a number between 0 and 1.
-If none of the candidates seem correct, return {"chosen": null, "confidence": 0.0}.
-''';
+  Future<List<VoiceTransactionDraft>> parseVoiceTransactions(
+    String transcript,
+  ) async {
+    final json = await _postJson('/v1/voice/transaction', <String, Object?>{
+      'transcript': _trimForAi(transcript, 1500),
+      'mode': AiSettingsStore.instance.mode.wireValue,
+      'timezone': DateTime.now().timeZoneName,
+      'now': DateTime.now().toIso8601String(),
+    });
+    if (json == null) return const [];
 
-    final user =
-        '''OCR_TEXT:\n$rawText\n\nCANDIDATES:\n${candidates.join(', ')}\n\nChoose which candidate is the correct payment amount and return the JSON object as described.''';
+    final rawTransactions = json['transactions'];
+    final items = rawTransactions is List ? rawTransactions : <Object?>[json];
+    return items
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map((item) => _voiceDraftFromJson(item, transcript))
+        .whereType<VoiceTransactionDraft>()
+        .take(20)
+        .toList(growable: false);
+  }
 
-    final body = {
-      'model': model,
-      'messages': [
-        {'role': 'system', 'content': system},
-        {'role': 'user', 'content': user},
-      ],
-      'temperature': 0.0,
-      'max_tokens': 300,
+  VoiceTransactionDraft? _voiceDraftFromJson(
+    Map<String, dynamic> json,
+    String transcript,
+  ) {
+    final amount = (json['amount'] as num?)?.toDouble();
+    if (amount == null || amount <= 0) return null;
+    final type = switch (json['type']?.toString()) {
+      'income' => TransactionType.income,
+      'internal_transfer' ||
+      'internalTransfer' => TransactionType.internalTransfer,
+      _ => TransactionType.expense,
     };
 
-    final resp = await http.post(
-      Uri.parse(openAiUrl),
-      headers: {
-        'content-type': 'application/json',
-        'authorization': 'Bearer $_key',
-      },
-      body: jsonEncode(body),
+    return VoiceTransactionDraft(
+      amount: amount,
+      type: type,
+      categoryId: json['categoryId']?.toString() ?? 'other',
+      categoryName: json['categoryName']?.toString() ?? 'Other',
+      note: _nullableString(json['note']),
+      transactionDate:
+          DateTime.tryParse(json['transactionDate']?.toString() ?? '') ??
+          DateTime.now(),
+      transcript: transcript,
     );
+  }
 
-    if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
-    final json = jsonDecode(resp.body) as Map<String, dynamic>;
-    final choices = json['choices'] as List<dynamic>?;
-    if (choices == null || choices.isEmpty) return null;
-    final text = (choices.first['message']?['content'])?.toString();
-    if (text == null) return null;
-
-    // Attempt to parse JSON object from assistant text
+  Future<String?> transcribeVoice(
+    String audioPath, {
+    required String language,
+  }) async {
+    if (!isConfigured) return null;
     try {
-      final parsed = jsonDecode(text) as Map<String, dynamic>;
-      final chosen = parsed['chosen'];
-      final confidence = parsed['confidence'];
-      if (chosen is num) {
-        return ExternalPrediction(
-          chosen.toDouble(),
-          (confidence is num) ? confidence.toDouble() : null,
-        );
-      }
-      return ExternalPrediction(
-        null,
-        (confidence is num) ? confidence.toDouble() : null,
-      );
+      final file = File(audioPath);
+      final length = await file.length();
+      if (length <= 0 || length > 4 * 1024 * 1024) return null;
+      final json = await _postJson('/v1/voice/transcribe', <String, Object?>{
+        'audioBase64': base64Encode(await file.readAsBytes()),
+        'mimeType': 'audio/mp4',
+        'language': language,
+      });
+      return _nullableString(json?['transcript']);
     } catch (_) {
-      // Try to extract numbers with regex as fallback
-      final match = RegExp(r'([0-9]+(?:\.[0-9]+)?)').firstMatch(text);
-      if (match != null) {
-        final numStr = match.group(1)!;
-        final val = double.tryParse(numStr);
-        return ExternalPrediction(val, null);
-      }
+      return null;
     }
-
-    return null;
   }
 
-  Future<ExternalSlipAnalysis?> _callOpenAiSlipAnalysis({
-    required SlipScanResult result,
-    required List<String> allowedCategoryIds,
+  Future<FinancialAiInsight?> analyzeFinances({
+    required Map<String, Object?> summary,
+    required AiMode mode,
   }) async {
-    final openAiUrl = 'https://api.openai.com/v1/chat/completions';
-    final model = const String.fromEnvironment(
-      'OPENAI_MODEL',
-      defaultValue: 'gpt-3.5-turbo',
+    final json = await _postJson('/v1/analysis', <String, Object?>{
+      'summary': summary,
+      'mode': mode.wireValue,
+      'language': 'th',
+    });
+    if (json == null) return null;
+
+    return FinancialAiInsight(
+      headline: json['headline']?.toString() ?? 'Financial snapshot',
+      strengths: _stringList(json['strengths']),
+      risks: _stringList(json['risks']),
+      recommendations: _stringList(json['recommendations']),
+      suggestedMonthlyCut:
+          (json['suggestedMonthlyCut'] as num?)?.toDouble() ?? 0,
+      model: json['model']?.toString() ?? 'auto',
+      cached: json['cached'] == true,
     );
+  }
 
-    final system = '''You classify transaction slips from OCR text.
-Return JSON only with this shape:
-{"type":"expense|internal_transfer","categoryId":"one of the allowed category ids","note":"short optional note or null","confidence":0.0}
-Rules:
-- Choose exactly one categoryId from the allowed list.
-- Never classify an OCR slip as income. Income must be entered manually by the user.
-- Use "internal_transfer" when the sender and recipient appear to be the same person moving money between their own accounts.
-- Keep note short and factual. Prefer merchant/place names. Do not put sender or recipient person names in the note.
-- If uncertain, still choose the best option and lower confidence.
-''';
+  Future<FinancialChatReply?> chat({
+    required String message,
+    required List<FinancialChatMessage> history,
+    required Map<String, Object?> context,
+  }) async {
+    final json = await _postJson('/v1/chat', <String, Object?>{
+      'message': _trimForAi(message, 2000),
+      'history': history
+          .take(12)
+          .map(
+            (item) => <String, String>{
+              'role': item.isUser ? 'user' : 'assistant',
+              'content': _trimForAi(item.content, 2000),
+            },
+          )
+          .toList(growable: false),
+      'context': context,
+      'mode': AiSettingsStore.instance.mode.wireValue,
+    });
+    if (json == null) return null;
 
-    final user =
-        '''OCR_TEXT:
-${result.rawText}
-
-EXTRACTED_FIELDS:
-- bankName: ${result.bankName ?? 'null'}
-- amount: ${result.amount?.toStringAsFixed(2) ?? 'null'}
-- dateText: ${result.dateText ?? 'null'}
-- timeText: ${result.timeText ?? 'null'}
-- recipient: ${result.recipient ?? 'null'}
-- sender: ${result.sender ?? 'null'}
-- reference: ${result.reference ?? 'null'}
-
-ALLOWED_CATEGORY_IDS:
-${allowedCategoryIds.join(', ')}
-
-Return the JSON object only.''';
-
-    final body = {
-      'model': model,
-      'messages': [
-        {'role': 'system', 'content': system},
-        {'role': 'user', 'content': user},
-      ],
-      'temperature': 0.0,
-      'max_tokens': 300,
-    };
-
-    final resp = await http.post(
-      Uri.parse(openAiUrl),
-      headers: {
-        'content-type': 'application/json',
-        'authorization': 'Bearer $_key',
-      },
-      body: jsonEncode(body),
+    final answer = _nullableString(json['answer']);
+    if (answer == null) return null;
+    return FinancialChatReply(
+      answer: answer,
+      suggestions: _stringList(json['suggestions']).take(3).toList(),
+      model: json['model']?.toString() ?? 'auto',
     );
+  }
 
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      return null;
-    }
-
-    final json = jsonDecode(resp.body) as Map<String, dynamic>;
-    final choices = json['choices'] as List<dynamic>?;
-    if (choices == null || choices.isEmpty) {
-      return null;
-    }
-
-    final text = (choices.first['message']?['content'])?.toString();
-    if (text == null) {
-      return null;
-    }
+  Future<Map<String, dynamic>?> _postJson(
+    String path,
+    Map<String, Object?> body,
+  ) async {
+    if (!isConfigured) return null;
+    await AiSettingsStore.instance.load();
+    if (!AiSettingsStore.instance.aiConsent) return null;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
 
     try {
-      final parsed = jsonDecode(text) as Map<String, dynamic>;
-      final typeValue = parsed['type']?.toString().trim().toLowerCase();
-      final categoryId = parsed['categoryId']?.toString().trim();
-      final note = parsed['note']?.toString().trim();
-      final confidence = parsed['confidence'];
-
-      final type = switch (typeValue) {
-        'income' => TransactionType.income,
-        'expense' => TransactionType.expense,
-        'internal_transfer' => TransactionType.internalTransfer,
-        _ => null,
-      };
-
-      if (type == null ||
-          categoryId == null ||
-          categoryId.isEmpty ||
-          !allowedCategoryIds.contains(categoryId)) {
+      final token = await user.getIdToken();
+      final response = await http
+          .post(
+            Uri.parse('${_backendUrl.replaceAll(RegExp(r'/+$'), '')}$path'),
+            headers: <String, String>{
+              'content-type': 'application/json',
+              'authorization': 'Bearer $token',
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(_requestTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
+      final decoded = jsonDecode(response.body);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
-      return ExternalSlipAnalysis(
-        type: type,
-        categoryId: categoryId,
-        note: (note == null || note.isEmpty || note == 'null') ? null : note,
-        confidence: confidence is num ? confidence.toDouble() : null,
-      );
+  Future<String?> _smallEnoughImage(String path) async {
+    try {
+      final file = File(path);
+      final length = await file.length();
+      if (length <= 0 || length > 4 * 1024 * 1024) return null;
+      return base64Encode(await file.readAsBytes());
     } catch (_) {
       return null;
     }
   }
 }
 
+enum AiBackendStatus { notConfigured, ready, missingApiKey, unreachable }
+
 class ExternalPrediction {
-  ExternalPrediction(this.chosenAmount, this.confidence);
+  const ExternalPrediction(this.chosenAmount, this.confidence);
+
   final double? chosenAmount;
   final double? confidence;
 }
@@ -279,10 +306,102 @@ class ExternalSlipAnalysis {
     required this.categoryId,
     this.note,
     this.confidence,
+    this.amount,
+    this.dateText,
+    this.timeText,
+    this.sender,
+    this.recipient,
+    this.reference,
   });
 
   final TransactionType type;
   final String categoryId;
   final String? note;
   final double? confidence;
+  final double? amount;
+  final String? dateText;
+  final String? timeText;
+  final String? sender;
+  final String? recipient;
+  final String? reference;
+}
+
+class VoiceTransactionDraft {
+  const VoiceTransactionDraft({
+    required this.amount,
+    required this.type,
+    required this.categoryId,
+    required this.categoryName,
+    required this.transactionDate,
+    required this.transcript,
+    this.note,
+  });
+
+  final double amount;
+  final TransactionType type;
+  final String categoryId;
+  final String categoryName;
+  final DateTime transactionDate;
+  final String transcript;
+  final String? note;
+}
+
+class FinancialAiInsight {
+  const FinancialAiInsight({
+    required this.headline,
+    required this.strengths,
+    required this.risks,
+    required this.recommendations,
+    required this.suggestedMonthlyCut,
+    required this.model,
+    required this.cached,
+  });
+
+  final String headline;
+  final List<String> strengths;
+  final List<String> risks;
+  final List<String> recommendations;
+  final double suggestedMonthlyCut;
+  final String model;
+  final bool cached;
+}
+
+class FinancialChatMessage {
+  const FinancialChatMessage({required this.content, required this.isUser});
+
+  final String content;
+  final bool isUser;
+}
+
+class FinancialChatReply {
+  const FinancialChatReply({
+    required this.answer,
+    required this.suggestions,
+    required this.model,
+  });
+
+  final String answer;
+  final List<String> suggestions;
+  final String model;
+}
+
+String _trimForAi(String value, int maxLength) {
+  final trimmed = value.trim();
+  return trimmed.length <= maxLength
+      ? trimmed
+      : trimmed.substring(0, maxLength);
+}
+
+String? _nullableString(Object? value) {
+  final text = value?.toString().trim();
+  return text == null || text.isEmpty || text == 'null' ? null : text;
+}
+
+List<String> _stringList(Object? value) {
+  if (value is! List) return const [];
+  return value
+      .map((item) => item.toString().trim())
+      .where((item) => item.isNotEmpty)
+      .take(5)
+      .toList(growable: false);
 }

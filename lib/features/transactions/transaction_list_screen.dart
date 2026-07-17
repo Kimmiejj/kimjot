@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/formatters/money_formatter.dart';
+import '../../shared/widgets/month_year_picker_dialog.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../auth/auth_user.dart';
 import 'category_icons.dart';
@@ -51,6 +53,15 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         _selectedMonth.month + delta,
       );
     });
+  }
+
+  Future<void> _selectMonth() async {
+    final selected = await showMonthYearPickerDialog(
+      context: context,
+      initialMonth: _selectedMonth,
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _selectedMonth = selected);
   }
 
   void _setSearchQuery(String value) {
@@ -128,6 +139,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                     searchQuery: _searchQuery,
                     onPreviousMonth: () => _changeMonth(-1),
                     onNextMonth: () => _changeMonth(1),
+                    onSelectMonth: _selectMonth,
                     onSearchChanged: _setSearchQuery,
                     onClearSearch: _clearSearch,
                     onBack: () => Navigator.of(context).maybePop(),
@@ -155,32 +167,49 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                       );
                     }
 
-                    return SliverList.separated(
+                    return SliverList.builder(
                       itemCount: transactions.length,
                       itemBuilder: (context, index) {
-                        return TransactionRow(
-                          record: transactions[index],
-                          onTap: () => _editTransaction(transactions[index]),
-                        );
-                      },
-                      separatorBuilder: (context, index) {
-                        final current = transactions[index].transactionDate;
-                        final next = transactions[index + 1].transactionDate;
-                        if (_isSameDate(current, next)) {
-                          return const SizedBox(height: 10);
-                        }
-
-                        return Padding(
-                          padding: const EdgeInsets.fromLTRB(2, 18, 2, 10),
-                          child: Text(
-                            _formatDateSection(next),
-                            style: const TextStyle(
-                              color: Color(0xFF123052),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0,
+                        final record = transactions[index];
+                        final startsNewDay = index == 0 ||
+                            !_isSameDate(
+                              transactions[index - 1].transactionDate,
+                              record.transactionDate,
+                            );
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (startsNewDay)
+                              Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  2,
+                                  index == 0 ? 0 : 18,
+                                  2,
+                                  10,
+                                ),
+                                child: Text(
+                                  context.strings.formatDate(
+                                    record.transactionDate,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF123052),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0,
+                                  ),
+                                ),
+                              ),
+                            TransactionRow(
+                              record: record,
+                              onTap: () => _editTransaction(record),
                             ),
-                          ),
+                            if (index != transactions.length - 1 &&
+                                _isSameDate(
+                                  record.transactionDate,
+                                  transactions[index + 1].transactionDate,
+                                ))
+                              const SizedBox(height: 10),
+                          ],
                         );
                       },
                     );
@@ -202,6 +231,7 @@ class _TransactionsHeader extends StatelessWidget {
     required this.searchQuery,
     required this.onPreviousMonth,
     required this.onNextMonth,
+    required this.onSelectMonth,
     required this.onSearchChanged,
     required this.onClearSearch,
     required this.onBack,
@@ -212,6 +242,7 @@ class _TransactionsHeader extends StatelessWidget {
   final String searchQuery;
   final VoidCallback onPreviousMonth;
   final VoidCallback onNextMonth;
+  final VoidCallback onSelectMonth;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onClearSearch;
   final VoidCallback onBack;
@@ -260,13 +291,31 @@ class _TransactionsHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          context.strings.formatMonthYear(selectedMonth),
-          style: const TextStyle(
-            color: Color(0xFF10233F),
-            fontSize: 30,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0,
+        InkWell(
+          onTap: onSelectMonth,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    context.strings.formatMonthYear(selectedMonth),
+                    style: const TextStyle(
+                      color: Color(0xFF10233F),
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Color(0xFF3268F6),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 10),
@@ -524,6 +573,7 @@ class TransactionRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
+                      '${context.strings.formatTime(record.transactionDate)} · '
                       '${record.source.firestoreValue} · $categoryName',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -621,16 +671,7 @@ Color _transactionAmountColor(TransactionType type) {
 }
 
 String _formatNumber(double value) {
-  final whole = value.abs().round().toString();
-  final buffer = StringBuffer();
-  for (var i = 0; i < whole.length; i++) {
-    final remaining = whole.length - i;
-    buffer.write(whole[i]);
-    if (remaining > 1 && remaining % 3 == 1) {
-      buffer.write(',');
-    }
-  }
-  return buffer.toString();
+  return formatOriginalNumber(value);
 }
 
 String _formatDateSection(DateTime date) {

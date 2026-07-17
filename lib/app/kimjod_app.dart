@@ -76,16 +76,47 @@ class _KimjodAppState extends State<KimjodApp> {
   }
 
   ThemeData _buildTheme() {
-    const seedColor = Color(0xFF1FC9DC);
+    const seedColor = Color(0xFF0F766E);
     final baseTheme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: seedColor,
-        brightness: Brightness.light,
-      ),
+      colorScheme:
+          ColorScheme.fromSeed(
+            seedColor: seedColor,
+            brightness: Brightness.light,
+            surface: const Color(0xFFFFFDF8),
+          ).copyWith(
+            primary: const Color(0xFF0F766E),
+            secondary: const Color(0xFFFF7A66),
+            tertiary: const Color(0xFF6D5CE7),
+            onSurface: const Color(0xFF172826),
+          ),
       fontFamily: 'Itim',
       useMaterial3: true,
     );
 
-    return baseTheme;
+    return baseTheme.copyWith(
+      scaffoldBackgroundColor: const Color(0xFFF7F5EF),
+      splashFactory: InkSparkle.splashFactory,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        },
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Color(0xFF172826),
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF172826),
+        contentTextStyle: baseTheme.textTheme.bodyMedium?.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+    );
   }
 }

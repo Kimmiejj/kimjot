@@ -1,13 +1,19 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/formatters/money_formatter.dart';
+import '../ai/ai_models.dart';
+import '../ai/ai_settings_store.dart';
+import '../ai/ai_consent_gate.dart';
 import '../auth/auth_user.dart';
+import '../scan/external_ai_client.dart';
+import '../settings/money_settings_store.dart';
 import '../transactions/category_localization.dart';
 import '../transactions/transaction_record.dart';
 import '../transactions/transaction_repository.dart';
-import '../transactions/transaction_type.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({
@@ -26,878 +32,159 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  late DateTime _selectedMonth;
-  _TrendViewMode _selectedView = _TrendViewMode.daily;
+  _AnalyticsRange _range = _AnalyticsRange.sixMonths;
+  bool _loadingInsight = false;
+  FinancialAiInsight? _insight;
 
   @override
   void initState() {
     super.initState();
-    _selectedMonth = _currentMonth();
+    AiSettingsStore.instance.load();
+    MoneySettingsStore.instance.load();
   }
 
-  DateTime _currentMonth() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month);
-  }
-
-  void _changeMonth(int delta) {
+  Future<void> _analyze(_AnalyticsData data) async {
+    if (_loadingInsight) return;
+    if (!await ensureAiAllowed(context)) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _loadingInsight = true);
+    final insight = await ExternalAiClient.instance.analyzeFinances(
+      summary: data.aiSummary,
+      mode: AiSettingsStore.instance.mode,
+    );
+    if (!mounted) return;
     setState(() {
-      _selectedMonth = DateTime(
-        _selectedMonth.year,
-        _selectedMonth.month + delta,
+      _loadingInsight = false;
+      _insight = insight;
+    });
+    if (insight == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.isThai
+                ? 'AI ยังไม่พร้อม กรุณาตรวจ backend หรืออินเทอร์เน็ต'
+                : 'AI is unavailable. Check the backend or connection.',
+          ),
+        ),
       );
-    });
-  }
-
-  Future<void> _selectMonth() async {
-    final selected = await showDialog<DateTime>(
-      context: context,
-      builder: (context) =>
-          _MonthYearPickerDialog(initialMonth: _selectedMonth),
-    );
-
-    if (selected == null || !mounted) {
-      return;
     }
-
-    setState(() {
-      _selectedMonth = selected;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final strings = context.strings;
-    final month = _selectedMonth;
-
-    return _DesignScaffold(
-      status: strings.fromSummary,
-      smallLabel: strings.analytics,
-      title: strings.analyticsTitle,
-      onBack: widget.onBack,
-      selectedMonth: month,
-      onPreviousMonth: () => _changeMonth(-1),
-      onNextMonth: () => _changeMonth(1),
-      onSelectMonth: _selectMonth,
-      child: StreamBuilder<List<TransactionRecord>>(
-        stream: widget.transactionRepository.watchTransactions(widget.user.uid),
-        builder: (context, snapshot) {
-          final transactions = snapshot.data ?? const <TransactionRecord>[];
-          final analytics = _TrendAnalytics.fromRecords(
-            strings: strings,
-            month: month,
-            records: transactions,
-            selectedView: _selectedView,
-          );
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _ExpenseTrendCard(
-                analytics: analytics,
-                selectedView: _selectedView,
-                onViewChanged: (view) {
-                  setState(() {
-                    _selectedView = view;
-                  });
-                },
-              ),
-              const SizedBox(height: 14),
-              _CategoryDonutCard(analytics: analytics),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _MiniMetricCard(
-                      label: strings.isThai
-                          ? 'ใช้ในช่วงที่เลือก'
-                          : 'Spent in selected period',
-                      value: _formatMoney(analytics.expenseTotal),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _MiniMetricCard(
-                      label: strings.balance,
-                      value: _formatMoney(analytics.balance),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-enum _TrendViewMode { daily, monthly, yearly }
-
-class _ExpenseTrendCard extends StatelessWidget {
-  const _ExpenseTrendCard({
-    required this.analytics,
-    required this.selectedView,
-    required this.onViewChanged,
-  });
-
-  final _TrendAnalytics analytics;
-  final _TrendViewMode selectedView;
-  final ValueChanged<_TrendViewMode> onViewChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      context.strings.isThai
-                          ? 'แนวโน้มรายจ่าย'
-                          : 'Expense trend',
-                      style: _titleStyle,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      analytics.periodLabel,
-                      style: _smallAccentStyle,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              _TrendViewSwitcher(
-                selectedView: selectedView,
-                onChanged: onViewChanged,
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 220,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: math.max(
-                  MediaQuery.sizeOf(context).width - 80,
-                  analytics.points.length * _trendBarWidth,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    for (final point in analytics.points)
-                      SizedBox(
-                        width: _trendBarWidth,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: _TrendBar(
-                            label: point.label,
-                            value: point.amount,
-                            maxValue: analytics.maxPointAmount,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TrendViewSwitcher extends StatelessWidget {
-  const _TrendViewSwitcher({
-    required this.selectedView,
-    required this.onChanged,
-  });
-
-  final _TrendViewMode selectedView;
-  final ValueChanged<_TrendViewMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      alignment: WrapAlignment.end,
-      children: [
-        for (final view in _TrendViewMode.values)
-          _TrendChip(
-            label: _viewLabel(context.strings, view),
-            isSelected: selectedView == view,
-            onTap: () => onChanged(view),
-          ),
-      ],
-    );
-  }
-}
-
-class _TrendChip extends StatelessWidget {
-  const _TrendChip({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFFE7F1FF)
-              : Colors.white.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF3763F1)
-                : const Color(0x245D81AD),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected
-                ? const Color(0xFF1F4FD6)
-                : const Color(0xFF6D7F97),
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TrendBar extends StatelessWidget {
-  const _TrendBar({
-    required this.label,
-    required this.value,
-    required this.maxValue,
-  });
-
-  final String label;
-  final double value;
-  final double maxValue;
-
-  @override
-  Widget build(BuildContext context) {
-    final heightFactor = maxValue <= 0
-        ? 0.06
-        : (value / maxValue).clamp(0.06, 1.0).toDouble();
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Expanded(
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: FractionallySizedBox(
-              heightFactor: heightFactor,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF28C4D7), Color(0xFF3763F1)],
-                  ),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(label, style: _tinyLabelStyle),
-      ],
-    );
-  }
-}
-
-class _CategoryDonutCard extends StatelessWidget {
-  const _CategoryDonutCard({required this.analytics});
-
-  final _TrendAnalytics analytics;
-
-  @override
-  Widget build(BuildContext context) {
-    final strings = context.strings;
-    final centerLabel =
-        analytics.topCategoryLabel ??
-        (strings.isThai ? 'ยังไม่มีข้อมูล' : 'No data');
-    final centerValue = analytics.topCategoryPercent <= 0
-        ? ''
-        : '${analytics.topCategoryPercent.round()}%';
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Text(context.strings.topCategories, style: _titleStyle),
-              const Spacer(),
-              Text(
-                analytics.topCategoryLabel ??
-                    (strings.isThai ? 'ไม่มี' : 'None'),
-                style: _smallAccentStyle,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 240,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                CustomPaint(
-                  size: const Size.square(188),
-                  painter: _DonutPainter(
-                    segments: analytics.donutSegments,
-                    emptyColor: const Color(0xFFD9E1F2),
-                  ),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 110),
-                      child: Text(
-                        centerLabel,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF10233F),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                    ),
-                    if (centerValue.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        centerValue,
-                        style: const TextStyle(
-                          color: Color(0xFF10233F),
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (analytics.topCategories.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Column(
-              children: [
-                for (final category in analytics.topCategories)
-                  _CategoryLegendRow(category: category),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _CategoryLegendRow extends StatelessWidget {
-  const _CategoryLegendRow({required this.category});
-
-  final _TopCategory category;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: category.color,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              category.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF123052),
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text('${category.percent.round()}%', style: _smallAccentStyle),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniMetricCard extends StatelessWidget {
-  const _MiniMetricCard({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0x1D5D81AD)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: _smallAccentStyle),
-          const SizedBox(height: 8),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: Color(0xFF1A2D4C),
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MonthSelector extends StatelessWidget {
-  const _MonthSelector({
-    required this.selectedMonth,
-    required this.onPreviousMonth,
-    required this.onNextMonth,
-    required this.onSelectMonth,
-  });
-
-  final DateTime selectedMonth;
-  final VoidCallback onPreviousMonth;
-  final VoidCallback onNextMonth;
-  final VoidCallback onSelectMonth;
-
-  @override
-  Widget build(BuildContext context) {
-    final strings = context.strings;
-
-    return Row(
-      children: [
-        _MonthArrowButton(
-          icon: Icons.chevron_left_rounded,
-          tooltip: strings.previousMonth,
-          onTap: onPreviousMonth,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Tooltip(
-            message: strings.isThai
-                ? 'เลือกเดือนและปี'
-                : 'Choose month and year',
-            child: InkWell(
-              onTap: onSelectMonth,
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0x2E5D81AD)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          strings.formatMonthYear(selectedMonth),
-                          maxLines: 1,
-                          style: const TextStyle(
-                            color: Color(0xFF111827),
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: Color(0xFF3268F6),
-                      size: 22,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        _MonthArrowButton(
-          icon: Icons.chevron_right_rounded,
-          tooltip: strings.nextMonth,
-          onTap: onNextMonth,
-        ),
-      ],
-    );
-  }
-}
-
-class _MonthYearPickerDialog extends StatefulWidget {
-  const _MonthYearPickerDialog({required this.initialMonth});
-
-  final DateTime initialMonth;
-
-  @override
-  State<_MonthYearPickerDialog> createState() => _MonthYearPickerDialogState();
-}
-
-class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
-  late int _year;
-
-  @override
-  void initState() {
-    super.initState();
-    _year = widget.initialMonth.year;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final strings = context.strings;
-
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-      backgroundColor: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFFFFFFF), Color(0xFFEAFBFF), Color(0xFFF1FFF8)],
-          ),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x26305472),
-              blurRadius: 28,
-              offset: Offset(0, 14),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Text(
-                  strings.isThai ? 'เลือกเดือน' : 'Select month',
-                  style: const TextStyle(
-                    color: Color(0xFF111827),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                  color: const Color(0xFF64748B),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.72),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0x245D81AD)),
-              ),
-              child: Row(
-                children: [
-                  _MonthArrowButton(
-                    icon: Icons.chevron_left_rounded,
-                    tooltip: strings.isThai ? 'ปีก่อนหน้า' : 'Previous year',
-                    onTap: () => setState(() => _year--),
-                  ),
-                  Expanded(
-                    child: Text(
-                      '$_year',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Color(0xFF111827),
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ),
-                  _MonthArrowButton(
-                    icon: Icons.chevron_right_rounded,
-                    tooltip: strings.isThai ? 'ปีถัดไป' : 'Next year',
-                    onTap: () => setState(() => _year++),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: 12,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 2.05,
-              ),
-              itemBuilder: (context, index) {
-                final month = index + 1;
-                final isSelected =
-                    widget.initialMonth.year == _year &&
-                    widget.initialMonth.month == month;
-
-                return _MonthChoiceButton(
-                  label: _monthLabel(context.strings, month),
-                  isSelected: isSelected,
-                  onTap: () =>
-                      Navigator.of(context).pop(DateTime(_year, month)),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MonthChoiceButton extends StatelessWidget {
-  const _MonthChoiceButton({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    const selectedBorderColor = Color(0xFF0C8C8C);
-    final textColor = isSelected
-        ? const Color(0xFF145A5A)
-        : const Color(0xFF111827);
-    final borderColor = isSelected
-        ? selectedBorderColor
-        : const Color(0x245D81AD);
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Ink(
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFFE8F8F8)
-              : Colors.white.withValues(alpha: 0.76),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: borderColor, width: isSelected ? 2.2 : 1),
-          boxShadow: isSelected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x1A0C8C8C),
-                    blurRadius: 12,
-                    offset: Offset(0, 5),
-                  ),
-                ]
-              : null,
-        ),
-        child: Center(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: textColor,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MonthArrowButton extends StatelessWidget {
-  const _MonthArrowButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0x2E5D81AD)),
-          ),
-          child: Icon(icon, color: const Color(0xFF3268F6), size: 24),
-        ),
-      ),
-    );
-  }
-}
-
-class _DesignScaffold extends StatelessWidget {
-  const _DesignScaffold({
-    required this.status,
-    required this.smallLabel,
-    required this.title,
-    required this.child,
-    required this.onBack,
-    required this.selectedMonth,
-    required this.onPreviousMonth,
-    required this.onNextMonth,
-    required this.onSelectMonth,
-  });
-
-  final String status;
-  final String smallLabel;
-  final String title;
-  final Widget child;
-  final VoidCallback? onBack;
-  final DateTime selectedMonth;
-  final VoidCallback onPreviousMonth;
-  final VoidCallback onNextMonth;
-  final VoidCallback onSelectMonth;
-
-  @override
-  Widget build(BuildContext context) {
+    final thai = context.strings.isThai;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FFFF),
+      backgroundColor: const Color(0xFFF7F5EF),
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
+            colors: [Color(0xFFF7F5EF), Color(0xFFEDF8F3), Color(0xFFFFF5EF)],
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    if (onBack != null)
-                      IconButton(
-                        onPressed: onBack,
-                        icon: const Icon(Icons.arrow_back_rounded),
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.72),
-                          foregroundColor: const Color(0xFF10233F),
-                        ),
-                      ),
-                    const Spacer(),
-                    Text(status, style: _statusStyle),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(smallLabel, style: _mutedStyle),
-                          const SizedBox(height: 4),
-                          Text(title, style: _pageTitleStyle),
-                          const SizedBox(height: 12),
-                          _MonthSelector(
-                            selectedMonth: selectedMonth,
-                            onPreviousMonth: onPreviousMonth,
-                            onNextMonth: onNextMonth,
-                            onSelectMonth: onSelectMonth,
-                          ),
-                        ],
+          child: StreamBuilder<List<TransactionRecord>>(
+            stream: widget.transactionRepository.watchTransactions(
+              widget.user.uid,
+            ),
+            builder: (context, snapshot) {
+              final settings = MoneySettingsStore.instance.snapshot;
+              final data = _AnalyticsData.from(
+                records: snapshot.data ?? const [],
+                range: _range,
+                monthlyBudget: settings.monthlyBudget,
+                installments: settings.installments,
+                context: context,
+              );
+              return CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 22, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: _Header(thai: thai, onBack: widget.onBack),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: _RangeSelector(
+                        selected: _range,
+                        thai: thai,
+                        onChanged: (range) {
+                          HapticFeedback.selectionClick();
+                          setState(() {
+                            _range = range;
+                            _insight = null;
+                          });
+                        },
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                child,
-              ],
-            ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 22, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 420),
+                        switchInCurve: Curves.easeOutCubic,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween(
+                              begin: const Offset(0.04, 0),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: _OverviewHero(
+                          key: ValueKey(_range),
+                          data: data,
+                          thai: thai,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: _TrendCard(data: data, thai: thai),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: _CategoryCard(data: data, thai: thai),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: _LocalAdviceCard(data: data, thai: thai),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 120),
+                    sliver: SliverToBoxAdapter(
+                      child: AnimatedBuilder(
+                        animation: AiSettingsStore.instance,
+                        builder: (context, _) => _AiInsightCard(
+                          data: data,
+                          thai: thai,
+                          backendReady: ExternalAiClient.instance.isConfigured,
+                          loading: _loadingInsight,
+                          insight: _insight,
+                          selectedMode: AiSettingsStore.instance.mode,
+                          onModeChanged: AiSettingsStore.instance.setMode,
+                          onAnalyze: () => _analyze(data),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -905,468 +192,1131 @@ class _DesignScaffold extends StatelessWidget {
   }
 }
 
-class _DonutPainter extends CustomPainter {
-  const _DonutPainter({required this.segments, required this.emptyColor});
+enum _AnalyticsRange {
+  sixMonths(6),
+  twelveMonths(12),
+  threeYears(36);
 
-  final List<_DonutSegment> segments;
-  final Color emptyColor;
+  const _AnalyticsRange(this.months);
+  final int months;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final radius = size.width / 2;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-    const strokeWidth = 32.0;
-    const gap = 0.045;
+  String label(bool thai) => switch (this) {
+    sixMonths => thai ? '6 เดือน' : '6 months',
+    twelveMonths => thai ? '12 เดือน' : '12 months',
+    threeYears => thai ? '3 ปี' : '3 years',
+  };
+}
 
-    final basePaint = Paint()
-      ..color = emptyColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.butt;
-    canvas.drawCircle(center, radius - strokeWidth / 2, basePaint);
+class _Header extends StatelessWidget {
+  const _Header({required this.thai, this.onBack});
 
-    if (segments.isEmpty) {
-      return;
-    }
-
-    var startAngle = -math.pi / 2;
-    for (final segment in segments) {
-      final sweepAngle = (math.pi * 2 * segment.fraction) - gap;
-      if (sweepAngle <= 0) {
-        continue;
-      }
-
-      final paint = Paint()
-        ..color = segment.color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..strokeCap = StrokeCap.butt;
-      canvas.drawArc(rect, startAngle, sweepAngle, false, paint);
-      startAngle += sweepAngle + gap;
-    }
-  }
+  final bool thai;
+  final VoidCallback? onBack;
 
   @override
-  bool shouldRepaint(covariant _DonutPainter oldDelegate) {
-    return oldDelegate.segments != segments ||
-        oldDelegate.emptyColor != emptyColor;
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (onBack != null) ...[
+          IconButton.filledTonal(
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back_rounded),
+          ),
+          const SizedBox(width: 12),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                thai ? 'ภาพรวมการเงิน' : 'Money intelligence',
+                style: const TextStyle(
+                  color: Color(0xFF0F766E),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                thai
+                    ? 'เห็นนิสัยการใช้เงิน\nก่อนเงินหายไป'
+                    : 'See where your money\nis really going',
+                style: const TextStyle(
+                  color: Color(0xFF172826),
+                  fontSize: 30,
+                  height: 1.05,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          width: 48,
+          height: 48,
+          decoration: const BoxDecoration(
+            color: Color(0xFF172826),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.insights_rounded, color: Color(0xFFCFF7E9)),
+        ),
+      ],
+    );
   }
 }
 
-class _TrendAnalytics {
-  const _TrendAnalytics({
-    required this.points,
-    required this.maxPointAmount,
-    required this.periodLabel,
-    required this.expenseTotal,
-    required this.incomeTotal,
-    required this.balance,
-    required this.topCategoryLabel,
-    required this.topCategoryPercent,
-    required this.topCategories,
-    required this.donutSegments,
+class _RangeSelector extends StatelessWidget {
+  const _RangeSelector({
+    required this.selected,
+    required this.thai,
+    required this.onChanged,
   });
 
-  final List<_TrendPoint> points;
-  final double maxPointAmount;
-  final String periodLabel;
-  final double expenseTotal;
+  final _AnalyticsRange selected;
+  final bool thai;
+  final ValueChanged<_AnalyticsRange> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7E9E3),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          for (final range in _AnalyticsRange.values)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => onChanged(range),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: selected == range
+                        ? Colors.white
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: selected == range
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x16172826),
+                              blurRadius: 12,
+                              offset: Offset(0, 5),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    range.label(thai),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: selected == range
+                          ? const Color(0xFF172826)
+                          : const Color(0xFF74817D),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OverviewHero extends StatelessWidget {
+  const _OverviewHero({required this.data, required this.thai, super.key});
+
+  final _AnalyticsData data;
+  final bool thai;
+
+  @override
+  Widget build(BuildContext context) {
+    final positive = data.balance >= 0;
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF172826),
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x38172826),
+            blurRadius: 34,
+            offset: Offset(0, 18),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                thai ? 'เงินคงเหลือในช่วงนี้' : 'Net balance',
+                style: const TextStyle(
+                  color: Color(0xFFB7C4C0),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: positive
+                      ? const Color(0xFF24453E)
+                      : const Color(0xFF4B302E),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  positive
+                      ? (thai ? 'ยังเป็นบวก' : 'Positive')
+                      : (thai ? 'ต้องระวัง' : 'Watch out'),
+                  style: TextStyle(
+                    color: positive
+                        ? const Color(0xFFCFF7E9)
+                        : const Color(0xFFFFC9BE),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _money(_round(data.balance)),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 38,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: _HeroMetric(
+                  label: thai ? 'รายรับ' : 'Income',
+                  value: _round(data.incomeTotal),
+                  color: const Color(0xFFCFF7E9),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _HeroMetric(
+                  label: thai ? 'รายจ่าย' : 'Expense',
+                  value: _round(data.expenseTotal),
+                  color: const Color(0xFFFFC9BE),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroMetric extends StatelessWidget {
+  const _HeroMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+  final String label;
+  final double value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0x14FFFFFF),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Color(0xFF9EB0AA), fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _money(value),
+              style: TextStyle(
+                color: color,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrendCard extends StatelessWidget {
+  const _TrendCard({required this.data, required this.thai});
+  final _AnalyticsData data;
+  final bool thai;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardHeading(
+            icon: Icons.show_chart_rounded,
+            title: thai ? 'จังหวะการใช้เงิน' : 'Spending rhythm',
+            subtitle: data.range == _AnalyticsRange.threeYears
+                ? (thai
+                      ? 'แตะไตรมาสเพื่อดูรายเดือน'
+                      : 'Tap a quarter for monthly detail')
+                : (thai ? 'รายจ่ายแยกตามเดือน' : 'Monthly expenses'),
+          ),
+          const SizedBox(height: 22),
+          SizedBox(
+            height: 210,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final point in data.trendPoints)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: point.months.length > 1
+                          ? () => _showQuarter(context, point, thai)
+                          : null,
+                      child: _AnimatedBar(point: point, max: data.maxTrend),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showQuarter(BuildContext context, _TrendPoint point, bool thai) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: const Color(0xFFFFFDF8),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '${point.label} · ${thai ? 'รายละเอียดรายเดือน' : 'Monthly detail'}',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 16),
+            for (final month in point.months)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        month.label,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Text(
+                      _money(month.amount),
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedBar extends StatelessWidget {
+  const _AnimatedBar({required this.point, required this.max});
+  final _TrendPoint point;
+  final double max;
+
+  @override
+  Widget build(BuildContext context) {
+    final target = max <= 0 ? 0.04 : (point.amount / max).clamp(0.04, 1.0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Column(
+        children: [
+          Expanded(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: target),
+              duration: const Duration(milliseconds: 720),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, _) => Align(
+                alignment: Alignment.bottomCenter,
+                child: FractionallySizedBox(
+                  heightFactor: value,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF35BFA6), Color(0xFF0F766E)],
+                      ),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            point.label,
+            maxLines: 1,
+            style: const TextStyle(
+              color: Color(0xFF74817D),
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryCard extends StatelessWidget {
+  const _CategoryCard({required this.data, required this.thai});
+  final _AnalyticsData data;
+  final bool thai;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = data.sortedCategories.take(5).toList();
+    return _PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardHeading(
+            icon: Icons.donut_large_rounded,
+            title: thai ? 'เงินออกไปที่ไหน' : 'Where it went',
+            subtitle: thai ? '5 หมวดสูงสุด' : 'Top five categories',
+          ),
+          const SizedBox(height: 20),
+          if (entries.isEmpty)
+            Text(
+              thai ? 'ยังไม่มีรายจ่ายในช่วงนี้' : 'No expenses in this period',
+            )
+          else
+            for (var i = 0; i < entries.length; i++) ...[
+              _CategoryRow(
+                entry: entries[i],
+                total: data.expenseTotal,
+                color: _categoryColors[i % _categoryColors.length],
+              ),
+              if (i != entries.length - 1) const SizedBox(height: 13),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryRow extends StatelessWidget {
+  const _CategoryRow({
+    required this.entry,
+    required this.total,
+    required this.color,
+  });
+  final MapEntry<String, double> entry;
+  final double total;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = total <= 0
+        ? 0.0
+        : (entry.value / total).clamp(0, 1).toDouble();
+    return Column(
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                entry.key,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            Text(
+              '${(ratio * 100).round()}%',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            minHeight: 7,
+            value: ratio,
+            backgroundColor: const Color(0xFFE8ECE9),
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LocalAdviceCard extends StatelessWidget {
+  const _LocalAdviceCard({required this.data, required this.thai});
+  final _AnalyticsData data;
+  final bool thai;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PremiumCard(
+      color: const Color(0xFFFFEEE7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardHeading(
+            icon: Icons.lightbulb_rounded,
+            title: thai ? 'อ่านเกมเงินแบบออฟไลน์' : 'Offline money check',
+            subtitle: thai
+                ? 'คำนวณจากข้อมูลจริงในเครื่อง'
+                : 'Calculated locally',
+          ),
+          const SizedBox(height: 16),
+          for (final advice in data.localAdvice(thai))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 5),
+                    child: Icon(
+                      Icons.arrow_outward_rounded,
+                      size: 15,
+                      color: Color(0xFFB55242),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      advice,
+                      style: const TextStyle(
+                        color: Color(0xFF4B302E),
+                        height: 1.4,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiInsightCard extends StatelessWidget {
+  const _AiInsightCard({
+    required this.data,
+    required this.thai,
+    required this.backendReady,
+    required this.loading,
+    required this.insight,
+    required this.selectedMode,
+    required this.onModeChanged,
+    required this.onAnalyze,
+  });
+
+  final _AnalyticsData data;
+  final bool thai;
+  final bool backendReady;
+  final bool loading;
+  final FinancialAiInsight? insight;
+  final AiMode selectedMode;
+  final ValueChanged<AiMode> onModeChanged;
+  final VoidCallback onAnalyze;
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = backendReady;
+    return _PremiumCard(
+      color: const Color(0xFFE9E7FF),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardHeading(
+            icon: Icons.auto_awesome_rounded,
+            title: thai ? 'วิเคราะห์ด้วย Gemini' : 'Analyze with Gemini',
+            subtitle: thai
+                ? 'เรียกเมื่อคุณต้องการเท่านั้น'
+                : 'Runs only when you ask',
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final mode in AiMode.values)
+                ChoiceChip(
+                  selected: selectedMode == mode,
+                  onSelected: (_) => onModeChanged(mode),
+                  label: Text(mode.label(isThai: thai)),
+                  selectedColor: const Color(0xFF6D5CE7),
+                  labelStyle: TextStyle(
+                    color: selectedMode == mode
+                        ? Colors.white
+                        : const Color(0xFF47416D),
+                    fontWeight: FontWeight.w800,
+                  ),
+                  side: BorderSide.none,
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (!ready) ...[
+            Text(
+              thai
+                  ? 'ยังไม่ได้เชื่อม AI backend — ตั้งค่าได้ในเมนู AI'
+                  : 'AI backend is not connected. Configure it in AI settings.',
+              style: const TextStyle(
+                color: Color(0xFF47416D),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ] else ...[
+            FilledButton.icon(
+              onPressed: loading || data.transactionCount == 0
+                  ? null
+                  : onAnalyze,
+              icon: loading
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.auto_graph_rounded),
+              label: Text(
+                loading
+                    ? (thai ? 'กำลังคิด…' : 'Thinking…')
+                    : (thai ? 'วิเคราะห์ช่วงนี้' : 'Analyze this period'),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF6D5CE7),
+                minimumSize: const Size.fromHeight(52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(17),
+                ),
+              ),
+            ),
+          ],
+          if (insight != null) ...[
+            const SizedBox(height: 20),
+            Text(
+              insight!.headline,
+              style: const TextStyle(
+                color: Color(0xFF2E2854),
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _InsightSection(
+              title: thai ? 'ข้อดี' : 'Strengths',
+              items: insight!.strengths,
+              color: const Color(0xFF0F766E),
+            ),
+            _InsightSection(
+              title: thai ? 'จุดเสี่ยง' : 'Risks',
+              items: insight!.risks,
+              color: const Color(0xFFB55242),
+            ),
+            _InsightSection(
+              title: thai ? 'แนะนำให้ทำ' : 'Recommendations',
+              items: insight!.recommendations,
+              color: const Color(0xFF5A4CC1),
+            ),
+            if (insight!.suggestedMonthlyCut > 0)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.58),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.content_cut_rounded,
+                      color: Color(0xFFB55242),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '${thai ? 'เป้าหมายลดรายจ่าย' : 'Suggested monthly cut'} ${_money(insight!.suggestedMonthlyCut)}',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              thai
+                  ? 'ข้อมูลนี้เป็นคำแนะนำด้านงบประมาณ ไม่ใช่คำแนะนำการลงทุน'
+                  : 'Budget guidance only; not investment advice.',
+              style: const TextStyle(color: Color(0xFF6F6894), fontSize: 11),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _InsightSection extends StatelessWidget {
+  const _InsightSection({
+    required this.title,
+    required this.items,
+    required this.color,
+  });
+  final String title;
+  final List<String> items;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(color: color, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 5),
+          for (final item in items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '• $item',
+                style: const TextStyle(
+                  color: Color(0xFF47416D),
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumCard extends StatelessWidget {
+  const _PremiumCard({required this.child, this.color = Colors.white});
+  final Widget child;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0x16172826)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x17172826),
+            blurRadius: 26,
+            offset: Offset(0, 14),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _CardHeading extends StatelessWidget {
+  const _CardHeading({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: const Color(0xFF172826),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: const Color(0xFFCFF7E9), size: 21),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Color(0xFF172826),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: Color(0xFF74817D),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AnalyticsData {
+  const _AnalyticsData({
+    required this.range,
+    required this.incomeTotal,
+    required this.expenseTotal,
+    required this.balance,
+    required this.transactionCount,
+    required this.trendPoints,
+    required this.categoryTotals,
+    required this.monthlyBudget,
+    required this.installmentTotal,
+    required this.recentMonthlyExpense,
+    required this.previousMonthlyExpense,
+  });
+
+  final _AnalyticsRange range;
   final double incomeTotal;
+  final double expenseTotal;
   final double balance;
-  final String? topCategoryLabel;
-  final double topCategoryPercent;
-  final List<_TopCategory> topCategories;
-  final List<_DonutSegment> donutSegments;
+  final int transactionCount;
+  final List<_TrendPoint> trendPoints;
+  final Map<String, double> categoryTotals;
+  final double? monthlyBudget;
+  final double installmentTotal;
+  final double recentMonthlyExpense;
+  final double previousMonthlyExpense;
 
-  factory _TrendAnalytics.fromRecords({
-    required AppStrings strings,
-    required DateTime month,
-    required List<TransactionRecord> records,
-    required _TrendViewMode selectedView,
-  }) {
-    final periodRecords = records
-        .where(
-          (record) =>
-              _matchesView(record.transactionDate, month, selectedView),
+  double get maxTrend =>
+      trendPoints.fold(0, (max, point) => math.max(max, point.amount));
+
+  List<MapEntry<String, double>> get sortedCategories {
+    final entries = categoryTotals.entries.toList();
+    entries.sort((a, b) => b.value.compareTo(a.value));
+    return entries;
+  }
+
+  Map<String, Object?> get aiSummary => <String, Object?>{
+    'periodMonths': range.months,
+    'incomeTotal': _round(incomeTotal),
+    'expenseTotal': _round(expenseTotal),
+    'balance': _round(balance),
+    'transactionCount': transactionCount,
+    'monthlyBudget': monthlyBudget,
+    'installmentTotalPerMonth': _round(installmentTotal),
+    'categoryTotals': categoryTotals.map(
+      (key, value) => MapEntry(key, _round(value)),
+    ),
+    'trend': trendPoints
+        .map(
+          (point) => <String, Object?>{
+            'period': point.label,
+            'expense': _round(point.amount),
+          },
         )
-        .toList();
-    final expenseRecords = periodRecords
-        .where((record) => record.type == TransactionType.expense)
-        .toList();
-    final incomeTotal = periodRecords
-        .where((record) => record.type == TransactionType.income)
-        .fold(0.0, (sum, record) => sum + record.amount);
-    final expenseTotal = expenseRecords.fold(
-      0.0,
-      (sum, record) => sum + record.amount,
-    );
+        .toList(),
+  };
 
-    final points = _buildTrendPoints(
-      strings: strings,
-      month: month,
-      records: expenseRecords,
-      selectedView: selectedView,
-    );
-    final maxPointAmount = points.fold<double>(
-      0,
-      (maxValue, point) => math.max(maxValue, point.amount).toDouble(),
-    );
+  List<String> localAdvice(bool thai) {
+    if (transactionCount == 0) {
+      return [
+        thai
+            ? 'เพิ่มรายการก่อน ระบบจึงจะวิเคราะห์พฤติกรรมได้'
+            : 'Add transactions to unlock analysis.',
+      ];
+    }
+    final advice = <String>[];
+    if (balance >= 0) {
+      advice.add(
+        thai
+            ? 'รายรับยังครอบคลุมรายจ่ายในช่วงที่เลือก'
+            : 'Income covers expenses in this period.',
+      );
+    } else {
+      advice.add(
+        thai
+            ? 'รายจ่ายสูงกว่ารายรับ ${_money(balance.abs())}'
+            : 'Expenses exceed income by ${_money(balance.abs())}.',
+      );
+    }
+    final top = sortedCategories.isEmpty ? null : sortedCategories.first;
+    if (top != null) {
+      advice.add(
+        thai
+            ? '${top.key} เป็นหมวดที่ใช้มากที่สุด ${_money(top.value)}'
+            : '${top.key} is the largest category at ${_money(top.value)}.',
+      );
+    }
+    if (monthlyBudget != null && recentMonthlyExpense > monthlyBudget!) {
+      advice.add(
+        thai
+            ? 'เดือนล่าสุดเกินงบ ${_money(recentMonthlyExpense - monthlyBudget!)}'
+            : 'The latest month is ${_money(recentMonthlyExpense - monthlyBudget!)} over budget.',
+      );
+    }
+    if (previousMonthlyExpense > 0 &&
+        recentMonthlyExpense > previousMonthlyExpense * 1.15) {
+      final percent =
+          ((recentMonthlyExpense / previousMonthlyExpense - 1) * 100).round();
+      advice.add(
+        thai
+            ? 'รายจ่ายเดือนล่าสุดเพิ่มขึ้นประมาณ $percent% จากเดือนก่อน'
+            : 'Latest monthly spending rose about $percent%.',
+      );
+    }
+    if (installmentTotal > 0) {
+      advice.add(
+        thai
+            ? 'กันเงินค่างวดอย่างน้อย ${_money(installmentTotal)} ก่อนใช้งบส่วนอื่น'
+            : 'Reserve at least ${_money(installmentTotal)} for installments first.',
+      );
+    }
+    return advice.take(4).toList(growable: false);
+  }
 
-    final categoryTotals = <String, double>{};
-    for (final record in expenseRecords) {
-      final categoryName = localizedCategoryName(
-        strings: strings,
+  factory _AnalyticsData.from({
+    required List<TransactionRecord> records,
+    required _AnalyticsRange range,
+    required double? monthlyBudget,
+    required List<InstallmentPlan> installments,
+    required BuildContext context,
+  }) {
+    final now = DateTime.now();
+    final currentMonth = DateTime(now.year, now.month);
+    final start = DateTime(now.year, now.month - range.months + 1);
+    final filtered = records
+        .where((record) => !record.transactionDate.isBefore(start))
+        .toList();
+    var income = 0.0;
+    var expense = 0.0;
+    final byMonth = <DateTime, double>{};
+    final categories = <String, double>{};
+    for (final record in filtered) {
+      if (record.type.isInternalTransfer) continue;
+      if (record.type.isIncome) {
+        income += record.amount;
+        continue;
+      }
+      expense += record.amount;
+      final month = DateTime(
+        record.transactionDate.year,
+        record.transactionDate.month,
+      );
+      byMonth.update(
+        month,
+        (value) => value + record.amount,
+        ifAbsent: () => record.amount,
+      );
+      final category = localizedCategoryName(
+        strings: context.strings,
         categoryId: record.categoryId,
         fallbackName: record.categoryName,
       );
-      categoryTotals.update(
-        categoryName,
+      categories.update(
+        category,
         (value) => value + record.amount,
         ifAbsent: () => record.amount,
       );
     }
 
-    final sortedCategories = categoryTotals.entries.toList()
-      ..sort((left, right) => right.value.compareTo(left.value));
-    final totalExpense = sortedCategories.fold(
-      0.0,
-      (sum, entry) => sum + entry.value,
-    );
-    final topCategoryLabel = sortedCategories.isEmpty
-        ? null
-        : sortedCategories.first.key;
-    final topCategoryPercent = sortedCategories.isEmpty || totalExpense <= 0
-        ? 0.0
-        : ((sortedCategories.first.value / totalExpense) * 100).toDouble();
-
-    const palette = [
-      Color(0xFF3763F1),
-      Color(0xFF2CC4D8),
-      Color(0xFF6B45EB),
-      Color(0xFFB7C5E3),
-    ];
-
-    final donutSource = sortedCategories.take(4).toList();
-    final donutSegments = <_DonutSegment>[];
-    final topCategories = <_TopCategory>[];
-    for (var i = 0; i < donutSource.length; i++) {
-      final entry = donutSource[i];
-      final color = palette[i % palette.length];
-      donutSegments.add(
-        _DonutSegment(
-          color: color,
-          fraction: totalExpense <= 0 ? 0 : entry.value / totalExpense,
-        ),
-      );
-      topCategories.add(
-        _TopCategory(
-          color: color,
-          label: entry.key,
-          percent: totalExpense <= 0 ? 0 : (entry.value / totalExpense) * 100,
+    final monthlyPoints = <_MonthPoint>[];
+    for (var offset = range.months - 1; offset >= 0; offset--) {
+      final month = DateTime(now.year, now.month - offset);
+      monthlyPoints.add(
+        _MonthPoint(
+          date: month,
+          label: _monthLabel(month, context.strings.isThai),
+          amount: byMonth[month] ?? 0,
         ),
       );
     }
 
-    return _TrendAnalytics(
-      points: points,
-      maxPointAmount: maxPointAmount,
-      periodLabel: _periodLabel(strings, month, selectedView),
-      expenseTotal: expenseTotal,
-      incomeTotal: incomeTotal,
-      balance: incomeTotal - expenseTotal,
-      topCategoryLabel: topCategoryLabel,
-      topCategoryPercent: topCategoryPercent,
-      topCategories: topCategories,
-      donutSegments: donutSegments,
+    final trend = <_TrendPoint>[];
+    if (range == _AnalyticsRange.threeYears) {
+      for (var i = 0; i < monthlyPoints.length; i += 3) {
+        final months = monthlyPoints.skip(i).take(3).toList(growable: false);
+        final first = months.first.date;
+        final quarter = ((first.month - 1) ~/ 3) + 1;
+        trend.add(
+          _TrendPoint(
+            label:
+                'Q$quarter\n${(first.year + (context.strings.isThai ? 543 : 0)).toString().substring(2)}',
+            amount: months.fold(0, (sum, point) => sum + point.amount),
+            months: months,
+          ),
+        );
+      }
+    } else {
+      trend.addAll(
+        monthlyPoints.map(
+          (point) => _TrendPoint(
+            label: point.label,
+            amount: point.amount,
+            months: [point],
+          ),
+        ),
+      );
+    }
+
+    final recent = byMonth[currentMonth] ?? 0;
+    final previousMonth = DateTime(now.year, now.month - 1);
+    final previous = byMonth[previousMonth] ?? 0;
+    final installmentTotal = installments
+        .where((plan) => plan.isDueInMonth(currentMonth))
+        .fold<double>(0, (sum, plan) => sum + plan.amount);
+    return _AnalyticsData(
+      range: range,
+      incomeTotal: income,
+      expenseTotal: expense,
+      balance: income - expense,
+      transactionCount: filtered.length,
+      trendPoints: trend,
+      categoryTotals: categories,
+      monthlyBudget: monthlyBudget,
+      installmentTotal: installmentTotal,
+      recentMonthlyExpense: recent,
+      previousMonthlyExpense: previous,
     );
   }
 }
 
 class _TrendPoint {
-  const _TrendPoint({required this.label, required this.amount});
+  const _TrendPoint({
+    required this.label,
+    required this.amount,
+    required this.months,
+  });
+  final String label;
+  final double amount;
+  final List<_MonthPoint> months;
+}
 
+class _MonthPoint {
+  const _MonthPoint({
+    required this.date,
+    required this.label,
+    required this.amount,
+  });
+  final DateTime date;
   final String label;
   final double amount;
 }
 
-class _DonutSegment {
-  const _DonutSegment({required this.color, required this.fraction});
+const _categoryColors = <Color>[
+  Color(0xFF0F766E),
+  Color(0xFFFF7A66),
+  Color(0xFF6D5CE7),
+  Color(0xFFE7A93E),
+  Color(0xFF3578B8),
+];
 
-  final Color color;
-  final double fraction;
-}
-
-class _TopCategory {
-  const _TopCategory({
-    required this.color,
-    required this.label,
-    required this.percent,
-  });
-
-  final Color color;
-  final String label;
-  final double percent;
-}
-
-BoxDecoration _cardDecoration() {
-  return BoxDecoration(
-    color: Colors.white.withValues(alpha: 0.76),
-    borderRadius: BorderRadius.circular(28),
-    border: Border.all(color: Colors.white.withValues(alpha: 0.76)),
-    boxShadow: const [
-      BoxShadow(
-        color: Color(0x1F1E3660),
-        blurRadius: 36,
-        offset: Offset(0, 16),
-      ),
-    ],
-  );
-}
-
-const _pageTitleStyle = TextStyle(
-  color: Color(0xFF10233F),
-  fontSize: 30,
-  fontWeight: FontWeight.w900,
-  letterSpacing: 0,
-);
-
-const _titleStyle = TextStyle(
-  color: Color(0xFF123052),
-  fontSize: 16,
-  fontWeight: FontWeight.w900,
-  letterSpacing: 0,
-);
-
-const _mutedStyle = TextStyle(
-  color: Color(0xFF65748B),
-  fontSize: 14,
-  fontWeight: FontWeight.w700,
-  height: 1.4,
-  letterSpacing: 0,
-);
-
-const _smallAccentStyle = TextStyle(
-  color: Color(0xFF6D7F97),
-  fontSize: 14,
-  fontWeight: FontWeight.w800,
-  letterSpacing: 0,
-);
-
-const _tinyLabelStyle = TextStyle(
-  color: Color(0xFF6D7F97),
-  fontSize: 11,
-  fontWeight: FontWeight.w800,
-  letterSpacing: 0,
-);
-
-const _statusStyle = TextStyle(
-  color: Color(0xFF10233F),
-  fontSize: 12,
-  fontWeight: FontWeight.w900,
-  letterSpacing: 0,
-);
-
-const _trendBarWidth = 38.0;
-
-String _formatMoney(double amount) {
-  final sign = amount < 0 ? '-' : '';
-  return '$sign฿${_formatNumber(amount.abs())}';
-}
-
-String _formatNumber(double amount) {
-  final digits = amount.toStringAsFixed(0);
-  final buffer = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    final remaining = digits.length - i;
-    buffer.write(digits[i]);
-    if (remaining > 1 && remaining % 3 == 1) {
-      buffer.write(',');
-    }
-  }
-  return buffer.toString();
-}
-
-String _monthLabel(AppStrings strings, int month) {
-  final months = strings.isThai
-      ? const [
-          'ม.ค.',
-          'ก.พ.',
-          'มี.ค.',
-          'เม.ย.',
-          'พ.ค.',
-          'มิ.ย.',
-          'ก.ค.',
-          'ส.ค.',
-          'ก.ย.',
-          'ต.ค.',
-          'พ.ย.',
-          'ธ.ค.',
-        ]
-      : const [
-          'January',
-          'February',
-          'March',
-          'April',
-          'May',
-          'June',
-          'July',
-          'August',
-          'September',
-          'October',
-          'November',
-          'December',
-        ];
-  return months[month - 1];
-}
-
-String _monthShortLabel(AppStrings strings, int month) {
-  final months = strings.isThai
-      ? const [
-          'ม.ค.',
-          'ก.พ.',
-          'มี.ค.',
-          'เม.ย.',
-          'พ.ค.',
-          'มิ.ย.',
-          'ก.ค.',
-          'ส.ค.',
-          'ก.ย.',
-          'ต.ค.',
-          'พ.ย.',
-          'ธ.ค.',
-        ]
-      : const [
-          'Jan',
-          'Feb',
-          'Mar',
-          'Apr',
-          'May',
-          'Jun',
-          'Jul',
-          'Aug',
-          'Sep',
-          'Oct',
-          'Nov',
-          'Dec',
-        ];
-  return months[month - 1];
-}
-
-bool _isSameMonth(DateTime left, DateTime right) {
-  return left.year == right.year && left.month == right.month;
-}
-
-bool _matchesView(
-  DateTime transactionDate,
-  DateTime selectedMonth,
-  _TrendViewMode selectedView,
-) {
-  return switch (selectedView) {
-    _TrendViewMode.daily => _isSameMonth(transactionDate, selectedMonth),
-    _TrendViewMode.monthly => transactionDate.year == selectedMonth.year,
-    _TrendViewMode.yearly => true,
-  };
-}
-
-List<_TrendPoint> _buildTrendPoints({
-  required AppStrings strings,
-  required DateTime month,
-  required List<TransactionRecord> records,
-  required _TrendViewMode selectedView,
-}) {
-  return switch (selectedView) {
-    _TrendViewMode.daily => _buildDailyPoints(month, records),
-    _TrendViewMode.monthly => _buildMonthlyPoints(strings, records),
-    _TrendViewMode.yearly => _buildYearlyPoints(month, records),
-  };
-}
-
-List<_TrendPoint> _buildDailyPoints(
-  DateTime month,
-  List<TransactionRecord> records,
-) {
-  final dayTotals = <int, double>{};
-  for (final record in records) {
-    final day = record.transactionDate.day;
-    dayTotals.update(
-      day,
-      (value) => value + record.amount,
-      ifAbsent: () => record.amount,
-    );
-  }
-
-  final daysInMonth = DateUtils.getDaysInMonth(month.year, month.month);
-  return [
-    for (var day = 1; day <= daysInMonth; day++)
-      _TrendPoint(label: day.toString(), amount: dayTotals[day] ?? 0),
+String _monthLabel(DateTime date, bool thai) {
+  const en = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
-}
-
-List<_TrendPoint> _buildMonthlyPoints(
-  AppStrings strings,
-  List<TransactionRecord> records,
-) {
-  final monthTotals = <int, double>{};
-  for (final record in records) {
-    final recordMonth = record.transactionDate.month;
-    monthTotals.update(
-      recordMonth,
-      (value) => value + record.amount,
-      ifAbsent: () => record.amount,
-    );
-  }
-
-  return [
-    for (var monthIndex = 1; monthIndex <= 12; monthIndex++)
-      _TrendPoint(
-        label: _monthShortLabel(strings, monthIndex),
-        amount: monthTotals[monthIndex] ?? 0,
-      ),
+  const th = [
+    'ม.ค.',
+    'ก.พ.',
+    'มี.ค.',
+    'เม.ย.',
+    'พ.ค.',
+    'มิ.ย.',
+    'ก.ค.',
+    'ส.ค.',
+    'ก.ย.',
+    'ต.ค.',
+    'พ.ย.',
+    'ธ.ค.',
   ];
+  return (thai ? th : en)[date.month - 1];
 }
 
-List<_TrendPoint> _buildYearlyPoints(
-  DateTime month,
-  List<TransactionRecord> records,
-) {
-  final yearTotals = <int, double>{};
-  for (final record in records) {
-    final year = record.transactionDate.year;
-    yearTotals.update(
-      year,
-      (value) => value + record.amount,
-      ifAbsent: () => record.amount,
-    );
-  }
+double _round(double value) => double.parse(value.toStringAsFixed(2));
 
-  if (yearTotals.isEmpty) {
-    return [_TrendPoint(label: month.year.toString(), amount: 0)];
-  }
-
-  final years = yearTotals.keys.toList()..sort();
-  return [
-    for (final year in years)
-      _TrendPoint(label: year.toString(), amount: yearTotals[year] ?? 0),
-  ];
-}
-
-String _viewLabel(AppStrings strings, _TrendViewMode view) {
-  return switch (view) {
-    _TrendViewMode.daily => strings.isThai ? 'รายวัน' : 'Daily',
-    _TrendViewMode.monthly => strings.isThai ? 'รายเดือน' : 'Monthly',
-    _TrendViewMode.yearly => strings.isThai ? 'รายปี' : 'Yearly',
-  };
-}
-
-String _periodLabel(
-  AppStrings strings,
-  DateTime month,
-  _TrendViewMode selectedView,
-) {
-  return switch (selectedView) {
-    _TrendViewMode.daily => strings.formatMonthYear(month),
-    _TrendViewMode.monthly => month.year.toString(),
-    _TrendViewMode.yearly => strings.isThai ? 'ทุกปี' : 'All years',
-  };
+String _money(double value) {
+  final sign = value < 0 ? '-' : '';
+  return '$sign฿${formatOriginalNumber(value)}';
 }

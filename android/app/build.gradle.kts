@@ -21,7 +21,7 @@ android {
         applicationId = "com.kimjot.project"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -45,6 +45,7 @@ kotlin {
 
 dependencies {
     implementation("androidx.annotation:annotation:1.9.1")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 

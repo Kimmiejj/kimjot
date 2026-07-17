@@ -3,14 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/formatters/money_formatter.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../ai/ai_settings_store.dart';
+import '../ai/ai_consent_gate.dart';
+import '../ai/ai_settings_screen.dart';
 import '../auth/auth_user.dart';
-import '../transactions/category_localization.dart';
-import '../transactions/create_transaction_input.dart';
 import '../transactions/manual_transaction_sheet.dart';
 import '../transactions/transaction_repository.dart';
 import '../transactions/transaction_source.dart';
 import '../transactions/transaction_type.dart';
+import 'external_ai_client.dart';
 import 'slip_date_parser.dart';
 import 'slip_fingerprint.dart';
 import 'slip_scan_result.dart';
@@ -43,6 +46,8 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
   String? _slipFingerprint;
   bool _isReading = false;
   String? _scanError;
+  SlipTransactionDecision? _aiDecision;
+  bool _isEnhancing = false;
 
   List<String> get _imagePaths {
     final imagePaths = widget.imagePaths;
@@ -85,6 +90,7 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
       _slipFingerprint = null;
       _isReading = true;
       _scanError = null;
+      _aiDecision = null;
     });
 
     try {
@@ -143,59 +149,127 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
     }
   }
 
-  Future<void> _autoAcceptTransaction(SlipScanResult result) async {
-    final imagePath = _currentImagePath;
-    if (!mounted || imagePath == null) return;
-    final fingerprint = await buildSlipFingerprint(
-      imagePath: imagePath,
-      result: result,
-    );
-    if (!mounted) return;
-
-    final decision = resolveBestEffortSlipDecision(result);
-    if (decision == null) {
+  Future<void> _enhanceWithAi(SlipScanResult result) async {
+    if (_isEnhancing) return;
+    if (!await ensureAiAllowed(context)) return;
+    await AiSettingsStore.instance.load();
+    if (!ExternalAiClient.instance.isConfigured) {
+      if (!mounted) return;
+      final openSettings = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(
+            Icons.auto_awesome_rounded,
+            color: Color(0xFF0F766E),
+          ),
+          title: Text(
+            context.strings.isThai
+                ? 'เชื่อม Gemini ก่อนใช้งาน'
+                : 'Connect Gemini first',
+          ),
+          content: Text(
+            context.strings.isThai
+                ? 'ไปที่ตั้งค่า Gemini แล้วใส่ URL ของ Kimjod backend จากนั้นกด “บันทึกและทดสอบ”'
+                : 'Open Gemini settings, enter your Kimjod backend URL, then tap Save & test.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(context.strings.isThai ? 'ไว้ก่อน' : 'Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(
+                context.strings.isThai ? 'ไปตั้งค่า' : 'Open settings',
+              ),
+            ),
+          ],
+        ),
+      );
+      if (openSettings == true && mounted) {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(builder: (context) => const AiSettingsScreen()),
+        );
+      }
       return;
     }
 
-    try {
-      final transactionDate = parseTransactionDateFrom(
-        dateText: result.dateText,
-        timeText: result.timeText,
-        referenceText: result.reference,
-        rawText: result.rawText,
-        fallbackDate: _fallbackImageDate(imagePath),
-      );
-
-      final localizedCategory = localizedCategoryName(
-        strings: context.strings,
-        categoryId: decision.categoryId,
-        fallbackName: decision.categoryName,
-      );
-
-      await widget.transactionRepository.createManualTransaction(
-        CreateTransactionInput(
-          userId: widget.user.uid,
-          amount: result.amount ?? 0,
-          type: decision.type,
-          categoryId: decision.categoryId,
-          categoryName: localizedCategory,
-          transactionDate: transactionDate,
-          transactionDateText: context.strings.formatDate(transactionDate),
-          source: TransactionSource.gallerySlip,
-          note: decision.note,
-          slipFingerprint: fingerprint,
-          slipReference: result.reference,
+    if (!AiSettingsStore.instance.slipVisionConsent) {
+      if (!mounted) return;
+      final allowed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            context.strings.isThai
+                ? 'อนุญาตให้ Gemini อ่านภาพ?'
+                : 'Allow Gemini vision?',
+          ),
+          content: Text(
+            context.strings.isThai
+                ? 'ภาพจะถูกส่งผ่าน backend แบบชั่วคราวเพื่ออ่านข้อมูล และจะไม่ถูกเก็บใน Firebase หรือ server'
+                : 'The image is sent transiently through the backend and is not stored in Firebase or on the server.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(context.strings.isThai ? 'ไม่อนุญาต' : 'Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(context.strings.isThai ? 'อนุญาต' : 'Allow'),
+            ),
+          ],
         ),
       );
-
-      if (mounted) await _handleSaved();
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.strings.couldNotSaveTransaction)),
-        );
-      }
+      if (allowed != true) return;
+      await AiSettingsStore.instance.setSlipVisionConsent(true);
     }
+
+    if (!mounted) return;
+    setState(() => _isEnhancing = true);
+    final ai = await ExternalAiClient.instance.analyzeSlip(
+      result: result,
+      allowedCategoryIds: kSlipAnalysisCategoryIds,
+      imagePath: _currentImagePath,
+      includeImage: true,
+    );
+    if (!mounted) return;
+
+    if (ai == null) {
+      setState(() => _isEnhancing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.isThai
+                ? 'Gemini อ่านสลิปไม่สำเร็จ ข้อมูลจากตัวอ่านในเครื่องยังอยู่ครบ'
+                : 'Gemini review failed. Your on-device result is unchanged.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final enhancedResult = result.copyWith(
+      amount: ai.amount,
+      dateText: ai.dateText,
+      timeText: ai.timeText,
+      sender: ai.sender,
+      recipient: ai.recipient,
+      reference: ai.reference,
+      amountConfidence: ai.confidence,
+    );
+    final decision = resolveSlipDecisionAfterAi(
+      originalResult: result,
+      enhancedResult: enhancedResult,
+      aiType: ai.type,
+      aiCategoryId: ai.categoryId,
+      aiNote: ai.note,
+    );
+    setState(() {
+      _isEnhancing = false;
+      _scanResult = enhancedResult;
+      _aiDecision = decision;
+    });
   }
 
   @override
@@ -203,9 +277,9 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
     final strings = context.strings;
     final scanResult = _scanResult;
     final currentImagePath = _currentImagePath;
-    final decision = scanResult == null
-        ? null
-        : resolveBestEffortSlipDecision(scanResult);
+    final decision =
+        _aiDecision ??
+        (scanResult == null ? null : resolveBestEffortSlipDecision(scanResult));
 
     final parsedDate = parseTransactionDateFrom(
       dateText: scanResult?.dateText,
@@ -216,7 +290,7 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFFEAFBFF),
+      backgroundColor: const Color(0xFFF7F5EF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         title: Text(
@@ -231,7 +305,7 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFE7FFF4), Color(0xFFEAFBFF), Color(0xFFF7F4FF)],
+            colors: [Color(0xFFF7F5EF), Color(0xFFEAF8F2), Color(0xFFFFF4ED)],
           ),
         ),
         child: SafeArea(
@@ -245,7 +319,10 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                MascotTip(message: strings.slipReviewTip, mood: MascotMood.calm),
+                MascotTip(
+                  message: strings.slipReviewTip,
+                  mood: MascotMood.calm,
+                ),
                 if (currentImagePath != null) ...[
                   const SizedBox(height: 14),
                   _SlipImagePreview(imagePath: currentImagePath),
@@ -270,18 +347,14 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
                 ] else if (scanResult != null) ...[
                   _SlipSummaryCard(result: scanResult),
                   const SizedBox(height: 14),
-                  if (scanResult.amountConfidence != null &&
-                      scanResult.amountConfidence! > 0.85 &&
-                      decision != null)
-                    _HighConfidenceCard(
-                      amount: scanResult.amount,
-                      confidence: scanResult.amountConfidence!,
-                      onAutoAccept: () => _autoAcceptTransaction(scanResult),
-                    ),
-                  if (scanResult.amountConfidence != null &&
-                      scanResult.amountConfidence! > 0.85 &&
-                      decision != null)
-                    const SizedBox(height: 14),
+                  _HighConfidenceCard(
+                    amount: scanResult.amount,
+                    confidence: scanResult.amountConfidence ?? 0,
+                    onEnhance: () => _enhanceWithAi(scanResult),
+                    isEnhancing: _isEnhancing,
+                    aiEnhanced: _aiDecision != null,
+                  ),
+                  const SizedBox(height: 14),
                 ] else if (_scanError != null) ...[
                   _ReadingCard(message: _scanError!),
                   const SizedBox(height: 14),
@@ -294,6 +367,7 @@ class _SlipReviewScreenState extends State<SlipReviewScreen> {
                   title: strings.reviewSlip,
                   description: strings.slipReviewDescription,
                   initialType: decision?.type ?? TransactionType.expense,
+                  initialCategoryId: decision?.categoryId,
                   initialAmount: scanResult?.amount,
                   initialNote: scanResult == null
                       ? null
@@ -512,19 +586,23 @@ const TextStyle _summaryTitleStyle = TextStyle(
 );
 
 String _formatMoneyValue(double value) {
-  return value.toStringAsFixed(2);
+  return formatOriginalNumber(value);
 }
 
 class _HighConfidenceCard extends StatelessWidget {
   const _HighConfidenceCard({
     required this.amount,
     required this.confidence,
-    required this.onAutoAccept,
+    required this.onEnhance,
+    required this.isEnhancing,
+    required this.aiEnhanced,
   });
 
   final double? amount;
   final double confidence;
-  final VoidCallback onAutoAccept;
+  final VoidCallback onEnhance;
+  final bool isEnhancing;
+  final bool aiEnhanced;
 
   @override
   Widget build(BuildContext context) {
@@ -542,7 +620,13 @@ class _HighConfidenceCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            strings.isThai ? 'AI มั่นใจสูง' : 'High Confidence',
+            aiEnhanced
+                ? (strings.isThai
+                      ? 'Gemini ตรวจสลิปให้แล้ว'
+                      : 'Gemini review complete')
+                : (strings.isThai
+                      ? 'ตรวจสอบก่อนบันทึก'
+                      : 'Review before saving'),
             style: const TextStyle(
               color: Color(0xFF1B8F73),
               fontSize: 16,
@@ -552,8 +636,8 @@ class _HighConfidenceCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             strings.isThai
-                ? 'ระบบอ่านสลิปได้ $confidencePercent% - สามารถบันทึกอัตโนมัติได้'
-                : 'AI detected amount with $confidencePercent% confidence - auto-save available',
+                ? 'ตัวอ่านในเครื่องมั่นใจ $confidencePercent% ระบบจะไม่บันทึกจนกว่าคุณจะยืนยัน'
+                : 'On-device confidence is $confidencePercent%. Nothing is saved until you confirm.',
             style: const TextStyle(
               color: Color(0xFF10233F),
               fontSize: 13,
@@ -562,14 +646,26 @@ class _HighConfidenceCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: onAutoAccept,
-            icon: const Icon(Icons.check_rounded),
+            onPressed: isEnhancing ? null : onEnhance,
+            icon: isEnhancing
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_fix_high_rounded),
             label: Text(
-              strings.isThai ? 'ยอมรับ & บันทึก' : 'Accept & Save',
+              isEnhancing
+                  ? (strings.isThai ? 'กำลังอ่าน…' : 'Reading…')
+                  : (strings.isThai
+                        ? 'ตรวจความถูกต้องด้วย Gemini'
+                        : 'Review with Gemini'),
             ),
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.green,
+              backgroundColor: const Color(0xFF0F766E),
               minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(17),
+              ),
             ),
           ),
         ],

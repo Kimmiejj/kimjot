@@ -7,6 +7,9 @@ class AppConfig {
   static const _googleServerClientIdOverride = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',
   );
+  static const _recoveryBackendUrlOverride = String.fromEnvironment(
+    'RECOVERY_BACKEND_URL',
+  );
 
   static String get googleServerClientId {
     if (_googleServerClientIdOverride.isNotEmpty) {
@@ -14,5 +17,12 @@ class AppConfig {
     }
 
     return _defaultGoogleServerClientId;
+  }
+
+  static String get recoveryBackendUrl {
+    if (_recoveryBackendUrlOverride.isNotEmpty) {
+      return _recoveryBackendUrlOverride;
+    }
+    return 'https://kimjot.vercel.app';
   }
 }

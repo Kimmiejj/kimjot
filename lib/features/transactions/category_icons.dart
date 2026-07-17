@@ -32,3 +32,18 @@ IconData categoryIconData(String categoryId) {
     _ => Icons.category_rounded,
   };
 }
+
+Color categoryAccentColor(String categoryId) {
+  return switch (categoryId) {
+    'food' || 'drink' || 'groceries' => const Color(0xFFE46F51),
+    'transport' || 'travel' => const Color(0xFF3679B7),
+    'shopping' || 'entertainment' || 'gift' => const Color(0xFF9A5BB6),
+    'bills' || 'rent' || 'insurance' || 'tax' => const Color(0xFF60746E),
+    'health' || 'family' || 'donation' => const Color(0xFFD15E77),
+    'education' || 'side_job' || 'business' => const Color(0xFF4971A8),
+    'salary' || 'bonus' || 'refund' || 'allowance' => const Color(0xFF2F8A69),
+    'investment' || 'interest' || 'sale' => const Color(0xFF9A762E),
+    'transfer' || 'internal_transfer' => const Color(0xFF467E83),
+    _ => const Color(0xFF6D7975),
+  };
+}
