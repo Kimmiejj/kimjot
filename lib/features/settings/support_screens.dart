@@ -1797,9 +1797,13 @@ class _MoneyInputFormatter extends TextInputFormatter {
     final parts = raw.split('.');
     var whole = parts.first.replaceAll(RegExp(r'[^0-9]'), '');
     if (whole.isEmpty) whole = '0';
-    final decimal = parts.length > 1
-        ? '.${parts.sublist(1).join().replaceAll(RegExp(r'[^0-9]'), '')}'
+    final decimalDigits = parts.length > 1
+        ? parts.sublist(1).join().replaceAll(RegExp(r'[^0-9]'), '')
         : '';
+    final limitedDecimalDigits = decimalDigits.length > 2
+        ? decimalDigits.substring(0, 2)
+        : decimalDigits;
+    final decimal = parts.length > 1 ? '.$limitedDecimalDigits' : '';
     final formatted = '${_addThousandsSeparators(whole)}$decimal';
     return TextEditingValue(
       text: formatted,

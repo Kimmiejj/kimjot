@@ -95,7 +95,7 @@ void main() {
 
     expect(find.text('Add transaction'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextFormField).first, '125.50');
+    await tester.enterText(find.byType(TextFormField).first, '125.509');
     await tester.enterText(find.byType(TextFormField).last, 'Lunch');
     await tester.ensureVisible(find.text('Save transaction'));
     await tester.tap(find.text('Save transaction'));
@@ -111,8 +111,8 @@ void main() {
     expect(input.categoryName, 'Food');
     expect(input.note, 'Lunch');
     expect(find.text('Transaction saved.'), findsOneWidget);
-    expect(find.text('-THB 126'), findsWidgets);
-    expect(find.text('THB 126'), findsOneWidget);
+    expect(find.text('-THB 125.50'), findsWidgets);
+    expect(find.text('THB 125.50'), findsOneWidget);
 
     authService.dispose();
   });
@@ -225,7 +225,7 @@ void main() {
     expect(find.text('Select month and year'), findsOneWidget);
     expect(find.text('2026'), findsOneWidget);
 
-    await tester.tap(find.text('January'));
+    await tester.tap(find.text('Jan'));
     await tester.pumpAndSettle();
 
     expect(find.text('January 2026'), findsOneWidget);

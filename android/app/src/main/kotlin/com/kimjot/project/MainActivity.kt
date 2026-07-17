@@ -2,13 +2,19 @@ package com.kimjot.project
 
 import android.Manifest
 import android.app.Activity
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -17,6 +23,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterFragmentActivity() {
+    private lateinit var downloadManager: DownloadManager
     private var pendingGalleryPermissionResult: MethodChannel.Result? = null
     private var pendingFolderPickResult: MethodChannel.Result? = null
     private var pendingAudioPermissionResult: MethodChannel.Result? = null
@@ -24,10 +31,40 @@ class MainActivity : FlutterFragmentActivity() {
     private var audioRecordingPath: String? = null
     private var autoSyncOpenRequested = false
     private var galleryChannel: MethodChannel? = null
+    private var updateReceiverRegistered = false
+    private var waitingForInstallPermission = false
+    private var installerLaunched = false
+    private val updateDownloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+            val completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (completedId == pendingUpdateDownloadId()) {
+                installPendingUpdate()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        downloadManager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        ContextCompat.registerReceiver(
+            this,
+            updateDownloadReceiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_EXPORTED
+        )
+        updateReceiverRegistered = true
+        resumePendingUpdate()
         captureAutoSyncOpenRequest(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (waitingForInstallPermission && canInstallUnknownApps()) {
+            waitingForInstallPermission = false
+            installerLaunched = false
+            installPendingUpdate()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -73,6 +110,192 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            APP_UPDATE_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getInstalledVersion" -> result.success(installedVersion())
+                "downloadAndInstallUpdate" -> downloadAndInstallUpdate(
+                    call.argument<String>("apkUrl"),
+                    call.argument<Number>("targetVersionCode")?.toLong() ?: 0L,
+                    result
+                )
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun installedVersion(): Map<String, Any> {
+        val packageInfo = packageManager.getPackageInfo(packageName, 0)
+        val versionCode = installedVersionCode(packageInfo)
+        return mapOf<String, Any>(
+            "versionCode" to versionCode,
+            "versionName" to (packageInfo.versionName ?: "")
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installedVersionCode(): Long {
+        return installedVersionCode(packageManager.getPackageInfo(packageName, 0))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installedVersionCode(packageInfo: android.content.pm.PackageInfo): Long {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            packageInfo.versionCode.toLong()
+        }
+    }
+
+    private fun downloadAndInstallUpdate(
+        apkUrl: String?,
+        targetVersionCode: Long,
+        result: MethodChannel.Result
+    ) {
+        val uri = apkUrl?.let(Uri::parse)
+        if (uri == null || uri.scheme != "https" || targetVersionCode <= 0L) {
+            result.success(false)
+            return
+        }
+
+        val preferences = updatePreferences()
+        val pendingId = pendingUpdateDownloadId()
+        val pendingTarget = preferences.getLong(PREF_UPDATE_TARGET_VERSION, 0L)
+        val pendingUrl = preferences.getString(PREF_UPDATE_URL, null)
+        if (pendingId > 0L && pendingTarget == targetVersionCode && pendingUrl == apkUrl) {
+            when (downloadStatus(pendingId)) {
+                DownloadManager.STATUS_SUCCESSFUL -> {
+                    installerLaunched = false
+                    result.success(installPendingUpdate())
+                }
+                DownloadManager.STATUS_PENDING,
+                DownloadManager.STATUS_RUNNING,
+                DownloadManager.STATUS_PAUSED -> {
+                    result.success(true)
+                }
+                else -> clearPendingUpdate(removeDownload = true)
+            }
+            if (pendingUpdateDownloadId() > 0L) return
+        } else if (pendingId > 0L) {
+            clearPendingUpdate(removeDownload = true)
+        }
+
+        try {
+            val request = DownloadManager.Request(uri)
+                .setTitle("Kimjod ${targetVersionCode}")
+                .setDescription("Downloading the required app update")
+                .setMimeType(APK_MIME_TYPE)
+                .setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                )
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(false)
+                .setDestinationInExternalFilesDir(
+                    this,
+                    Environment.DIRECTORY_DOWNLOADS,
+                    "kimjod-update-$targetVersionCode-${System.currentTimeMillis()}.apk"
+                )
+            val downloadId = downloadManager.enqueue(request)
+            preferences.edit()
+                .putLong(PREF_UPDATE_DOWNLOAD_ID, downloadId)
+                .putLong(PREF_UPDATE_TARGET_VERSION, targetVersionCode)
+                .putString(PREF_UPDATE_URL, apkUrl)
+                .apply()
+            result.success(true)
+        } catch (_: Exception) {
+            clearPendingUpdate(removeDownload = false)
+            result.success(false)
+        }
+    }
+
+    private fun resumePendingUpdate() {
+        val pendingId = pendingUpdateDownloadId()
+        if (pendingId <= 0L) return
+        val targetVersion = updatePreferences().getLong(PREF_UPDATE_TARGET_VERSION, 0L)
+        if (targetVersion > 0L && installedVersionCode() >= targetVersion) {
+            clearPendingUpdate(removeDownload = true)
+            return
+        }
+        if (downloadStatus(pendingId) == DownloadManager.STATUS_SUCCESSFUL) {
+            installPendingUpdate()
+        }
+    }
+
+    private fun installPendingUpdate(): Boolean {
+        val downloadId = pendingUpdateDownloadId()
+        if (downloadId <= 0L ||
+            downloadStatus(downloadId) != DownloadManager.STATUS_SUCCESSFUL
+        ) {
+            return false
+        }
+        if (!canInstallUnknownApps()) {
+            waitingForInstallPermission = true
+            return openUnknownAppSourcesSettings()
+        }
+        if (installerLaunched) return true
+
+        val apkUri = downloadManager.getUriForDownloadedFile(downloadId) ?: return false
+        return try {
+            installerLaunched = true
+            startActivity(
+                Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                    data = apkUri
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            )
+            true
+        } catch (_: Exception) {
+            installerLaunched = false
+            false
+        }
+    }
+
+    private fun canInstallUnknownApps(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            packageManager.canRequestPackageInstalls()
+    }
+
+    private fun openUnknownAppSourcesSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:$packageName")
+                )
+            )
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun downloadStatus(downloadId: Long): Int? {
+        return downloadManager.query(
+            DownloadManager.Query().setFilterById(downloadId)
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+        }
+    }
+
+    private fun pendingUpdateDownloadId(): Long {
+        return updatePreferences().getLong(PREF_UPDATE_DOWNLOAD_ID, -1L)
+    }
+
+    private fun updatePreferences() = getSharedPreferences(UPDATE_PREFS, MODE_PRIVATE)
+
+    private fun clearPendingUpdate(removeDownload: Boolean) {
+        val downloadId = pendingUpdateDownloadId()
+        if (removeDownload && downloadId > 0L) {
+            downloadManager.remove(downloadId)
+        }
+        updatePreferences().edit().clear().apply()
+        waitingForInstallPermission = false
+        installerLaunched = false
     }
 
     private fun startAudioRecording(result: MethodChannel.Result) {
@@ -348,6 +571,10 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        if (updateReceiverRegistered) {
+            unregisterReceiver(updateDownloadReceiver)
+            updateReceiverRegistered = false
+        }
         val recorder = audioRecorder
         audioRecorder = null
         audioRecordingPath?.let { File(it).delete() }
@@ -368,6 +595,12 @@ class MainActivity : FlutterFragmentActivity() {
         private const val FOLDER_PICK_REQUEST_CODE = 7302
         private const val AUDIO_PERMISSION_REQUEST_CODE = 7304
         private const val DEVICE_AUDIO_CHANNEL = "kimjod/device_audio"
+        private const val APP_UPDATE_CHANNEL = "kimjod/app_update"
+        private const val UPDATE_PREFS = "kimjod_app_update"
+        private const val PREF_UPDATE_DOWNLOAD_ID = "download_id"
+        private const val PREF_UPDATE_TARGET_VERSION = "target_version"
+        private const val PREF_UPDATE_URL = "apk_url"
+        private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         private const val MAX_FOLDER_IMAGES = 400
     }
 }

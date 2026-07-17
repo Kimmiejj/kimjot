@@ -7,6 +7,7 @@ import '../features/auth/auth_service.dart';
 import '../features/transactions/transaction_repository.dart';
 import '../shared/widgets/loading_screen.dart';
 import '../shared/widgets/setup_required_screen.dart';
+import 'app_update_gate.dart';
 
 class FirebaseBootstrap extends StatelessWidget {
   const FirebaseBootstrap({
@@ -33,9 +34,11 @@ class FirebaseBootstrap extends StatelessWidget {
           return LoadingScreen(message: context.strings.startingKimjod);
         }
 
-        return AuthGate(
-          authService: authService,
-          transactionRepository: transactionRepository,
+        return AppUpdateGate(
+          child: AuthGate(
+            authService: authService,
+            transactionRepository: transactionRepository,
+          ),
         );
       },
     );

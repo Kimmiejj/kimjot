@@ -206,7 +206,9 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
           autofocus: true,
           textCapitalization: TextCapitalization.sentences,
           decoration: InputDecoration(
-            labelText: context.strings.isThai ? 'ชื่อหมวดหมู่' : 'Category name',
+            labelText: context.strings.isThai
+                ? 'ชื่อหมวดหมู่'
+                : 'Category name',
           ),
           onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
         ),
@@ -1118,7 +1120,11 @@ class _CategoryIconButton extends StatelessWidget {
                   color: accent.withValues(alpha: selected ? 0.17 : 0.10),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(categoryIconData(category.id), color: accent, size: 18),
+                child: Icon(
+                  categoryIconData(category.id),
+                  color: accent,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 8),
               Text(
@@ -1469,7 +1475,7 @@ class _ConflictVersion extends StatelessWidget {
 }
 
 double _parseAmount(String value) {
-  return _tryParseAmount(value)!;
+  return normalizeMoneyAmount(_tryParseAmount(value)!);
 }
 
 double? _tryParseAmount(String? value) {
@@ -1499,9 +1505,13 @@ class _AmountTextInputFormatter extends TextInputFormatter {
       whole = '0';
     }
 
-    final decimal = parts.length > 1
-        ? '.${parts.sublist(1).join().replaceAll(RegExp(r'[^0-9]'), '')}'
+    final decimalDigits = parts.length > 1
+        ? parts.sublist(1).join().replaceAll(RegExp(r'[^0-9]'), '')
         : '';
+    final limitedDecimalDigits = decimalDigits.length > 2
+        ? decimalDigits.substring(0, 2)
+        : decimalDigits;
+    final decimal = parts.length > 1 ? '.$limitedDecimalDigits' : '';
     final formatted = '${_addThousandsSeparators(whole)}$decimal';
 
     return TextEditingValue(

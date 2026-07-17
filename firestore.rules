@@ -1,0 +1,149 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function ownsUserData(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function validEnvelope(envelope) {
+      return envelope is map
+        && envelope.keys().hasOnly(['version', 'nonce', 'ciphertext', 'mac'])
+        && envelope.version == 1
+        && envelope.nonce is string
+        && envelope.ciphertext is string
+        && envelope.mac is string;
+    }
+
+    function validEncryptedTransaction() {
+      return request.resource.data.keys().hasOnly([
+          'transactionDate',
+          'encryptionVersion',
+          'payload',
+          'clientUpdatedAt',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.transactionDate is timestamp
+        && request.resource.data.encryptionVersion == 1
+        && validEnvelope(request.resource.data.payload);
+    }
+
+    function validEncryptionConfig() {
+      return validLegacyEncryptionConfig() || validWrappedEncryptionConfig();
+    }
+
+    function validLegacyEncryptionConfig() {
+      return request.resource.data.keys().hasOnly([
+          'version',
+          'kdf',
+          'salt',
+          'keyCheck',
+          'createdAt'
+        ])
+        && request.resource.data.version == 1
+        && request.resource.data.kdf == 'argon2id'
+        && request.resource.data.salt is string
+        && validEnvelope(request.resource.data.keyCheck);
+    }
+
+    function validWrappedEncryptionConfig() {
+      return request.resource.data.keys().hasOnly([
+          'version',
+          'kdf',
+          'salt',
+          'wrappedDataKey',
+          'keyVersion',
+          'escrowId',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.version == 2
+        && request.resource.data.kdf == 'argon2id'
+        && request.resource.data.salt is string
+        && request.resource.data.keyVersion is int
+        && request.resource.data.keyVersion > 0
+        && request.resource.data.escrowId is string
+        && request.resource.data.escrowId.size() >= 16
+        && request.resource.data.escrowId.size() <= 128
+        && validEnvelope(request.resource.data.wrappedDataKey);
+    }
+
+    function validEncryptionConfigUpdate() {
+      return validWrappedEncryptionConfig()
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (
+          (resource.data.version == 1
+            && request.resource.data.keyVersion == 1)
+          || (resource.data.version == 2
+            && request.resource.data.keyVersion == resource.data.keyVersion + 1)
+        );
+    }
+
+    function validRecoveryEscrowKey() {
+      return request.resource.data.keys().hasOnly([
+          'iv',
+          'ciphertext',
+          'tag',
+          'algorithm',
+          'keyVersion',
+          'emailHash',
+          'createdAt'
+        ])
+        && request.resource.data.iv is string
+        && request.resource.data.ciphertext is string
+        && request.resource.data.tag is string
+        && request.resource.data.algorithm == 'aes-256-gcm'
+        && request.resource.data.keyVersion is int
+        && request.resource.data.keyVersion > 0
+        && request.resource.data.emailHash is string
+        && request.resource.data.createdAt is timestamp;
+    }
+
+    function validRecoveryEscrowMetadata() {
+      return request.resource.data.keys().hasOnly(['lastEmailSentAt'])
+        && request.resource.data.lastEmailSentAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow read, write: if false;
+
+      match /transactions/{transactionId} {
+        allow read, delete: if ownsUserData(userId);
+        allow create, update: if ownsUserData(userId)
+          && validEncryptedTransaction();
+      }
+
+      match /security/transactionEncryption {
+        allow read: if ownsUserData(userId);
+        allow create: if ownsUserData(userId) && validEncryptionConfig();
+        allow update: if ownsUserData(userId)
+          && validEncryptionConfigUpdate();
+        allow delete: if false;
+      }
+    }
+
+    match /recovery_key_escrow/{userId} {
+      allow read: if ownsUserData(userId);
+      allow create, update: if ownsUserData(userId)
+        && validRecoveryEscrowMetadata();
+      allow delete: if false;
+
+      match /keys/{escrowId} {
+        allow read: if ownsUserData(userId);
+        allow create, update: if ownsUserData(userId)
+          && validRecoveryEscrowKey();
+        allow delete: if false;
+      }
+    }
+
+    match /app_config/{platform} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

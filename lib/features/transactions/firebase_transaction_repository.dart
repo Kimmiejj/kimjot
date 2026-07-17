@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../security/transaction_encryption_manager.dart';
 import '../security/transaction_payload_cipher.dart';
+import '../../shared/formatters/money_formatter.dart';
 import 'create_transaction_input.dart';
 import 'home_summary.dart';
 import 'transaction_record.dart';
@@ -44,7 +45,7 @@ class FirebaseTransactionRepository
       documentId: document.id,
       transactionDate: input.transactionDate,
       payload: <String, Object?>{
-        'amount': input.amount,
+        'amount': normalizeMoneyAmount(input.amount),
         'type': input.type.firestoreValue,
         'categoryId': input.categoryId,
         'categoryName': input.categoryName,
@@ -85,7 +86,7 @@ class FirebaseTransactionRepository
       documentId: input.transactionId,
       transactionDate: input.transactionDate,
       payload: <String, Object?>{
-        'amount': input.amount,
+        'amount': normalizeMoneyAmount(input.amount),
         'type': input.type.firestoreValue,
         'categoryId': input.categoryId,
         'categoryName': input.categoryName,
