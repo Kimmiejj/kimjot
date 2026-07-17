@@ -24,6 +24,7 @@ object AutoSlipSync {
 
     private const val PREFERENCES_NAME = "kimjod_auto_slip_sync"
     private const val FOLDER_URI_KEY = "folder_uri"
+    private const val FOLDER_URIS_KEY = "folder_uris"
     private const val KNOWN_DOCUMENT_IDS_KEY = "known_document_ids"
     private const val PENDING_IMAGE_PATHS_KEY = "pending_image_paths"
     private const val PERIODIC_WORK_NAME = "kimjod_auto_slip_sync_periodic"
@@ -33,11 +34,19 @@ object AutoSlipSync {
     private const val MAX_NEW_IMAGES_PER_RUN = 50
 
     fun configureFolder(context: Context, treeUri: Uri) {
-        val documentIds = collectImages(context, treeUri)
-            .mapTo(mutableSetOf()) { it.documentId }
-        preferences(context).edit()
-            .putString(FOLDER_URI_KEY, treeUri.toString())
-            .putStringSet(KNOWN_DOCUMENT_IDS_KEY, documentIds)
+        val prefs = preferences(context)
+        val folderUris = configuredFolderUris(context).toMutableSet()
+        val uriText = treeUri.toString()
+        folderUris.add(uriText)
+
+        val knownDocumentIds = migratedKnownDocumentIds(prefs)
+        collectImages(context, treeUri)
+            .mapTo(knownDocumentIds) { documentKey(uriText, it.documentId) }
+
+        prefs.edit()
+            .putStringSet(FOLDER_URIS_KEY, folderUris)
+            .remove(FOLDER_URI_KEY)
+            .putStringSet(KNOWN_DOCUMENT_IDS_KEY, knownDocumentIds)
             .apply()
         schedule(context)
     }
@@ -73,26 +82,34 @@ object AutoSlipSync {
     @Synchronized
     fun scanAndQueue(context: Context, showNotification: Boolean): List<String> {
         val prefs = preferences(context)
-        val uriText = prefs.getString(FOLDER_URI_KEY, null) ?: return pendingImages(context)
-        val treeUri = Uri.parse(uriText)
-        val knownIds = prefs
-            .getStringSet(KNOWN_DOCUMENT_IDS_KEY, emptySet())
-            .orEmpty()
-            .toMutableSet()
+        val folderUris = configuredFolderUris(context)
+        if (folderUris.isEmpty()) return pendingImages(context)
+        val knownIds = migratedKnownDocumentIds(prefs)
         val pendingPaths = prefs
             .getStringSet(PENDING_IMAGE_PATHS_KEY, emptySet())
             .orEmpty()
             .filterTo(mutableSetOf()) { File(it).isFile }
 
-        val newImages = collectImages(context, treeUri)
-            .asSequence()
-            .filterNot { knownIds.contains(it.documentId) }
-            .take(MAX_NEW_IMAGES_PER_RUN)
-            .toList()
+        val newImages = mutableListOf<ConfiguredFolderImage>()
+        for (uriText in folderUris) {
+            if (newImages.size >= MAX_NEW_IMAGES_PER_RUN) break
+            val treeUri = Uri.parse(uriText)
+            val images = try {
+                collectImages(context, treeUri)
+            } catch (_: Exception) {
+                // A provider can temporarily be unavailable; keep scanning other albums.
+                continue
+            }
+            images.asSequence()
+                .filterNot { knownIds.contains(documentKey(uriText, it.documentId)) }
+                .take(MAX_NEW_IMAGES_PER_RUN - newImages.size)
+                .mapTo(newImages) { ConfiguredFolderImage(uriText, it) }
+        }
         var copiedCount = 0
-        for (image in newImages) {
+        for (configuredImage in newImages) {
+            val image = configuredImage.image
             val copiedPath = copyToCache(context, image) ?: continue
-            knownIds.add(image.documentId)
+            knownIds.add(documentKey(configuredImage.folderUri, image.documentId))
             pendingPaths.add(copiedPath)
             copiedCount++
         }
@@ -106,6 +123,33 @@ object AutoSlipSync {
             showNewSlipNotification(context, copiedCount)
         }
         return pendingPaths.sorted()
+    }
+
+    private fun configuredFolderUris(context: Context): Set<String> {
+        val prefs = preferences(context)
+        val result = prefs
+            .getStringSet(FOLDER_URIS_KEY, emptySet())
+            .orEmpty()
+            .toMutableSet()
+        prefs.getString(FOLDER_URI_KEY, null)?.let(result::add)
+        return result
+    }
+
+    private fun migratedKnownDocumentIds(
+        prefs: android.content.SharedPreferences
+    ): MutableSet<String> {
+        val knownIds = prefs
+            .getStringSet(KNOWN_DOCUMENT_IDS_KEY, emptySet())
+            .orEmpty()
+            .toMutableSet()
+        val legacyUri = prefs.getString(FOLDER_URI_KEY, null) ?: return knownIds
+        return knownIds.mapTo(mutableSetOf()) { id ->
+            if (id.startsWith("$legacyUri|")) id else documentKey(legacyUri, id)
+        }
+    }
+
+    private fun documentKey(folderUri: String, documentId: String): String {
+        return "$folderUri|$documentId"
     }
 
     private fun schedule(context: Context) {
@@ -244,6 +288,11 @@ object AutoSlipSync {
         val documentId: String,
         val displayName: String,
         val uri: Uri
+    )
+
+    private data class ConfiguredFolderImage(
+        val folderUri: String,
+        val image: FolderImage
     )
 }
 

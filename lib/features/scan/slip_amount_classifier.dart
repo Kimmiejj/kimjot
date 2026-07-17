@@ -199,6 +199,11 @@ class AmountClassifier {
     if (_looksLikeBareSmallNoise(line: lower, token: token, value: value)) {
       return true;
     }
+    if (_hasNegativeSignBefore(line, match.start) ||
+        _hasAdjustmentHint(lower) ||
+        (previousLower != null && _hasAdjustmentHint(previousLower))) {
+      return true;
+    }
     if (_hasFeeHint(lower) ||
         (previousLower != null && _hasFeeHint(previousLower))) {
       return true;
@@ -248,6 +253,25 @@ class AmountClassifier {
       '$_feeKeywordPattern|$_thaiFeeKeywordPattern',
       caseSensitive: false,
     ).hasMatch(lowerLine);
+  }
+
+  bool _hasAdjustmentHint(String lowerLine) {
+    return RegExp(
+      r'discount|subsidy|benefit|privilege|coupon|cashback|rebate|'
+      r'\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14|'
+      r'\u0E2A\u0E34\u0E17\u0E18\u0E34|'
+      r'\u0E04\u0E39\u0E1B\u0E2D\u0E07|'
+      r'\u0E40\u0E07\u0E34\u0E19\u0E04\u0E37\u0E19|'
+      r'\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1F\u0E23\u0E35',
+      caseSensitive: false,
+    ).hasMatch(lowerLine);
+  }
+
+  bool _hasNegativeSignBefore(String line, int start) {
+    if (start <= 0) return false;
+    return RegExp(
+      r'[\-\u2212\u2013\u2014]\s*$',
+    ).hasMatch(line.substring(0, start));
   }
 
   bool _hasCurrencyHint(String lowerLine) {

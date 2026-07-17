@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "tmp_slip_audit"
 SCB = Path(r"C:\Users\ChisanuchaK\OneDrive\Desktop\SCB EASY")
 KPLUS = Path(r"C:\Users\ChisanuchaK\OneDrive\Desktop\K PLUS")
+PAOTANG = Path(r"C:\Users\ChisanuchaK\OneDrive\Desktop\PaoTang")
+DIME = Path(r"C:\Users\ChisanuchaK\OneDrive\Desktop\Dime!")
 
 
 def image_files(folder: Path) -> list[Path]:
@@ -28,6 +30,16 @@ def crop_scb_amount(im: Image.Image) -> Image.Image:
 def crop_kplus_amount(im: Image.Image) -> Image.Image:
     w, h = im.size
     return im.crop((int(w * 0.03), int(h * 0.70), int(w * 0.67), int(h * 0.96)))
+
+
+def crop_paotang_amount(im: Image.Image) -> Image.Image:
+    w, h = im.size
+    return im.crop((int(w * 0.03), int(h * 0.48), int(w * 0.97), int(h * 0.78)))
+
+
+def crop_dime_amount(im: Image.Image) -> Image.Image:
+    w, h = im.size
+    return im.crop((int(w * 0.02), int(h * 0.02), int(w * 0.98), int(h * 0.58)))
 
 
 def make_sheets(
@@ -91,11 +103,35 @@ def main() -> None:
         cols=2,
         rows=4,
     )
+    paotang_pages = make_sheets(
+        "paotang",
+        image_files(PAOTANG),
+        crop_paotang_amount,
+        cell_w=520,
+        crop_h=400,
+        cols=2,
+        rows=3,
+    )
+    dime_pages = make_sheets(
+        "dime",
+        image_files(DIME),
+        crop_dime_amount,
+        cell_w=520,
+        crop_h=520,
+        cols=2,
+        rows=3,
+    )
     print(f"SCB pages: {len(scb_pages)}")
     for path in scb_pages:
         print(path)
     print(f"K PLUS pages: {len(kplus_pages)}")
     for path in kplus_pages:
+        print(path)
+    print(f"PaoTang pages: {len(paotang_pages)}")
+    for path in paotang_pages:
+        print(path)
+    print(f"Dime pages: {len(dime_pages)}")
+    for path in dime_pages:
         print(path)
 
 

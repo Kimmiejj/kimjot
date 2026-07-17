@@ -28,8 +28,14 @@ DateTime parseTransactionDateFrom({
   }
 
   final inferredDate =
-      _parseDateFromReferenceText(referenceText) ??
-      _parseDateFromReferenceText(rawText);
+      _parseDateFromReferenceText(
+        referenceText,
+        assumedYear: (fallbackDate ?? resolvedNow).year,
+      ) ??
+      _parseDateFromReferenceText(
+        rawText,
+        assumedYear: (fallbackDate ?? resolvedNow).year,
+      );
   if (inferredDate != null) {
     return DateTime(
       inferredDate.year,
@@ -52,22 +58,47 @@ DateTime parseTransactionDateFrom({
   );
 }
 
-DateTime? _parseDateFromReferenceText(String? value) {
+DateTime? _parseDateFromReferenceText(
+  String? value, {
+  required int assumedYear,
+}) {
   if (value == null || value.trim().isEmpty) {
     return null;
   }
 
-  final match = RegExp(
-    r'((?:19|20|21|24|25)\d{2})(\d{2})(\d{2})',
-  ).firstMatch(value);
-  if (match == null) {
-    return null;
+  final kPlusMatch = RegExp(r'\b016(\d{3})(\d{2})(\d{2})').firstMatch(value);
+  if (kPlusMatch != null) {
+    final ordinalDay = int.parse(kPlusMatch.group(1)!);
+    final firstDay = DateTime(assumedYear);
+    final date = firstDay.add(Duration(days: ordinalDay - 1));
+    if (ordinalDay >= 1 && ordinalDay <= 366 && date.year == assumedYear) {
+      return date;
+    }
   }
 
+  final fullYearMatch = RegExp(
+    r'((?:19|20|21|24|25)\d{2})(\d{2})(\d{2})',
+  ).firstMatch(value);
+  if (fullYearMatch != null) {
+    final fullYearDate = _buildDate(
+      year: int.parse(fullYearMatch.group(1)!),
+      month: int.parse(fullYearMatch.group(2)!),
+      day: int.parse(fullYearMatch.group(3)!),
+    );
+    if (fullYearDate != null) return fullYearDate;
+  }
+
+  final dimeMatch = RegExp(
+    r'\bDMBP(\d{2})(\d{2})(\d{2})|\bDM(\d{2})(\d{2})(\d{2})',
+    caseSensitive: false,
+  ).firstMatch(value);
+  if (dimeMatch == null) return null;
+
+  final isBillPayment = dimeMatch.group(1) != null;
   return _buildDate(
-    year: int.parse(match.group(1)!),
-    month: int.parse(match.group(2)!),
-    day: int.parse(match.group(3)!),
+    year: 2000 + int.parse(dimeMatch.group(isBillPayment ? 1 : 4)!),
+    month: int.parse(dimeMatch.group(isBillPayment ? 2 : 5)!),
+    day: int.parse(dimeMatch.group(isBillPayment ? 3 : 6)!),
   );
 }
 
@@ -77,25 +108,25 @@ DateTime? _parseDate(String dateText) {
     return null;
   }
 
-  final dayMonthYearMatch = RegExp(
-    r'(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2,4})',
-  ).firstMatch(normalized);
-  if (dayMonthYearMatch != null) {
-    return _buildDate(
-      day: int.parse(dayMonthYearMatch.group(1)!),
-      month: int.parse(dayMonthYearMatch.group(2)!),
-      year: int.parse(dayMonthYearMatch.group(3)!),
-    );
-  }
-
   final yearMonthDayMatch = RegExp(
-    r'(\d{4})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{1,2})',
+    r'(?<!\d)((?:19|20|21|24|25)\d{2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{1,2})(?!\d)',
   ).firstMatch(normalized);
   if (yearMonthDayMatch != null) {
     return _buildDate(
       day: int.parse(yearMonthDayMatch.group(3)!),
       month: int.parse(yearMonthDayMatch.group(2)!),
       year: int.parse(yearMonthDayMatch.group(1)!),
+    );
+  }
+
+  final dayMonthYearMatch = RegExp(
+    r'(?<!\d)(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2,4})(?!\d)',
+  ).firstMatch(normalized);
+  if (dayMonthYearMatch != null) {
+    return _buildDate(
+      day: int.parse(dayMonthYearMatch.group(1)!),
+      month: int.parse(dayMonthYearMatch.group(2)!),
+      year: int.parse(dayMonthYearMatch.group(3)!),
     );
   }
 
@@ -158,7 +189,7 @@ int _normalizeYear(int year) {
     return year - 543;
   }
   if (year < 100) {
-    return year < 50 ? year + 2000 : year + 1900;
+    return year < 50 ? year + 2000 : year + 1957;
   }
   return year;
 }

@@ -278,7 +278,7 @@ class SlipTextParser {
               anchorLine: line,
               token: candidate.token,
               value: candidate.value,
-              lineDistance: (j - i).abs(),
+              lineDistance: j - i,
             ),
           ));
         }
@@ -300,6 +300,7 @@ class SlipTextParser {
     for (final match in numberPattern.allMatches(line)) {
       final token = match.group(0);
       if (token == null || _looksLikeDateToken(token)) continue;
+      if (_hasNegativeSignBefore(line, match.start)) continue;
       if (_isEmbeddedInIdentifier(line, match.start, match.end) ||
           _isMaskedAccountToken(line, match.start, match.end)) {
         continue;
@@ -322,9 +323,11 @@ class SlipTextParser {
     required int lineDistance,
   }) {
     var score = 0;
+    if (_hasPaidAmountLabel(line)) score += 120;
+    if (_hasPaidAmountLabel(anchorLine)) score += 90;
     if (_hasStrictAmountLabel(line)) score += 40;
     if (_hasStrictAmountLabel(anchorLine)) score += 30;
-    if (_hasStrictCurrencyHint(line)) score += 40;
+    if (_hasStrictCurrencyHint(line)) score += 90;
     if (nextLine != null && _hasStrictCurrencyHint(nextLine)) score += 24;
     if (previousLine != null && _hasStrictCurrencyHint(previousLine)) {
       score += 16;
@@ -334,12 +337,17 @@ class SlipTextParser {
       score -= 90;
     }
     if (nextLine != null && _hasStrictFeeLabel(nextLine)) score -= 24;
+    if (_hasAdjustmentLabel(line)) score -= 180;
+    if (previousLine != null && _hasAdjustmentLabel(previousLine)) {
+      score -= 120;
+    }
     if (token.contains('.')) score += 12;
     if (_strictLineLooksLikeAmountValue(line)) score += 8;
     if (value >= 10) score += 4;
     if (value >= 100) score += 2;
     if (_isStrictNonAmountMetadata(line)) score -= 120;
-    score -= lineDistance * 6;
+    score -= lineDistance.abs() * 6;
+    if (lineDistance < 0) score -= 18;
     return score;
   }
 
@@ -364,6 +372,31 @@ class SlipTextParser {
       r'à¸¢à¸­à¸”à¹€à¸‡à¸´à¸™',
       caseSensitive: false,
     ).hasMatch(value);
+  }
+
+  bool _hasPaidAmountLabel(String value) {
+    final normalized = _normalizedKeywordText(value);
+    return RegExp(
+      r'amountpaid|paidamount|netamount|netpaid|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30|'
+      r'\u0E08\u0E33\u0E19\u0E27\u0E19\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30|'
+      r'\u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30|'
+      r'\u0E22\u0E2D\u0E14\u0E0A\u0E33\u0E23\u0E30',
+      caseSensitive: false,
+    ).hasMatch(normalized);
+  }
+
+  bool _hasAdjustmentLabel(String value) {
+    final repaired = repairThaiMojibake(value).toLowerCase();
+    return RegExp(
+      r'discount|subsidy|benefit|privilege|coupon|cashback|rebate|'
+      r'\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14|'
+      r'\u0E2A\u0E34\u0E17\u0E18\u0E34|'
+      r'\u0E04\u0E39\u0E1B\u0E2D\u0E07|'
+      r'\u0E40\u0E07\u0E34\u0E19\u0E04\u0E37\u0E19|'
+      r'\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1F\u0E23\u0E35',
+      caseSensitive: false,
+    ).hasMatch(repaired);
   }
 
   String _normalizedKeywordText(String value) {
@@ -458,6 +491,7 @@ class SlipTextParser {
         for (final match in numberPattern.allMatches(lines[j])) {
           final token = match.group(0);
           if (token == null || _looksLikeDateToken(token)) continue;
+          if (_hasNegativeSignBefore(lines[j], match.start)) continue;
           if (_isEmbeddedInIdentifier(lines[j], match.start, match.end) ||
               _isMaskedAccountToken(lines[j], match.start, match.end)) {
             continue;
@@ -532,6 +566,14 @@ class SlipTextParser {
 
   String? _detectBank(String text) {
     final upper = text.toUpperCase();
+    if (upper.contains('DIME!') || upper.contains('DIME BANK')) {
+      return 'Dime!';
+    }
+    if (text.contains('\u0E40\u0E1B\u0E4B\u0E32\u0E15\u0E31\u0E07') ||
+        upper.contains('PAOTANG') ||
+        upper.contains('G-WALLET')) {
+      return 'PaoTang';
+    }
     if (upper.contains('K PLUS') ||
         upper.contains('KPLUS') ||
         upper.contains('KASIKORN') ||
@@ -546,9 +588,12 @@ class SlipTextParser {
 
   String? _detectDate(String text) {
     for (final pattern in <RegExp>[
-      RegExp(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'),
-      RegExp(r'\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}'),
-      RegExp(r'\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}'),
+      RegExp(
+        r'(?<!\d)(?:19|20|21|24|25)\d{2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{1,2}(?!\d)',
+      ),
+      RegExp(r'(?<!\d)\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}(?!\d)'),
+      RegExp(r'(?<!\d)\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}(?!\d)'),
+      RegExp(r'(?<!\d)\d{1,2}\s+[\u0E00-\u0E7F.]{2,20}\s+\d{2,4}(?!\d)'),
     ]) {
       final match = pattern.firstMatch(text);
       if (match != null) return match.group(0);
@@ -752,6 +797,13 @@ class SlipTextParser {
     final right = line.substring(end, rightEnd);
     return RegExp(r'[xX*\u2022]\s*[-\s]*$').hasMatch(left) ||
         RegExp(r'^[-\s]*[xX*\u2022]').hasMatch(right);
+  }
+
+  bool _hasNegativeSignBefore(String line, int start) {
+    if (start <= 0) return false;
+    return RegExp(
+      r'[\-\u2212\u2013\u2014]\s*$',
+    ).hasMatch(line.substring(0, start));
   }
 
   SlipCategory _detectCategory(String text, double? amount, _Parties? parties) {

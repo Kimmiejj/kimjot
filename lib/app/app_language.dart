@@ -218,12 +218,21 @@ class AppStrings {
   String get noSlipDataFound => isThai
       ? 'อ่านสลิปได้ไม่ครบ กรุณาตรวจและกรอกข้อมูลเองก่อนบันทึก'
       : 'The slip could not be read fully. Please review and enter missing data before saving.';
-  String get chooseSlipFromGallery =>
-      isThai ? 'เลือกรูปสลิปจากเครื่อง' : 'Choose slip from gallery';
+  String get chooseSlipFromGallery => isThai
+      ? 'เลือกรูปสลิปหลายรูปจากเครื่อง'
+      : 'Choose one or more slips from gallery';
   String get syncAlbumTitle => isThai ? 'ซิงก์จากอัลบัม' : 'Sync album';
   String get syncAlbumSubtitle => isThai
-      ? 'เลือกโฟลเดอร์ครั้งแรก แล้ว Kimjod จะตรวจรูปใหม่อัตโนมัติ แจ้งเตือนให้ตรวจและกดบันทึกเอง'
-      : 'Choose a folder once. Kimjod detects new slips automatically, then notifies you to review and save them yourself.';
+      ? 'เลือกได้หลายอัลบั้ม Kimjod จะตรวจรูปใหม่จากทุกอัลบั้มอัตโนมัติ'
+      : 'Choose multiple folders. Kimjod automatically detects new slips from every selected album.';
+  String get addAnotherAlbum =>
+      isThai ? 'เพิ่มอัลบั้มอื่นอีกไหม?' : 'Add another album?';
+  String get addAnotherAlbumDescription => isThai
+      ? 'อัลบั้มนี้ถูกเพิ่มแล้ว คุณเลือกเพิ่มได้อีก และ Auto-sync จะตรวจทุกอัลบั้มที่เคยเพิ่มไว้'
+      : 'This album was added. You can select another, and auto-sync will keep watching every album you add.';
+  String get chooseAnotherAlbum =>
+      isThai ? 'เลือกอัลบั้มอื่น' : 'Choose another';
+  String get continueToReview => isThai ? 'ไปตรวจสลิป' : 'Review slips';
   String get syncAlbum =>
       isThai ? 'อ่านและซิงก์โฟลเดอร์' : 'Read and sync folder';
   String get syncingAlbum =>

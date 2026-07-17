@@ -121,7 +121,12 @@ class SlipTextRecognizer {
     final mergedDecision = resolveBestEffortSlipDecision(merged);
     if (mergedDecision?.type != TransactionType.internalTransfer ||
         fallbackDecision?.type == TransactionType.internalTransfer) {
-      return fallback;
+      return fallback.copyWith(
+        bankName: fallback.bankName ?? merged.bankName,
+        dateText: fallback.dateText ?? merged.dateText,
+        timeText: fallback.timeText ?? merged.timeText,
+        reference: fallback.reference ?? merged.reference,
+      );
     }
 
     return merged.copyWith(
@@ -298,6 +303,8 @@ class SlipTextRecognizer {
       score += 60;
     }
     if (result.reference?.isNotEmpty == true) score += 25;
+    if (result.dateText?.isNotEmpty == true) score += 20;
+    if (result.timeText?.isNotEmpty == true) score += 10;
     if (result.bankName?.isNotEmpty == true) score += 20;
     if (result.sender?.isNotEmpty == true) score += 15;
     if (result.recipient?.isNotEmpty == true) score += 15;

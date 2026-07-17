@@ -97,17 +97,14 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
       return;
     }
 
-    XFile? image;
+    List<XFile> images;
 
     final strings = context.strings;
     final messenger = ScaffoldMessenger.of(context);
 
     try {
       final picker = ImagePicker();
-      image = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 96,
-      );
+      images = await picker.pickMultiImage(imageQuality: 96);
     } on PlatformException {
       if (!context.mounted) {
         return;
@@ -119,11 +116,15 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
       return;
     }
 
-    if (image == null || !context.mounted) {
+    if (images.isEmpty || !context.mounted) {
       return;
     }
 
-    await _openSlipReview(context, imagePath: image.path);
+    await _openSlipReview(
+      context,
+      imagePath: images.first.path,
+      imagePaths: images.map((image) => image.path).toList(growable: false),
+    );
   }
 
   Future<void> _pickAlbumImages(BuildContext context) async {
@@ -136,12 +137,41 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
     final messenger = ScaffoldMessenger.of(context);
 
     try {
-      final imagePaths = await _galleryPermissionChannel
-          .invokeMethod<List<dynamic>>('pickImageFolder');
-      final images = (imagePaths ?? const [])
-          .whereType<String>()
-          .map((path) => XFile(path))
-          .toList();
+      final images = <XFile>[];
+      var chooseAnotherAlbum = true;
+      while (chooseAnotherAlbum && context.mounted) {
+        final imagePaths = await _galleryPermissionChannel
+            .invokeMethod<List<dynamic>>('pickImageFolder');
+        final albumImages = (imagePaths ?? const [])
+            .whereType<String>()
+            .map((path) => XFile(path))
+            .toList();
+        if (albumImages.isEmpty) break;
+        images.addAll(albumImages);
+
+        if (!context.mounted) return;
+        chooseAnotherAlbum =
+            await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                icon: const Icon(Icons.create_new_folder_rounded),
+                title: Text(strings.addAnotherAlbum),
+                content: Text(strings.addAnotherAlbumDescription),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: Text(strings.continueToReview),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    icon: const Icon(Icons.add_rounded),
+                    label: Text(strings.chooseAnotherAlbum),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+      }
       if (images.isEmpty || !context.mounted) {
         return;
       }

@@ -18,6 +18,92 @@ K PLUS
     expect(result.amount, 200);
   });
 
+  test('reads the new K PLUS top-up slips without choosing ids or fees', () {
+    const cases = <(String, String, String, double)>[
+      ('15 มี.ค. 69', '016074131303121885', '5,000.00', 5000),
+      ('17 มี.ค. 69', '016076061753532455', '3,000.00', 3000),
+      ('18 มี.ค. 69', '016077062242122112', '1,500.00', 1500),
+      ('19 มี.ค. 69', '016078055253919954', '4,000.00', 4000),
+    ];
+
+    for (final item in cases) {
+      final result = parser.parse('''
+K+
+เติมเงินสำเร็จ
+${item.$1} 13:13 น.
+นาย ชิษณุชา ส
+ธ.กสิกรไทย
+xxx-x-x0253-x
+YouTrip Powered by KBank
+66927755452
+KT19949455
+เลขที่รายการ:
+${item.$2}
+จำนวน:
+${item.$3} บาท
+ค่าธรรมเนียม:
+0.00 บาท
+''');
+
+      expect(result.bankName, 'K PLUS', reason: item.$2);
+      expect(result.amount, item.$4, reason: item.$2);
+      expect(result.dateText, item.$1, reason: item.$2);
+      expect(result.reference, item.$2, reason: item.$2);
+    }
+  });
+
+  test('reads the new K PLUS TrueMoney top-up amount', () {
+    final result = parser.parse('''
+K+
+เติมเงินสำเร็จ
+18 มิ.ย. 69 22:49 น.
+นาย ชิษณุชา ส
+ธ.กสิกรไทย
+xxx-x-x0253-x
+TrueMoney Wallet
+0927755452
+เลขที่รายการ:
+016169224906APM14938
+จำนวน:
+100.00 บาท
+ค่าธรรมเนียม:
+0.00 บาท
+''');
+
+    expect(result.bankName, 'K PLUS');
+    expect(result.amount, 100);
+    expect(result.dateText, '18 มิ.ย. 69');
+    expect(result.reference, '016169224906APM14938');
+  });
+
+  test('reads the new K PLUS bill amount instead of biller numbers', () {
+    final result = parser.parse('''
+K+
+จ่ายบิลสำเร็จ
+23 พ.ค. 69 11:18 น.
+นาย ชิษณุชา ส
+ธ.กสิกรไทย
+xxx-x-x0253-x
+องค์การขนส่งมวลชนกรุงเทพ
+00561210000000004-12
+00567052000000040040
+เลขที่รายการ:
+016143111803BPM12044
+จำนวน:
+8.00 บาท
+ค่าธรรมเนียม:
+0.00 บาท
+''');
+
+    final decision = resolveLocalSlipDecision(result);
+
+    expect(result.bankName, 'K PLUS');
+    expect(result.amount, 8);
+    expect(result.dateText, '23 พ.ค. 69');
+    expect(result.reference, '016143111803BPM12044');
+    expect(decision?.type, isNot(TransactionType.internalTransfer));
+  });
+
   test('uses the number near amount label as the slip amount', () {
     final result = parser.parse('''
 SCB EASY
@@ -39,6 +125,102 @@ SCB
 
     expect(result.dateText, '11 ก.ค. 2569');
     expect(result.timeText, '14:39');
+  });
+
+  test('detects ISO dates without treating the year suffix as the day', () {
+    final result = parser.parse('''
+Dime!
+Date 2026-07-16 18:57
+Transfer 1,578.25 THB
+''');
+
+    expect(result.dateText, '2026-07-16');
+    expect(result.timeText, '18:57');
+  });
+
+  test('uses PaoTang paid amount after subsidy instead of the deduction', () {
+    final rawText = '''
+เป๋าตัง
+16 ก.ค. 2569 12:22 น.
+ค่าสินค้า/บริการ
+50 บาท
+สิทธิไทยช่วยไทยพลัส
+-30 บาท
+จำนวนเงินที่ชำระ
+20 บาท
+''';
+
+    final result = parser.parse(rawText);
+    final candidates = AmountClassifier.instance
+        .extractCandidateContexts(rawText)
+        .map((context) => context.value)
+        .toList();
+
+    expect(result.amount, 20);
+    expect(candidates, [50, 20]);
+  });
+
+  test('uses PaoTang paid amount when OCR drops the subsidy minus sign', () {
+    final result = parser.parse('''
+เป๋าตัง
+ค่าสินค้า/บริการ 50 บาท
+สิทธิไทยช่วยไทยพลัส
+30 บาท
+จำนวนเงินที่ชำระ
+20 บาท
+''');
+
+    expect(result.amount, 20);
+  });
+
+  test('uses Dime transfer amount instead of its zero fee', () {
+    final result = parser.parse('''
+Dime!
+โอนเงิน
+1,578.25 บาท
+ค่าธรรมเนียม 0.00 บาท
+วันที่ 16 ก.ค. 2569 - 18:57 น.
+เลขที่สลิป DM260716115756000bybzjo
+''');
+
+    expect(result.amount, 1578.25);
+    expect(result.dateText, '16 ก.ค. 2569');
+    expect(result.bankName, 'Dime!');
+  });
+
+  test('uses the THB side of a Dime currency exchange', () {
+    final result = parser.parse('''
+Dime!
+แลกเปลี่ยน
+60.61 USD
+เป็น
+1,990.43 THB
+อัตราแลกเปลี่ยน 1 USD = 32.84 THB
+วันที่ส่งคำสั่ง 10 มิ.ย. 69 - 20:20 น.
+เลขที่คำสั่ง FX202606101320415835069
+''');
+
+    expect(result.amount, 1990.43);
+    expect(result.dateText, '10 มิ.ย. 69');
+  });
+
+  test('uses Dime stock order total instead of commission and coupon', () {
+    final result = parser.parse('''
+Dime!
+ซื้อ IVV
+59,999.83 THB
+มูลค่าหุ้น 59,999.83 THB
+ค่าคอมมิชชัน 90.10 THB
+คูปองส่วนลด
+รายการฟรีของเดือน -90.10 THB
+ภาษีมูลค่าเพิ่ม 7% (VAT) 0.00 THB
+อัตราแลกเปลี่ยน 1 USD = 32.68 THB
+จำนวนเงิน (USD) 1,835.98 USD
+วันที่ส่งคำสั่ง 27 พ.ค. 69 - 09:46 น.
+''');
+
+    expect(result.amount, 59999.83);
+    expect(result.dateText, '27 พ.ค. 69');
   });
 
   test(

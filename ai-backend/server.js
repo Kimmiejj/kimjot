@@ -144,29 +144,33 @@ app.post("/v1/recovery-key/email", recoveryRoute(async (request) => {
   const aad = escrowAssociatedData(uid, email, keyVersion, escrowId);
   const recoveryKey = decryptEscrow(escrow, RECOVERY_ESCROW_MASTER_KEY, aad);
   const windowId = Math.floor(Date.now() / RECOVERY_EMAIL_COOLDOWN_MS);
-  await axios.post(
-    "https://api.resend.com/emails",
-    {
-      from: RECOVERY_FROM_EMAIL,
-      to: [email],
-      subject: "Kimjod recovery key",
-      text: [
-        "You requested your Kimjod recovery key.",
-        "",
-        recoveryKey,
-        "",
-        "Keep this key private. If you did not request this email, sign in to Kimjod and change the recovery key.",
-      ].join("\n"),
-    },
-    {
-      headers: {
-        authorization: `Bearer ${RESEND_API_KEY}`,
-        "content-type": "application/json",
-        "idempotency-key": sha256(`${uid}|${escrowId}|${windowId}`),
+  try {
+    await axios.post(
+      "https://api.resend.com/emails",
+      {
+        from: RECOVERY_FROM_EMAIL,
+        to: [email],
+        subject: "Kimjod recovery key",
+        text: [
+          "You requested your Kimjod recovery key.",
+          "",
+          recoveryKey,
+          "",
+          "Keep this key private. If you did not request this email, sign in to Kimjod and change the recovery key.",
+        ].join("\n"),
       },
-      timeout: 10000,
-    },
-  );
+      {
+        headers: {
+          authorization: `Bearer ${RESEND_API_KEY}`,
+          "content-type": "application/json",
+          "idempotency-key": sha256(`${uid}|${escrowId}|${windowId}`),
+        },
+        timeout: 10000,
+      },
+    );
+  } catch (error) {
+    throw recoveryEmailProviderError(error);
+  }
   await writeFirestoreDocument(
     `recovery_key_escrow/${uid}`,
     request.firebaseToken,
@@ -536,6 +540,29 @@ function verifiedRecoveryIdentity(user) {
     });
   }
   return { uid: user.uid, email };
+}
+
+function recoveryEmailProviderError(error) {
+  const status = error.response?.status;
+  const providerMessage = String(
+    error.response?.data?.message || error.response?.data?.error || error.message || "",
+  );
+  if (
+    status === 403 &&
+    /own email|testing emails|verify(?: a)? domain/i.test(providerMessage)
+  ) {
+    return Object.assign(new Error(providerMessage), {
+      httpStatus: 503,
+      publicError: "recovery_sender_domain_not_verified",
+    });
+  }
+  if (status === 422) {
+    return Object.assign(new Error(providerMessage), {
+      httpStatus: 422,
+      publicError: "recovery_email_rejected",
+    });
+  }
+  return error;
 }
 
 function parseEscrowMasterKey(value) {
@@ -924,5 +951,6 @@ module.exports._test = {
   maskEmail,
   modelCandidates,
   parseEscrowMasterKey,
+  recoveryEmailProviderError,
   selectModel,
 };

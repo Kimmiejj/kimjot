@@ -34,6 +34,10 @@ caches financial analysis, and returns every AI result to the Kimjod UI.
 - `RECOVERY_FROM_EMAIL`: sender on a Resend-verified domain, for example
   `Kimjod <recovery@your-domain.example>`.
 
+The default `onboarding@resend.dev` sender is test-only and can deliver only to
+the email address that owns the Resend account. Production recovery email must
+use a verified custom domain in `RECOVERY_FROM_EMAIL`.
+
 Recovery routes require the three recovery variables above. They use the
 signed-in user's Firebase token for narrowly scoped Firestore REST access, so
 they do not require a long-lived Firebase Admin private key. Firestore stores

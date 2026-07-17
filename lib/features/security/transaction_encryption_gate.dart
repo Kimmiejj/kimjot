@@ -310,6 +310,16 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
           ? 'ยังไม่มีคีย์สำรองสำหรับบัญชีนี้ กรุณาติดต่อผู้ดูแลระบบ'
           : 'No recovery-key backup exists for this account.';
     }
+    if (code.contains('recovery_sender_domain_not_verified')) {
+      return isThai
+          ? 'ระบบอีเมลยังไม่ได้ยืนยันโดเมนผู้ส่ง จึงส่งได้เฉพาะอีเมลทดสอบ กรุณาติดต่อผู้ดูแลระบบ'
+          : 'The recovery email sender domain is not verified yet. Contact the administrator.';
+    }
+    if (code.contains('recovery_email_rejected')) {
+      return isThai
+          ? 'ผู้ให้บริการอีเมลปฏิเสธที่อยู่อีเมลนี้ กรุณาตรวจสอบอีเมลของบัญชีแล้วลองใหม่'
+          : 'The email provider rejected this address. Check the account email and try again.';
+    }
     return isThai
         ? 'ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่ภายหลัง'
         : 'Could not send the recovery email. Try again later.';
