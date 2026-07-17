@@ -2,10 +2,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../app/app_config.dart';
+import 'account_deletion_service.dart';
 import 'auth_service.dart';
 import 'auth_user.dart';
 
 class FirebaseAuthService implements AuthService {
+  FirebaseAuthService({AccountDeletionService? accountDeletionService})
+    : _accountDeletionService =
+          accountDeletionService ?? AccountDeletionService();
+
+  final AccountDeletionService _accountDeletionService;
   Future<void>? _googleSignInInitialization;
 
   @override
@@ -24,6 +30,23 @@ class FirebaseAuthService implements AuthService {
     );
 
     await FirebaseAuth.instance.signInWithCredential(credential);
+  }
+
+  @override
+  Future<void> deleteAccount() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw const AccountDeletionException('authentication_required');
+    }
+
+    await _ensureGoogleSignInInitialized();
+    final googleUser = await GoogleSignIn.instance.authenticate();
+    final googleAuth = googleUser.authentication;
+    final credential = GoogleAuthProvider.credential(
+      idToken: googleAuth.idToken,
+    );
+    await user.reauthenticateWithCredential(credential);
+    await _accountDeletionService.deleteAccount(user.uid);
   }
 
   @override

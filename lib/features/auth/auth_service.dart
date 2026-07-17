@@ -5,5 +5,7 @@ abstract class AuthService {
 
   Future<void> signInWithGoogle();
 
+  Future<void> deleteAccount();
+
   Future<void> signOut();
 }

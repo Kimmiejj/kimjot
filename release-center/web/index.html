@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Kimjod Release Center</title>
+    <meta name="description" content="Kimjod Control Room — realtime product, Firebase and Gemini operations dashboard">
+    <title>Kimjod Control Room</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -11,135 +12,181 @@
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-mark">K</span>
-          <span><strong>Kimjod</strong><small>Release Center</small></span>
+          <span><strong>Kimjod</strong><small>CONTROL ROOM</small></span>
         </div>
-        <nav aria-label="Main navigation">
-          <a class="nav-link active" href="#overview">Overview</a>
-          <a class="nav-link" href="#usage">Usage</a>
-          <a class="nav-link" href="#release">Release</a>
+        <nav aria-label="เมนูหลัก">
+          <a class="nav-link active" href="#overview"><span>01</span>Overview</a>
+          <a class="nav-link" href="#firebase"><span>02</span>Firebase</a>
+          <a class="nav-link" href="#gemini"><span>03</span>Gemini AI</a>
+          <a class="nav-link" href="#users"><span>04</span>Users</a>
+          <a class="nav-link" href="#release"><span>05</span>Releases</a>
         </nav>
         <div class="sidebar-note">
           <span class="status-dot"></span>
-          <div><strong>Local only</strong><small>127.0.0.1 - private dashboard</small></div>
+          <div><strong>Local & private</strong><small>ข้อมูลอยู่ในเครื่องนี้<br>รีเฟรชอัตโนมัติทุก 15 วินาที</small></div>
         </div>
       </aside>
 
       <main>
         <header class="topbar" id="overview">
           <div>
-            <p class="eyebrow">PRODUCT OPERATIONS</p>
-            <h1>Kimjod control room</h1>
-            <p class="subtitle">Monitor users, usage, versions, and publish Android updates from one local dashboard.</p>
+            <p class="eyebrow">PRODUCT OPERATIONS · <span id="todayLabel">TODAY</span></p>
+            <h1>Kimjod <span>control room</span></h1>
+            <p class="subtitle">ดูสุขภาพ Firebase, Gemini และพฤติกรรมผู้ใช้จากข้อมูลจริงในจอเดียว</p>
           </div>
           <div class="top-actions">
-            <span class="soft-pill" id="syncStatus">Syncing...</span>
-            <button class="ghost-button" id="refreshButton" type="button">Refresh</button>
+            <span class="live-pill"><i></i>LIVE</span>
+            <span class="soft-pill" id="syncStatus">กำลังเชื่อมต่อ...</span>
+            <button class="ghost-button" id="refreshButton" type="button">รีเฟรช</button>
             <span class="project-pill"><i></i><span id="projectLabel">kimjot</span></span>
           </div>
         </header>
 
         <section class="alert hidden" id="pageAlert" role="alert"></section>
 
-        <section class="kpi-grid" aria-label="Key metrics">
+        <section class="kpi-grid" aria-label="ตัวชี้วัดสำคัญ">
           <article class="kpi-card mint">
-            <div class="kpi-icon">U</div>
-            <p>Total users</p>
-            <strong id="totalUsers">-</strong>
-            <small id="newUsersToday">Waiting for data</small>
+            <div class="kpi-top"><span class="kpi-icon live-icon"></span><span class="trend neutral">15 นาที</span></div>
+            <p>ผู้ใช้ออนไลน์ตอนนี้</p>
+            <strong id="onlineNow">—</strong>
+            <small id="onlineContext">รอ heartbeat ล่าสุด</small>
           </article>
           <article class="kpi-card blue">
-            <div class="kpi-icon">O</div>
-            <p>Online in last 15 minutes</p>
-            <strong id="onlineNow">-</strong>
-            <small>Estimated from app heartbeat</small>
+            <div class="kpi-top"><span class="kpi-icon">U</span><span class="trend" id="newUserTrend">วันนี้</span></div>
+            <p>ผู้ใช้ทั้งหมด</p>
+            <strong id="totalUsers">—</strong>
+            <small id="newUsersToday">รอข้อมูล</small>
           </article>
           <article class="kpi-card violet">
-            <div class="kpi-icon">7</div>
-            <p>Active 7 days</p>
-            <strong id="active7Days">-</strong>
-            <small id="activeToday">Waiting for data</small>
+            <div class="kpi-top"><span class="kpi-icon">AI</span><span class="trend neutral">วันนี้</span></div>
+            <p>Gemini requests</p>
+            <strong id="aiRequestsToday">—</strong>
+            <small id="aiRequestContext">รอข้อมูล AI</small>
           </article>
-          <article class="kpi-card coral">
-            <div class="kpi-icon">S</div>
-            <p>Sessions 30 days</p>
-            <strong id="sessions30Days">-</strong>
-            <small id="active30Days">Waiting for data</small>
+          <article class="kpi-card amber">
+            <div class="kpi-top"><span class="kpi-icon">DB</span><span class="trend neutral">วันนี้</span></div>
+            <p>ผู้ใช้ที่ส่ง telemetry</p>
+            <strong id="firebaseToday">—</strong>
+            <small id="firebaseContext">รอข้อมูล Firestore</small>
           </article>
         </section>
 
-        <section class="dashboard-grid" id="usage">
-          <article class="panel wide">
+        <section class="system-grid">
+          <article class="panel system-panel" id="firebase">
             <div class="panel-heading">
-              <div><p class="eyebrow">ENGAGEMENT</p><h2>Daily active users</h2></div>
-              <span class="soft-pill">Last 30 days</span>
+              <div class="title-with-icon"><span class="service-icon firebase">F</span><div><p class="eyebrow">INFRASTRUCTURE</p><h2>Firebase pulse</h2></div></div>
+              <span class="health-pill good" id="firebaseHealth"><i></i>Connected</span>
             </div>
-            <div class="line-chart" id="dailyChart" aria-label="Daily active users chart"></div>
+            <div class="metric-grid">
+              <div><span>Document reads · 24h</span><strong id="firebaseReads">—</strong></div>
+              <div><span>Document writes · 24h</span><strong id="firebaseWrites">—</strong></div>
+              <div><span>Data + index storage</span><strong id="firebaseStorage">—</strong></div>
+              <div><span>Realtime connections</span><strong id="firebaseConnections">—</strong></div>
+            </div>
+            <div class="freshness-block">
+              <div><span>Data freshness</span><strong id="firebaseFreshness">รอข้อมูล</strong></div>
+              <div class="meter"><i id="firebaseFreshnessBar"></i></div>
+            </div>
+            <p class="scope-note" id="firebaseScope">กำลังอ่าน Cloud Monitoring และ operational telemetry</p>
           </article>
 
-          <article class="panel">
+          <article class="panel system-panel" id="gemini">
             <div class="panel-heading">
-              <div><p class="eyebrow">FEATURES</p><h2>Feature usage</h2></div>
+              <div class="title-with-icon"><span class="service-icon gemini">✦</span><div><p class="eyebrow">INTELLIGENCE</p><h2>Gemini observability</h2></div></div>
+              <span class="health-pill neutral" id="aiHealth"><i></i>Waiting</span>
             </div>
+            <div class="metric-grid">
+              <div><span>Requests · 30d</span><strong id="aiRequests">—</strong></div>
+              <div><span>Success rate</span><strong id="aiSuccessRate">—</strong></div>
+              <div><span>Avg latency</span><strong id="aiLatency">—</strong></div>
+              <div><span>Total tokens</span><strong id="aiTokens">—</strong></div>
+            </div>
+            <div class="ai-breakdown">
+              <div><span>Models</span><div class="chips" id="aiModels"><em>ยังไม่มีข้อมูล</em></div></div>
+              <div><span>Top use cases</span><div class="chips" id="aiRoutes"><em>ยังไม่มีข้อมูล</em></div></div>
+            </div>
+            <p class="scope-note" id="aiCoverage">Token และ latency จะเริ่มวัดหลัง deploy AI backend รุ่นล่าสุด</p>
+          </article>
+        </section>
+
+        <section class="analytics-grid" id="users">
+          <article class="panel wide-chart">
+            <div class="panel-heading">
+              <div><p class="eyebrow">USER ACTIVITY</p><h2>จังหวะการใช้งานรายวัน</h2></div>
+              <div class="chart-legend"><span><i class="users-key"></i>Active users</span><span><i class="ai-key"></i>AI requests</span></div>
+            </div>
+            <div class="line-chart" id="dailyChart" aria-label="กราฟผู้ใช้งานและ AI request รายวัน"></div>
+            <div class="engagement-strip">
+              <div><span>Active today</span><strong id="activeToday">—</strong></div>
+              <div><span>Active 7 days</span><strong id="active7Days">—</strong></div>
+              <div><span>Active 30 days</span><strong id="active30Days">—</strong></div>
+              <div><span>Sessions · 30d</span><strong id="sessions30Days">—</strong></div>
+            </div>
+          </article>
+
+          <article class="panel insight-panel">
+            <div class="panel-heading"><div><p class="eyebrow">WHAT NEEDS ATTENTION</p><h2>สิ่งที่ควรรู้ตอนนี้</h2></div><span class="spark">✦</span></div>
+            <div class="insight-list" id="insightList"><p class="empty">กำลังวิเคราะห์ข้อมูล...</p></div>
+          </article>
+        </section>
+
+        <section class="detail-grid">
+          <article class="panel compact-panel">
+            <div class="panel-heading"><div><p class="eyebrow">FEATURES</p><h2>ฟีเจอร์ที่ถูกใช้งาน</h2></div></div>
             <div class="feature-layout">
               <div class="donut" id="featureDonut"><span><strong>0</strong><small>events</small></span></div>
               <div class="legend" id="featureLegend"></div>
             </div>
           </article>
-
-          <article class="panel">
-            <div class="panel-heading">
-              <div><p class="eyebrow">ADOPTION</p><h2>Versions in use</h2></div>
-            </div>
+          <article class="panel compact-panel">
+            <div class="panel-heading"><div><p class="eyebrow">ADOPTION</p><h2>เวอร์ชันที่ยังออนไลน์</h2></div></div>
             <div class="bar-list" id="versionBars"></div>
+          </article>
+          <article class="panel compact-panel live-panel">
+            <div class="panel-heading"><div><p class="eyebrow">LIVE ACTIVITY</p><h2>Heartbeat ล่าสุด</h2></div><span class="pulse-dot"></span></div>
+            <div class="activity-list" id="liveUsers"><p class="empty">ยังไม่มี heartbeat</p></div>
           </article>
         </section>
 
         <section class="release-grid" id="release">
           <article class="panel release-card">
             <div class="panel-heading">
-              <div><p class="eyebrow">SAFE RELEASE</p><h2>Build, then Send</h2></div>
-              <span class="version-badge" id="currentVersion">v-</span>
+              <div><p class="eyebrow">SAFE RELEASE</p><h2>Build แล้วค่อยส่ง</h2></div>
+              <span class="version-badge" id="currentVersion">v—</span>
             </div>
-            <p class="release-explain">Build first without affecting users. Press Send only after the APK is ready; that uploads it and requires every lower version to update.</p>
+            <p class="release-explain">Build APK ก่อนโดยยังไม่กระทบผู้ใช้ เมื่อพร้อมแล้วจึงกดส่งเพื่ออัปโหลดและบังคับเวอร์ชันที่ต่ำกว่าให้อัปเดต</p>
             <form id="releaseForm">
               <div class="form-row">
                 <label>Version name<input id="versionName" name="versionName" inputmode="decimal" required pattern="[0-9]+\.[0-9]+\.[0-9]+"></label>
                 <label>Version code<input id="versionCode" name="versionCode" type="number" min="1" required></label>
               </div>
-              <label>Update message (Thai)<textarea id="messageTh" name="messageTh" rows="2">มีเวอร์ชันใหม่ กรุณาอัปเดตก่อนใช้งาน</textarea></label>
+              <label>ข้อความอัปเดต (ไทย)<textarea id="messageTh" name="messageTh" rows="2">มีเวอร์ชันใหม่ กรุณาอัปเดตก่อนใช้งาน</textarea></label>
               <label>Update message (English)<textarea id="messageEn" name="messageEn" rows="2">A new version is required. Please update to continue.</textarea></label>
               <div class="release-actions">
-                <button class="ghost-button build-button" id="releaseButton" type="submit">
-                  <span id="releaseButtonText">Build APK</span>
-                </button>
-                <button class="primary-button" id="publishButton" type="button" disabled>
-                  <span class="button-icon">Up</span><span id="publishButtonText">ส่งอัปเดตให้ผู้ใช้</span>
-                </button>
+                <button class="ghost-button build-button" id="releaseButton" type="submit"><span id="releaseButtonText">Build APK</span></button>
+                <button class="primary-button" id="publishButton" type="button" disabled><span class="button-icon">↑</span><span id="publishButtonText">ส่งอัปเดตให้ผู้ใช้</span></button>
               </div>
               <p class="stage-note" id="stageStatus">ยังไม่มี APK ที่พร้อมส่ง</p>
-              <p class="danger-note">เมื่อกดส่ง ผู้ใช้ที่มี version code ต่ำกว่านี้จะถูกบังคับให้อัปเดตก่อนใช้งาน</p>
+              <p class="danger-note">เมื่อกดส่ง ผู้ใช้ที่มี version code ต่ำกว่านี้จะต้องอัปเดตก่อนใช้งาน</p>
             </form>
           </article>
 
           <article class="panel release-status">
             <div class="panel-heading">
-              <div><p class="eyebrow">PIPELINE</p><h2>Release status</h2></div>
-              <span class="job-state idle" id="jobState">Ready</span>
+              <div><p class="eyebrow">PIPELINE</p><h2>สถานะ Release</h2></div>
+              <span class="job-state idle" id="jobState">พร้อม</span>
             </div>
-            <div class="pipeline">
-              <div class="pipeline-progress"><i id="pipelineProgress"></i></div>
-              <strong id="jobStep">No release is running</strong>
-            </div>
-            <div class="terminal" id="releaseLogs"><p>Release logs will appear here.</p></div>
+            <div class="pipeline"><div class="pipeline-progress"><i id="pipelineProgress"></i></div><strong id="jobStep">ยังไม่มี release ที่กำลังทำงาน</strong></div>
+            <div class="terminal" id="releaseLogs"><p>Release logs จะแสดงที่นี่</p></div>
           </article>
         </section>
 
         <section class="panel history-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">HISTORY</p><h2>Recent releases</h2></div>
-            <a id="hostingLink" href="https://github.com/Kimmiejj/kimjot/releases" target="_blank" rel="noreferrer">Open GitHub Releases</a>
+            <div><p class="eyebrow">HISTORY</p><h2>Release ล่าสุด</h2></div>
+            <a id="hostingLink" href="https://github.com/Kimmiejj/kimjot/releases" target="_blank" rel="noreferrer">เปิด GitHub Releases ↗</a>
           </div>
-          <div class="release-table" id="releaseHistory"><p class="empty">No releases yet</p></div>
+          <div class="release-table" id="releaseHistory"><p class="empty">ยังไม่มี release</p></div>
         </section>
       </main>
     </div>

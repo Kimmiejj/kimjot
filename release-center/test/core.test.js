@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  aggregateAiUsage,
   aggregateUsage,
   decodeFirestoreFields,
   githubReleaseDownloadUrl,
@@ -13,6 +14,37 @@ const {
   replacePubspecVersion,
   splitReleaseRetention,
 } = require('../lib/core');
+
+test('aggregates Gemini requests, tokens, reliability and dimensions', () => {
+  const result = aggregateAiUsage(
+    ['2026-07-16', '2026-07-17'],
+    [
+      {
+        uid: 'a', day: '2026-07-16', count: 2, successCount: 2,
+        inputTokens: 120, outputTokens: 30, totalLatencyMs: 800, latencySamples: 2,
+        models: { 'gemini-fast': 2 }, routes: { chat: 2 },
+      },
+      {
+        uid: 'b', day: '2026-07-17', count: 2, successCount: 1, failureCount: 1,
+        inputTokens: 90, outputTokens: 20, totalLatencyMs: 600, latencySamples: 1,
+        models: { 'gemini-deep': 1 }, routes: { analysis: 2 },
+        lastRequestAt: '2026-07-17T12:00:00Z',
+      },
+      { uid: 'ignored', day: '2026-07-15', count: 99 },
+    ],
+  );
+
+  assert.equal(result.summary.requests, 4);
+  assert.equal(result.summary.requestsToday, 2);
+  assert.equal(result.summary.activeUsers, 2);
+  assert.equal(result.summary.tokens, 260);
+  assert.equal(result.summary.successRate, 75);
+  assert.equal(result.summary.avgLatencyMs, 1400 / 3);
+  assert.deepEqual(result.models, [
+    { name: 'gemini-fast', count: 2 },
+    { name: 'gemini-deep', count: 1 },
+  ]);
+});
 
 test('parses and increments Flutter version', () => {
   const current = parsePubspecVersion('name: kimjod\nversion: 1.1.0+2\n');

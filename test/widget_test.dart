@@ -10,6 +10,7 @@ import 'package:kimjot/features/auth/auth_user.dart';
 import 'package:kimjot/features/auth/login_screen.dart';
 import 'package:kimjot/features/scan/album_sync_review_screen.dart';
 import 'package:kimjot/features/scan/slip_scan_result.dart';
+import 'package:kimjot/features/settings/settings_screen.dart';
 import 'package:kimjot/features/transactions/create_transaction_input.dart';
 import 'package:kimjot/features/transactions/home_summary.dart';
 import 'package:kimjot/features/transactions/manual_transaction_sheet.dart';
@@ -77,6 +78,42 @@ void main() {
     expect(find.text('On-device'), findsOneWidget);
     expect(find.text('No slip image'), findsOneWidget);
 
+    authService.dispose();
+  });
+
+  testWidgets('settings confirms before deleting the account', (
+    WidgetTester tester,
+  ) async {
+    final authService = _FakeAuthService();
+    final transactionRepository = _FakeTransactionRepository();
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        SettingsScreen(
+          user: const AuthUser(
+            uid: 'test-user',
+            displayName: 'Test User',
+            email: 'test@example.com',
+          ),
+          authService: authService,
+          transactionRepository: transactionRepository,
+        ),
+      ),
+    );
+
+    final deleteButton = find.byKey(const ValueKey('delete-account-button'));
+    await tester.ensureVisible(deleteButton);
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+
+    expect(authService.deleteAccountRequests, 0);
+    expect(find.text('Delete account permanently?'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(authService.deleteAccountRequests, 1);
+    expect(authService.signOutRequests, 1);
     authService.dispose();
   });
 
@@ -429,6 +466,8 @@ Widget _buildTestApp(Widget home, {Key? key}) {
 
 class _FakeAuthService implements AuthService {
   final _authStateController = StreamController<AuthUser?>();
+  int deleteAccountRequests = 0;
+  int signOutRequests = 0;
 
   @override
   Stream<AuthUser?> authStateChanges() {
@@ -447,7 +486,13 @@ class _FakeAuthService implements AuthService {
   }
 
   @override
+  Future<void> deleteAccount() async {
+    deleteAccountRequests += 1;
+  }
+
+  @override
   Future<void> signOut() async {
+    signOutRequests += 1;
     emitSignedOut();
   }
 

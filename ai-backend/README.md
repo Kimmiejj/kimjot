@@ -29,14 +29,11 @@ caches financial analysis, and returns every AI result to the Kimjod UI.
   64 hexadecimal characters. It encrypts recovery keys with AES-256-GCM before
   Firestore storage. Generate it once, back it up outside the repository, and
   do not rotate it without first migrating existing escrow records.
-- `RESEND_API_KEY`: server-only Resend API key used only by the recovery-email
-  route.
-- `RECOVERY_FROM_EMAIL`: sender on a Resend-verified domain, for example
-  `Kimjod <recovery@your-domain.example>`.
-
-The default `onboarding@resend.dev` sender is test-only and can deliver only to
-the email address that owns the Resend account. Production recovery email must
-use a verified custom domain in `RECOVERY_FROM_EMAIL`.
+- `RECOVERY_SMTP_USER`: Gmail account used to send recovery email. The Kimjod
+  deployment uses `kiminosystem@gmail.com`.
+- `RECOVERY_SMTP_APP_PASSWORD`: 16-character Google App Password for the
+  sender account. Enable Google 2-Step Verification before generating it, and
+  store it only as a Vercel environment secret.
 
 Recovery routes require the three recovery variables above. They use the
 signed-in user's Firebase token for narrowly scoped Firestore REST access, so

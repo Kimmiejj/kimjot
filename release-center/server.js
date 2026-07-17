@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const {
+  aggregateAiUsage,
   aggregateUsage,
   dateKeys,
   decodeFirestoreFields,
@@ -42,6 +43,7 @@ const restoredState = readReleaseState();
 let activeJob = restoredState.release || null;
 let stagedRelease = restoredState.stagedRelease || null;
 let cachedToken = null;
+let cachedMonitoring = null;
 
 if (activeJob?.state === 'running') {
   activeJob.state = 'failed';
@@ -214,8 +216,10 @@ async function dashboardPayload(days = 30) {
   let dayResults = [];
   let releases = [];
   let config = {};
+  let aiUsageDocuments = [];
+  let monitoring = { available: false };
   try {
-    [authUsersResult, presence, dayResults, releases, config] = await Promise.all([
+    [authUsersResult, presence, dayResults, releases, config, aiUsageDocuments, monitoring] = await Promise.all([
       listAuthUsers(token).catch((error) => {
         warnings.push(`Auth users unavailable: ${error.message}`);
         return [];
@@ -224,6 +228,8 @@ async function dashboardPayload(days = 30) {
       Promise.all(keys.map(async (day) => [day, await listFirestoreDocuments(`usage_days/${day}`, 'daily_users', token)])),
       listFirestoreDocuments('', 'app_releases', token, 30),
       getFirestoreDocument('app_config/android', token).catch(() => ({})),
+      listFirestoreDocuments('', 'ai_usage', token),
+      cloudMonitoringSnapshot(token),
     ]);
   } catch (error) {
     const dashboard = aggregateUsage(keys, {}, [], [], {});
@@ -246,8 +252,134 @@ async function dashboardPayload(days = 30) {
     return Number.isFinite(lastSeen) && lastSeen >= onlineThreshold;
   }).length;
   dashboard.summary.totalUsers = Math.max(dashboard.summary.totalUsers, presence.length, dashboard.summary.active30Days);
+  dashboard.firebase = firebaseUsageSnapshot(keys, byDay, presence, dashboard.summary.totalUsers, releases.length, aiUsageDocuments.length, monitoring);
+  dashboard.ai = aggregateAiUsage(keys, aiUsageDocuments);
+  dashboard.liveUsers = presence
+    .map((item) => ({
+      user: anonymousUserLabel(item.uid || item.id),
+      versionName: item.versionName || 'unknown',
+      platform: item.platform || 'unknown',
+      lastSeenAt: item.lastSeenAt || null,
+    }))
+    .filter((item) => item.lastSeenAt)
+    .sort((left, right) => String(right.lastSeenAt).localeCompare(String(left.lastSeenAt)))
+    .slice(0, 8);
+  dashboard.insights = buildInsights(dashboard);
   dashboard.warnings = warnings;
   return dashboard;
+}
+
+function firebaseUsageSnapshot(days, documentsByDay, presence, authUsers, releases, aiDocuments, monitoring) {
+  const dailyDocuments = days.reduce((total, day) => total + (documentsByDay[day] || []).length, 0);
+  const todayDocuments = (documentsByDay[days.at(-1)] || []).length;
+  const lastHeartbeatAt = presence.reduce((latest, item) => {
+    const parsed = Date.parse(item.lastSeenAt || '');
+    return Number.isFinite(parsed) && parsed > latest ? parsed : latest;
+  }, 0);
+  return {
+    authUsers,
+    presenceDocuments: presence.length,
+    dailyDocuments,
+    todayDocuments,
+    documentsScanned: presence.length + dailyDocuments + releases + aiDocuments + 1,
+    lastHeartbeatAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
+    source: 'Firestore + Firebase Auth',
+    cloud: monitoring,
+  };
+}
+
+async function cloudMonitoringSnapshot(token) {
+  if (cachedMonitoring && cachedMonitoring.expiresAt > Date.now()) return cachedMonitoring.value;
+  const definitions = {
+    reads24h: ['firestore.googleapis.com/document/read_ops_count', 'sum'],
+    writes24h: ['firestore.googleapis.com/document/write_ops_count', 'sum'],
+    deletes24h: ['firestore.googleapis.com/document/delete_ops_count', 'sum'],
+    storageBytes: ['firestore.googleapis.com/storage/data_and_index_storage_bytes', 'latest'],
+    activeConnections: ['firestore.googleapis.com/network/active_connections', 'latest'],
+  };
+  const entries = await Promise.all(Object.entries(definitions).map(async ([key, [metric, mode]]) => {
+    try {
+      return [key, await cloudMonitoringMetric(metric, mode, token)];
+    } catch (_) {
+      return [key, null];
+    }
+  }));
+  const values = Object.fromEntries(entries);
+  const available = entries.some(([, value]) => value !== null);
+  const result = { available, ...values, sampledAt: new Date().toISOString() };
+  cachedMonitoring = { value: result, expiresAt: Date.now() + (available ? 60_000 : 120_000) };
+  return result;
+}
+
+async function cloudMonitoringMetric(metricType, mode, token) {
+  const end = new Date();
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+  const url = new URL(`https://monitoring.googleapis.com/v3/projects/${encodeURIComponent(PROJECT_ID)}/timeSeries`);
+  url.searchParams.set('filter', `metric.type = "${metricType}"`);
+  url.searchParams.set('interval.startTime', start.toISOString());
+  url.searchParams.set('interval.endTime', end.toISOString());
+  url.searchParams.set('view', 'FULL');
+  url.searchParams.set('pageSize', '200');
+  const result = await googleJson(url.toString(), token);
+  const series = result.timeSeries || [];
+  if (!series.length) return 0;
+  if (mode === 'latest') {
+    return series.reduce((total, item) => total + monitoringPointValue(item.points?.[0]), 0);
+  }
+  return series.reduce(
+    (total, item) => total + (item.points || []).reduce((sum, point) => sum + monitoringPointValue(point), 0),
+    0,
+  );
+}
+
+function monitoringPointValue(point) {
+  const value = point?.value || {};
+  return Number(value.int64Value ?? value.doubleValue ?? 0) || 0;
+}
+
+function anonymousUserLabel(uid) {
+  const suffix = crypto.createHash('sha256').update(String(uid || 'unknown')).digest('hex').slice(0, 5).toUpperCase();
+  return `User ${suffix}`;
+}
+
+function buildInsights(dashboard) {
+  const insights = [];
+  const summary = dashboard.summary;
+  const ai = dashboard.ai.summary;
+  const activeRate = summary.totalUsers ? summary.active7Days / summary.totalUsers * 100 : 0;
+  insights.push({
+    tone: activeRate >= 25 ? 'good' : 'watch',
+    title: `${activeRate.toFixed(0)}% ของผู้ใช้กลับมาใน 7 วัน`,
+    detail: `${summary.active7Days} จาก ${summary.totalUsers} บัญชีที่ลงทะเบียน`,
+  });
+  if (ai.requests > 0 && ai.observabilityCoverage < 90) {
+    insights.push({
+      tone: 'watch',
+      title: 'AI telemetry ยังเก็บรายละเอียดไม่ครบ',
+      detail: `วัด latency และ token ได้ ${ai.observabilityCoverage.toFixed(0)}% ของ request ในช่วงนี้ ระบบจะเริ่มครบหลัง deploy backend รุ่นนี้`,
+    });
+  } else if (ai.measuredRequests > 0) {
+    insights.push({
+      tone: ai.successRate >= 95 ? 'good' : 'danger',
+      title: `Gemini สำเร็จ ${ai.successRate.toFixed(1)}%`,
+      detail: `${ai.failures} request ล้มเหลว · latency เฉลี่ย ${Math.round(ai.avgLatencyMs || 0)} ms`,
+    });
+  } else {
+    insights.push({
+      tone: 'neutral',
+      title: 'ยังไม่มี Gemini request ที่วัดผลได้',
+      detail: 'ตัวเลข token, latency และ success rate จะเริ่มแสดงหลังมีการเรียก AI backend',
+    });
+  }
+  const topVersion = dashboard.versions[0];
+  if (dashboard.versions.length > 1 && topVersion) {
+    insights.push({
+      tone: 'neutral',
+      title: `เวอร์ชันหลักคือ v${topVersion.name}`,
+      detail: `พบ ${dashboard.versions.length} เวอร์ชันที่ยังมีการใช้งานในช่วงนี้`,
+    });
+  }
+  return insights.slice(0, 4);
 }
 
 async function firebaseAccessToken() {

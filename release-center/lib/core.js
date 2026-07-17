@@ -192,6 +192,97 @@ function aggregateUsage(days, documentsByDay, users = [], releases = [], config 
   };
 }
 
+function aggregateAiUsage(days, documents = []) {
+  const includedDays = new Set(days);
+  const dailyByDay = Object.fromEntries(days.map((day) => [day, {
+    day,
+    requests: 0,
+    successes: 0,
+    failures: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  }]));
+  const users = new Set();
+  const modelCounts = {};
+  const routeCounts = {};
+  let requests = 0;
+  let successes = 0;
+  let failures = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let latencyTotalMs = 0;
+  let latencySamples = 0;
+  let lastRequestAt = null;
+
+  for (const document of documents) {
+    if (!includedDays.has(document.day)) continue;
+    const daily = dailyByDay[document.day];
+    const count = numeric(document.count);
+    const successCount = numeric(document.successCount);
+    const failureCount = numeric(document.failureCount);
+    const documentInputTokens = numeric(document.inputTokens);
+    const documentOutputTokens = numeric(document.outputTokens);
+    const documentLatencyMs = numeric(document.totalLatencyMs);
+    const documentLatencySamples = numeric(document.latencySamples);
+
+    requests += count;
+    successes += successCount;
+    failures += failureCount;
+    inputTokens += documentInputTokens;
+    outputTokens += documentOutputTokens;
+    latencyTotalMs += documentLatencyMs;
+    latencySamples += documentLatencySamples;
+    daily.requests += count;
+    daily.successes += successCount;
+    daily.failures += failureCount;
+    daily.inputTokens += documentInputTokens;
+    daily.outputTokens += documentOutputTokens;
+    if (document.uid) users.add(document.uid);
+    mergeCounts(modelCounts, document.models);
+    mergeCounts(routeCounts, document.routes);
+
+    const requestTime = Date.parse(document.lastRequestAt || document.updatedAt || '');
+    if (Number.isFinite(requestTime) && (!lastRequestAt || requestTime > Date.parse(lastRequestAt))) {
+      lastRequestAt = new Date(requestTime).toISOString();
+    }
+  }
+
+  const measuredRequests = successes + failures;
+  const today = dailyByDay[days.at(-1)] || { requests: 0, inputTokens: 0, outputTokens: 0 };
+  return {
+    summary: {
+      requests,
+      requestsToday: today.requests,
+      activeUsers: users.size,
+      successes,
+      failures,
+      successRate: measuredRequests ? successes / measuredRequests * 100 : null,
+      avgLatencyMs: latencySamples ? latencyTotalMs / latencySamples : null,
+      inputTokens,
+      outputTokens,
+      tokens: inputTokens + outputTokens,
+      measuredRequests,
+      observabilityCoverage: requests ? Math.min(100, measuredRequests / requests * 100) : 0,
+      lastRequestAt,
+    },
+    daily: Object.values(dailyByDay),
+    models: sortCounts(modelCounts),
+    routes: sortCounts(routeCounts),
+  };
+}
+
+function mergeCounts(target, values) {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return;
+  for (const [key, value] of Object.entries(values)) {
+    target[key] = (target[key] || 0) + numeric(value);
+  }
+}
+
+function numeric(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function sortCounts(counts) {
   return Object.entries(counts)
     .map(([name, count]) => ({ name, count }))
@@ -199,6 +290,7 @@ function sortCounts(counts) {
 }
 
 module.exports = {
+  aggregateAiUsage,
   aggregateUsage,
   dateKeys,
   decodeFirestoreFields,

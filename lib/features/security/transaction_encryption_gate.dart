@@ -315,6 +315,11 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
           ? 'ระบบอีเมลยังไม่ได้ยืนยันโดเมนผู้ส่ง จึงส่งได้เฉพาะอีเมลทดสอบ กรุณาติดต่อผู้ดูแลระบบ'
           : 'The recovery email sender domain is not verified yet. Contact the administrator.';
     }
+    if (code.contains('recovery_email_auth_failed')) {
+      return isThai
+          ? 'ระบบส่งอีเมลเข้าสู่บัญชีผู้ส่งไม่ได้ กรุณาติดต่อผู้ดูแลระบบ'
+          : 'The recovery email account could not sign in. Contact the administrator.';
+    }
     if (code.contains('recovery_email_rejected')) {
       return isThai
           ? 'ผู้ให้บริการอีเมลปฏิเสธที่อยู่อีเมลนี้ กรุณาตรวจสอบอีเมลของบัญชีแล้วลองใหม่'

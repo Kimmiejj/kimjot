@@ -5,6 +5,7 @@ import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
 import '../../shared/widgets/responsive_layout.dart';
 import '../ai/ai_settings_screen.dart';
+import '../auth/account_deletion_service.dart';
 import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
 import '../security/change_recovery_key_screen.dart';
@@ -126,6 +127,29 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            key: const ValueKey('delete-account-button'),
+            onPressed: () => _deleteAccount(context),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(58),
+              foregroundColor: const Color(0xFFB42318),
+              backgroundColor: const Color(0xFFFFF4F2),
+              side: const BorderSide(color: Color(0x55E6453D)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(21),
+              ),
+            ),
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: Text(
+              strings.isThai ? 'ลบบัญชี' : 'Delete account',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -143,6 +167,94 @@ class SettingsScreen extends StatelessWidget {
     }
 
     Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  Future<void> _deleteAccount(BuildContext context) async {
+    final strings = context.strings;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => KimjodDialog(
+        title: strings.isThai ? 'ลบบัญชีถาวร?' : 'Delete account permanently?',
+        icon: Icons.warning_amber_rounded,
+        message: strings.isThai
+            ? 'ธุรกรรม การตั้งค่าความปลอดภัย Recovery key ข้อมูลการใช้งาน และบัญชี Firebase จะถูกลบทั้งหมดและกู้คืนไม่ได้ ระบบจะให้เลือกบัญชี Google อีกครั้งเพื่อยืนยันตัวตน'
+            : 'Transactions, security settings, recovery keys, usage data, and your Firebase account will be permanently deleted. You will select your Google account again to verify your identity.',
+        actions: [
+          KimjodDialogAction(
+            label: strings.isThai ? 'ยกเลิก' : 'Cancel',
+            icon: Icons.close_rounded,
+            onPressed: () => Navigator.pop(dialogContext, false),
+          ),
+          KimjodDialogAction(
+            label: strings.isThai ? 'ลบบัญชี' : 'Delete',
+            icon: Icons.delete_forever_outlined,
+            isPrimary: true,
+            isDestructive: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final loadingFuture = showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Dialog(
+          backgroundColor: Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                ),
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Text(
+                    strings.isThai
+                        ? 'กำลังลบบัญชีและข้อมูลทั้งหมด…'
+                        : 'Deleting your account and data…',
+                    style: _rowTitleStyle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await authService.deleteAccount();
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      await loadingFuture;
+      await authService.signOut();
+    } catch (error) {
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      await loadingFuture;
+      if (!context.mounted) return;
+      final message = switch (error) {
+        AccountDeletionException(code: 'recent_login_required') =>
+          strings.isThai
+              ? 'กรุณายืนยันบัญชี Google แล้วลองใหม่อีกครั้ง'
+              : 'Please verify your Google account and try again.',
+        _ =>
+          strings.isThai
+              ? 'การลบบัญชียังไม่เสร็จสมบูรณ์ กรุณาลองใหม่อีกครั้ง'
+              : 'Account deletion did not complete. Please try again.',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 }
 

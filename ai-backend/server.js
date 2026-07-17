@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const express = require("express");
 const axios = require("axios");
 const admin = require("firebase-admin");
+const nodemailer = require("nodemailer");
 require("dotenv").config();
 
 const app = express();
@@ -23,8 +24,10 @@ const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 const RECOVERY_ESCROW_MASTER_KEY = parseEscrowMasterKey(
   process.env.RECOVERY_ESCROW_MASTER_KEY,
 );
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const RECOVERY_FROM_EMAIL = process.env.RECOVERY_FROM_EMAIL;
+const RECOVERY_SMTP_USER = String(process.env.RECOVERY_SMTP_USER || "").trim();
+const RECOVERY_SMTP_APP_PASSWORD = String(
+  process.env.RECOVERY_SMTP_APP_PASSWORD || "",
+).replace(/\s/g, "");
 const RECOVERY_EMAIL_COOLDOWN_MS = 5 * 60 * 1000;
 const DAILY_LIMIT = Number.parseInt(process.env.AI_DAILY_LIMIT || "300", 10);
 const ALLOWED_EMAILS = new Set(
@@ -42,11 +45,20 @@ initializeFirebase();
 const db = FIREBASE_SERVICE_ACCOUNT_JSON ? admin.firestore() : null;
 const localUsage = new Map();
 const modelHealth = new Map();
+const recoveryEmailTransport = RECOVERY_SMTP_USER && RECOVERY_SMTP_APP_PASSWORD
+  ? nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: RECOVERY_SMTP_USER,
+        pass: RECOVERY_SMTP_APP_PASSWORD,
+      },
+    })
+  : null;
 
 app.get("/health", (_request, response) => {
   response.json({
     status: GEMINI_API_KEY ? "ready" : "setup_required",
-    recovery: RECOVERY_ESCROW_MASTER_KEY && RESEND_API_KEY && RECOVERY_FROM_EMAIL
+    recovery: RECOVERY_ESCROW_MASTER_KEY && recoveryEmailTransport
       ? "ready"
       : "setup_required",
     provider: "gemini",
@@ -65,12 +77,37 @@ app.use(async (request, response, next) => {
     request.firebaseToken = token;
     const email = String(request.user.email || "").toLowerCase();
     const isRecoveryRoute = request.path.startsWith("/v1/recovery-key/");
-    if (!isRecoveryRoute && ALLOWED_EMAILS.size > 0 && !ALLOWED_EMAILS.has(email)) {
+    const isAccountRoute = request.path === "/v1/account";
+    if (
+      !isRecoveryRoute &&
+      !isAccountRoute &&
+      ALLOWED_EMAILS.size > 0 &&
+      !ALLOWED_EMAILS.has(email)
+    ) {
       return response.status(403).json({ error: "account_not_allowed" });
     }
     next();
   } catch (_error) {
     response.status(401).json({ error: "invalid_firebase_token" });
+  }
+});
+
+app.delete("/v1/account", async (request, response) => {
+  if (!db) {
+    return response.status(503).json({ error: "account_deletion_not_configured" });
+  }
+
+  const authTime = Number(request.user.auth_time || 0) * 1000;
+  if (!authTime || Date.now() - authTime > 5 * 60 * 1000) {
+    return response.status(401).json({ error: "recent_login_required" });
+  }
+
+  try {
+    await deleteUserAccount(request.user.uid);
+    response.json({ deleted: true });
+  } catch (error) {
+    console.error(request.path, error.code || error.message);
+    response.status(500).json({ error: "account_deletion_failed" });
   }
 });
 
@@ -143,31 +180,19 @@ app.post("/v1/recovery-key/email", recoveryRoute(async (request) => {
   }
   const aad = escrowAssociatedData(uid, email, keyVersion, escrowId);
   const recoveryKey = decryptEscrow(escrow, RECOVERY_ESCROW_MASTER_KEY, aad);
-  const windowId = Math.floor(Date.now() / RECOVERY_EMAIL_COOLDOWN_MS);
   try {
-    await axios.post(
-      "https://api.resend.com/emails",
-      {
-        from: RECOVERY_FROM_EMAIL,
-        to: [email],
-        subject: "Kimjod recovery key",
-        text: [
-          "You requested your Kimjod recovery key.",
-          "",
-          recoveryKey,
-          "",
-          "Keep this key private. If you did not request this email, sign in to Kimjod and change the recovery key.",
-        ].join("\n"),
-      },
-      {
-        headers: {
-          authorization: `Bearer ${RESEND_API_KEY}`,
-          "content-type": "application/json",
-          "idempotency-key": sha256(`${uid}|${escrowId}|${windowId}`),
-        },
-        timeout: 10000,
-      },
-    );
+    await recoveryEmailTransport.sendMail({
+      from: `Kimjod <${RECOVERY_SMTP_USER}>`,
+      to: email,
+      subject: "Kimjod recovery key",
+      text: [
+        "You requested your Kimjod recovery key.",
+        "",
+        recoveryKey,
+        "",
+        "Keep this key private. If you did not request this email, sign in to Kimjod and change the recovery key.",
+      ].join("\n"),
+    });
   } catch (error) {
     throw recoveryEmailProviderError(error);
   }
@@ -498,14 +523,37 @@ app.post("/mcp", async (request, response) => {
 function aiRoute(handler) {
   return async (request, response) => {
     if (!GEMINI_API_KEY) return response.status(503).json({ error: "ai_not_configured" });
+    const startedAt = Date.now();
     try {
       await consumeQuota(request.user.uid);
       const result = await handler(request);
-      if (result?.httpStatus) return response.status(result.httpStatus).json({ error: result.error });
+      if (result?.httpStatus) {
+        await recordAiUsage(request, {
+          success: false,
+          latencyMs: Date.now() - startedAt,
+        });
+        return response.status(result.httpStatus).json({ error: result.error });
+      }
+      const telemetry = result?._telemetry || {};
+      await recordAiUsage(request, {
+        success: true,
+        latencyMs: Date.now() - startedAt,
+        model: telemetry.model || result?.model,
+        inputTokens: telemetry.inputTokens,
+        outputTokens: telemetry.outputTokens,
+        cached: result?.cached === true,
+      });
+      if (result && typeof result === "object") delete result._telemetry;
       response.json(result);
     } catch (error) {
       const status = error.httpStatus || 500;
       console.error(request.path, error.response?.data || error.message);
+      if (status !== 429) {
+        await recordAiUsage(request, {
+          success: false,
+          latencyMs: Date.now() - startedAt,
+        });
+      }
       response.status(status).json({ error: status === 429 ? "daily_quota_reached" : "ai_request_failed" });
     }
   };
@@ -513,7 +561,7 @@ function aiRoute(handler) {
 
 function recoveryRoute(handler) {
   return async (request, response) => {
-    if (!RECOVERY_ESCROW_MASTER_KEY || !RESEND_API_KEY || !RECOVERY_FROM_EMAIL) {
+    if (!RECOVERY_ESCROW_MASTER_KEY || !recoveryEmailTransport) {
       return response.status(503).json({ error: "recovery_service_not_configured" });
     }
     try {
@@ -543,21 +591,14 @@ function verifiedRecoveryIdentity(user) {
 }
 
 function recoveryEmailProviderError(error) {
-  const status = error.response?.status;
-  const providerMessage = String(
-    error.response?.data?.message || error.response?.data?.error || error.message || "",
-  );
-  if (
-    status === 403 &&
-    /own email|testing emails|verify(?: a)? domain/i.test(providerMessage)
-  ) {
-    return Object.assign(new Error(providerMessage), {
+  if (error.code === "EAUTH" || error.responseCode === 535) {
+    return Object.assign(new Error(error.message), {
       httpStatus: 503,
-      publicError: "recovery_sender_domain_not_verified",
+      publicError: "recovery_email_auth_failed",
     });
   }
-  if (status === 422) {
-    return Object.assign(new Error(providerMessage), {
+  if (error.code === "EENVELOPE" || error.responseCode === 550) {
+    return Object.assign(new Error(error.message), {
       httpStatus: 422,
       publicError: "recovery_email_rejected",
     });
@@ -709,6 +750,66 @@ async function consumeQuota(uid) {
   });
 }
 
+async function deleteUserAccount(uid) {
+  const [dailyUsage, aiUsage, analysisCache] = await Promise.all([
+    db.collectionGroup("daily_users").where("uid", "==", uid).get(),
+    db.collection("ai_usage")
+      .where(admin.firestore.FieldPath.documentId(), ">=", `${uid}_`)
+      .where(admin.firestore.FieldPath.documentId(), "<", `${uid}_\uf8ff`)
+      .get(),
+    db.collection("ai_analysis_cache").where("uid", "==", uid).get(),
+  ]);
+
+  const bulkWriter = db.bulkWriter();
+  bulkWriter.delete(db.collection("usage_users").doc(uid));
+  for (const snapshot of [dailyUsage, aiUsage, analysisCache]) {
+    for (const document of snapshot.docs) bulkWriter.delete(document.ref);
+  }
+
+  await Promise.all([
+    db.recursiveDelete(db.collection("users").doc(uid)),
+    db.recursiveDelete(db.collection("recovery_key_escrow").doc(uid)),
+    bulkWriter.close(),
+  ]);
+
+  for (const key of localUsage.keys()) {
+    if (key.startsWith(`${uid}_`)) localUsage.delete(key);
+  }
+
+  try {
+    await admin.auth().deleteUser(uid);
+  } catch (error) {
+    if (error.code !== "auth/user-not-found") throw error;
+  }
+}
+
+async function recordAiUsage(request, telemetry) {
+  if (!db || !request.user?.uid) return;
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const route = String(request.path || "unknown")
+      .replace(/^\/v1\//, "")
+      .replace(/[^A-Za-z0-9_-]/g, "_") || "unknown";
+    const model = String(telemetry.model || "").replace(/[^A-Za-z0-9_.-]/g, "_");
+    const increment = admin.firestore.FieldValue.increment;
+    const update = {
+      successCount: increment(telemetry.success ? 1 : 0),
+      failureCount: increment(telemetry.success ? 0 : 1),
+      inputTokens: increment(Number(telemetry.inputTokens || 0)),
+      outputTokens: increment(Number(telemetry.outputTokens || 0)),
+      totalLatencyMs: increment(Number(telemetry.latencyMs || 0)),
+      latencySamples: increment(1),
+      cachedCount: increment(telemetry.cached ? 1 : 0),
+      routes: { [route]: increment(1) },
+      lastRequestAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (model) update.models = { [model]: increment(1) };
+    await db.collection("ai_usage").doc(`${request.user.uid}_${day}`).set(update, { merge: true });
+  } catch (error) {
+    console.warn("AI telemetry write failed:", error.message);
+  }
+}
+
 async function callGemini({ model, schema, instructions, content, maxOutputTokens, timeout = 28000 }) {
   const parts = content.map((item) => {
     if (item.type === "input_text") return { text: item.text };
@@ -770,7 +871,16 @@ async function callGemini({ model, schema, instructions, content, maxOutputToken
       }
       const result = JSON.parse(text);
       markModelSuccess(candidateModel);
-      return { ...result, model: candidateModel };
+      const usage = response.data?.usageMetadata || {};
+      return {
+        ...result,
+        model: candidateModel,
+        _telemetry: {
+          model: candidateModel,
+          inputTokens: Number(usage.promptTokenCount || 0),
+          outputTokens: Number(usage.candidatesTokenCount || 0),
+        },
+      };
     } catch (error) {
       lastError = error;
       const status = error.response?.status;
