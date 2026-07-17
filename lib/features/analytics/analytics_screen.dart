@@ -41,7 +41,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   void initState() {
     super.initState();
     AiSettingsStore.instance.load();
-    MoneySettingsStore.instance.load();
+    MoneySettingsStore.instance.load(widget.user.uid);
   }
 
   Future<void> _analyze(_AnalyticsData data) async {
@@ -91,7 +91,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               widget.user.uid,
             ),
             builder: (context, snapshot) {
-              final settings = MoneySettingsStore.instance.snapshot;
+              final settings = MoneySettingsStore.instance.snapshotFor(
+                widget.user.uid,
+              );
               final data = _AnalyticsData.from(
                 records: snapshot.data ?? const [],
                 range: _range,

@@ -59,6 +59,19 @@ function githubReleaseDownloadUrl(repository, versionName, versionCode, apkName)
   return `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(apkName)}`;
 }
 
+function releaseTimestamp(release) {
+  const parsed = Date.parse(release.publishedAt || release.published_at || release.created_at || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function splitReleaseRetention(releases, keepCount = 3) {
+  const sorted = [...releases].sort((a, b) => releaseTimestamp(b) - releaseTimestamp(a));
+  return {
+    keep: sorted.slice(0, keepCount),
+    remove: sorted.slice(keepCount),
+  };
+}
+
 function decodeFirestoreValue(value) {
   if (!value || typeof value !== 'object') return null;
   if ('nullValue' in value) return null;
@@ -197,5 +210,6 @@ module.exports = {
   parsePubspecVersion,
   parseVersion,
   replacePubspecVersion,
+  splitReleaseRetention,
   validateReleaseVersion,
 };

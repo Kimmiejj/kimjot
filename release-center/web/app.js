@@ -259,7 +259,14 @@ function renderHistory(releases) {
     link.textContent = release.updateUrl || 'No URL';
     const time = document.createElement('time');
     time.textContent = release.publishedAt ? new Date(release.publishedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-';
-    row.append(version, size, link, time);
+    const sendButton = document.createElement('button');
+    sendButton.className = 'mini-button send-existing-button';
+    sendButton.type = 'button';
+    sendButton.dataset.releaseId = release.id || '';
+    sendButton.dataset.version = `${release.versionName}+${release.versionCode}`;
+    sendButton.disabled = !release.id;
+    sendButton.textContent = 'Send';
+    row.append(version, size, link, time, sendButton);
     container.append(row);
   });
 }
@@ -286,6 +293,9 @@ function renderJob(job) {
   const running = job.state === 'running';
   byId('releaseButton').disabled = running;
   byId('publishButton').disabled = running || !stagedRelease;
+  document.querySelectorAll('.send-existing-button').forEach((button) => {
+    button.disabled = running || !button.dataset.releaseId;
+  });
   byId('releaseButtonText').textContent = running && job.action === 'build' ? job.step : 'Build APK';
   byId('publishButtonText').textContent = running && job.action === 'publish' ? job.step : 'ส่งอัปเดตให้ผู้ใช้';
   if (job.state === 'failed') showAlert(`Release failed: ${job.error}`);
@@ -300,7 +310,7 @@ function renderJob(job) {
 }
 
 function progressForStep(step) {
-  const steps = ['Prepare', 'Check', 'Update version', 'Build', 'Prepare files', 'Deploy', 'Record release', 'Enable required update', 'Ready', 'Sent'];
+  const steps = ['Prepare', 'Check', 'Update version', 'Build', 'Prepare files', 'Deploy', 'Record release', 'Enable required update', 'Cleanup', 'Ready', 'Sent'];
   const index = steps.findIndex((item) => step.includes(item));
   return index < 0 ? 8 : Math.max(8, index / (steps.length - 1) * 100);
 }
@@ -352,6 +362,28 @@ byId('publishButton').addEventListener('click', async () => {
     pollingTimer = setInterval(pollJob, 1800);
   } catch (error) {
     byId('publishButton').disabled = !stagedRelease;
+    showAlert(error.message);
+  }
+});
+
+byId('releaseHistory').addEventListener('click', async (event) => {
+  const button = event.target.closest('.send-existing-button');
+  if (!button) return;
+  const version = button.dataset.version || 'this version';
+  const ok = window.confirm(`Send v${version} to users?\n\nIf users already installed a higher Android versionCode, Android will not downgrade over it.`);
+  if (!ok) return;
+  clearAlert();
+  button.disabled = true;
+  try {
+    const result = await api('/api/release/send-existing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ releaseId: button.dataset.releaseId }),
+    });
+    renderJob(result.release);
+    pollingTimer = setInterval(pollJob, 1800);
+  } catch (error) {
+    button.disabled = false;
     showAlert(error.message);
   }
 });

@@ -53,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _selectedMonth = _currentMonth();
-    MoneySettingsStore.instance.load();
+    MoneySettingsStore.instance.load(widget.user.uid);
     _albumSyncSubscription = AlbumSyncBackgroundService.watchJob.listen(
       _applyAlbumSyncJob,
     );
@@ -309,7 +309,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     month: _selectedMonth,
                     transactionRepository: widget.transactionRepository,
                     onManageBudget: () =>
-                        _openMoneySettings(const BudgetsScreen()),
+                        _openMoneySettings(BudgetsScreen(user: widget.user)),
                   ),
                 ),
               ),
@@ -323,6 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: EdgeInsets.fromLTRB(gutter, 10, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _InstallmentStatusBuilder(
+                    userId: widget.user.uid,
                     month: _selectedMonth,
                     onManageInstallments: () => _openMoneySettings(
                       InstallmentsScreen(
@@ -579,6 +580,7 @@ class _BudgetStatusBuilder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _MoneySettingsBuilder(
+      userId: userId,
       builder: (settings) {
         final budget = settings.monthlyBudget;
         if (budget == null || budget <= 0) {
@@ -610,16 +612,19 @@ class _BudgetStatusBuilder extends StatelessWidget {
 
 class _InstallmentStatusBuilder extends StatelessWidget {
   const _InstallmentStatusBuilder({
+    required this.userId,
     required this.month,
     required this.onManageInstallments,
   });
 
+  final String userId;
   final DateTime month;
   final VoidCallback onManageInstallments;
 
   @override
   Widget build(BuildContext context) {
     return _MoneySettingsBuilder(
+      userId: userId,
       builder: (settings) {
         final duePlans = settings.dueInstallmentsFor(month);
         if (duePlans.isEmpty) {
@@ -643,8 +648,9 @@ class _InstallmentStatusBuilder extends StatelessWidget {
 }
 
 class _MoneySettingsBuilder extends StatefulWidget {
-  const _MoneySettingsBuilder({required this.builder});
+  const _MoneySettingsBuilder({required this.userId, required this.builder});
 
+  final String userId;
   final Widget Function(MoneySettingsSnapshot settings) builder;
 
   @override
@@ -658,7 +664,7 @@ class _MoneySettingsBuilderState extends State<_MoneySettingsBuilder> {
   @override
   void initState() {
     super.initState();
-    _future = _store.load();
+    _future = _store.load(widget.userId);
   }
 
   @override
@@ -669,7 +675,9 @@ class _MoneySettingsBuilderState extends State<_MoneySettingsBuilder> {
         return FutureBuilder<MoneySettingsSnapshot>(
           future: _future,
           builder: (context, snapshot) {
-            return widget.builder(snapshot.data ?? _store.snapshot);
+            return widget.builder(
+              snapshot.data ?? _store.snapshotFor(widget.userId),
+            );
           },
         );
       },

@@ -56,7 +56,7 @@ class SettingsScreen extends StatelessWidget {
                 icon: Icons.savings_outlined,
                 title: strings.budget,
                 subtitle: strings.monthlyAndCategory,
-                onTap: () => _open(context, const BudgetsScreen()),
+                onTap: () => _open(context, BudgetsScreen(user: user)),
               ),
               _SettingsRow(
                 icon: Icons.calendar_month_outlined,

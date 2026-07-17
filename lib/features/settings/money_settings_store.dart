@@ -133,78 +133,88 @@ class MoneySettingsStore extends ChangeNotifier {
 
   static final MoneySettingsStore instance = MoneySettingsStore._();
 
-  static const _monthlyBudgetKey = 'money_settings.monthly_budget';
-  static const _installmentsKey = 'money_settings.installments';
+  static const _monthlyBudgetKeyPrefix = 'money_settings.monthly_budget.';
+  static const _installmentsKeyPrefix = 'money_settings.installments.';
 
-  MoneySettingsSnapshot _snapshot = const MoneySettingsSnapshot.empty();
-  bool _loaded = false;
+  final Map<String, MoneySettingsSnapshot> _snapshotsByUser = {};
 
-  MoneySettingsSnapshot get snapshot => _snapshot;
+  MoneySettingsSnapshot snapshotFor(String userId) =>
+      _snapshotsByUser[userId] ?? const MoneySettingsSnapshot.empty();
 
-  Future<MoneySettingsSnapshot> load() async {
-    if (_loaded) return _snapshot;
+  Future<MoneySettingsSnapshot> load(String userId) async {
+    final cached = _snapshotsByUser[userId];
+    if (cached != null) return cached;
     final prefs = await SharedPreferences.getInstance();
-    _snapshot = MoneySettingsSnapshot(
-      monthlyBudget: prefs.getDouble(_monthlyBudgetKey),
-      installments: _decodeInstallments(prefs.getString(_installmentsKey)),
+    final snapshot = MoneySettingsSnapshot(
+      monthlyBudget: prefs.getDouble('$_monthlyBudgetKeyPrefix$userId'),
+      installments: _decodeInstallments(
+        prefs.getString('$_installmentsKeyPrefix$userId'),
+      ),
     );
-    _loaded = true;
-    return _snapshot;
+    _snapshotsByUser[userId] = snapshot;
+    return snapshot;
   }
 
-  Future<void> saveMonthlyBudget(double? amount) async {
+  Future<void> saveMonthlyBudget(String userId, double? amount) async {
+    await load(userId);
     final prefs = await SharedPreferences.getInstance();
     final normalized = amount == null || amount <= 0 ? null : amount;
+    final key = '$_monthlyBudgetKeyPrefix$userId';
     if (normalized == null) {
-      await prefs.remove(_monthlyBudgetKey);
+      await prefs.remove(key);
     } else {
-      await prefs.setDouble(_monthlyBudgetKey, normalized);
+      await prefs.setDouble(key, normalized);
     }
-    _snapshot = MoneySettingsSnapshot(
+    _snapshotsByUser[userId] = MoneySettingsSnapshot(
       monthlyBudget: normalized,
-      installments: _snapshot.installments,
+      installments: snapshotFor(userId).installments,
     );
-    _loaded = true;
     notifyListeners();
   }
 
-  Future<void> saveInstallment(InstallmentPlan plan) async {
-    final plans = [..._snapshot.installments];
+  Future<void> saveInstallment(String userId, InstallmentPlan plan) async {
+    await load(userId);
+    final plans = [...snapshotFor(userId).installments];
     final index = plans.indexWhere((item) => item.id == plan.id);
     if (index >= 0) {
       plans[index] = plan;
     } else {
       plans.add(plan);
     }
-    await _saveInstallments(plans);
+    await _saveInstallments(userId, plans);
   }
 
-  Future<void> deleteInstallment(String id) async {
+  Future<void> deleteInstallment(String userId, String id) async {
+    await load(userId);
     await _saveInstallments(
-      _snapshot.installments.where((plan) => plan.id != id).toList(),
+      userId,
+      snapshotFor(userId).installments.where((plan) => plan.id != id).toList(),
     );
   }
 
-  Future<void> markInstallmentPaid(String id) async {
-    final plans = _snapshot.installments.map((plan) {
+  Future<void> markInstallmentPaid(String userId, String id) async {
+    await load(userId);
+    final plans = snapshotFor(userId).installments.map((plan) {
       if (plan.id != id) return plan;
       return plan.copyWith(paidInstallments: plan.paidInstallments + 1);
     }).toList();
-    await _saveInstallments(plans);
+    await _saveInstallments(userId, plans);
   }
 
-  Future<void> _saveInstallments(List<InstallmentPlan> plans) async {
+  Future<void> _saveInstallments(
+    String userId,
+    List<InstallmentPlan> plans,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     final activePlans = plans.where((plan) => plan.isActive).toList();
     await prefs.setString(
-      _installmentsKey,
+      '$_installmentsKeyPrefix$userId',
       jsonEncode(activePlans.map((plan) => plan.toJson()).toList()),
     );
-    _snapshot = MoneySettingsSnapshot(
-      monthlyBudget: _snapshot.monthlyBudget,
+    _snapshotsByUser[userId] = MoneySettingsSnapshot(
+      monthlyBudget: snapshotFor(userId).monthlyBudget,
       installments: activePlans,
     );
-    _loaded = true;
     notifyListeners();
   }
 

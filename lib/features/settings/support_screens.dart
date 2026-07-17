@@ -16,7 +16,9 @@ import '../transactions/transaction_type.dart';
 import 'money_settings_store.dart';
 
 class BudgetsScreen extends StatefulWidget {
-  const BudgetsScreen({super.key});
+  const BudgetsScreen({required this.user, super.key});
+
+  final AuthUser user;
 
   @override
   State<BudgetsScreen> createState() => _BudgetsScreenState();
@@ -31,7 +33,7 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
   @override
   void initState() {
     super.initState();
-    _settingsFuture = _store.load();
+    _settingsFuture = _store.load(widget.user.uid);
     _settingsFuture.then((settings) {
       if (!mounted) return;
       _budgetController.text = settings.monthlyBudget == null
@@ -50,11 +52,14 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
     setState(() {
       _saving = true;
     });
-    await _store.saveMonthlyBudget(_parseAmount(_budgetController.text));
+    await _store.saveMonthlyBudget(
+      widget.user.uid,
+      _parseAmount(_budgetController.text),
+    );
     if (!mounted) return;
     setState(() {
       _saving = false;
-      _settingsFuture = _store.load();
+      _settingsFuture = _store.load(widget.user.uid);
     });
     ScaffoldMessenger.of(
       context,
@@ -218,12 +223,12 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
   @override
   void initState() {
     super.initState();
-    _settingsFuture = _store.load();
+    _settingsFuture = _store.load(widget.user.uid);
   }
 
   void _reload() {
     setState(() {
-      _settingsFuture = _store.load();
+      _settingsFuture = _store.load(widget.user.uid);
     });
   }
 
@@ -232,7 +237,8 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _InstallmentEditor(plan: plan),
+      builder: (context) =>
+          _InstallmentEditor(userId: widget.user.uid, plan: plan),
     );
     if (saved == true && mounted) _reload();
   }
@@ -265,7 +271,7 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
               '(${plan.paidInstallments + 1}/${plan.totalInstallments})',
         ),
       );
-      await _store.markInstallmentPaid(plan.id);
+      await _store.markInstallmentPaid(widget.user.uid, plan.id);
       if (!mounted) return;
       _reload();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -369,7 +375,7 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
                         ? () => _markPaid(plan)
                         : null,
                     onDelete: () async {
-                      await _store.deleteInstallment(plan.id);
+                      await _store.deleteInstallment(widget.user.uid, plan.id);
                       _reload();
                     },
                   ),
@@ -678,8 +684,9 @@ String _typeLabel(BuildContext context, TransactionType type) {
 }
 
 class _InstallmentEditor extends StatefulWidget {
-  const _InstallmentEditor({this.plan});
+  const _InstallmentEditor({required this.userId, this.plan});
 
+  final String userId;
   final InstallmentPlan? plan;
 
   @override
@@ -754,6 +761,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
 
     final total = int.parse(_totalController.text);
     await MoneySettingsStore.instance.saveInstallment(
+      widget.userId,
       InstallmentPlan(
         id: widget.plan?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
         title: _titleController.text.trim(),

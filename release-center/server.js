@@ -17,6 +17,7 @@ const {
   nextPatchVersion,
   parsePubspecVersion,
   replacePubspecVersion,
+  splitReleaseRetention,
   validateReleaseVersion,
 } = require('./lib/core');
 
@@ -33,6 +34,7 @@ const PUBSPEC_PATH = path.join(ROOT, 'pubspec.yaml');
 const APK_PATH = path.join(ROOT, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
 const FIREBASE_BIN = process.env.FIREBASE_BIN || defaultFirebasePath();
 const FLUTTER_BIN = process.env.FLUTTER_BIN || defaultFlutterPath();
+const MAX_STORED_RELEASES = 3;
 const GOOGLE_CLIENT_ID = '563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = 'j9iVZfS8kkCEFUPaAeJV0sAi';
 
@@ -517,6 +519,34 @@ async function publishGitHubApk(release, apkPath, token) {
   return uploadGitHubReleaseAsset(githubRelease.upload_url, apkPath, release.apkName, token);
 }
 
+async function listGitHubReleases(token) {
+  return githubJson(`https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=100`, token);
+}
+
+async function deleteGitHubReleaseAndTag(release, token) {
+  await githubJson(
+    `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${release.id}`,
+    token,
+    { method: 'DELETE' },
+  );
+  await githubJson(
+    `https://api.github.com/repos/${GITHUB_REPOSITORY}/git/refs/tags/${encodeURIComponent(release.tag_name)}`,
+    token,
+    { method: 'DELETE', allow404: true },
+  );
+}
+
+async function cleanupOldGitHubReleases(job, token) {
+  const releases = await listGitHubReleases(token);
+  const appReleases = releases.filter((release) => /^android-v\d+\.\d+\.\d+-\d+$/.test(String(release.tag_name || '')));
+  const { remove } = splitReleaseRetention(appReleases, MAX_STORED_RELEASES);
+  for (const release of remove) {
+    await deleteGitHubReleaseAndTag(release, token);
+    logJob(job, `Deleted old GitHub release ${release.tag_name}`);
+  }
+  if (!remove.length) logJob(job, `GitHub cleanup: ${appReleases.length}/${MAX_STORED_RELEASES} releases stored`);
+}
+
 function uploadGitHubReleaseAsset(uploadUrl, apkPath, apkName, token) {
   const target = new URL(uploadUrl.replace(/\{.*$/, ''));
   target.searchParams.set('name', apkName);
@@ -599,6 +629,24 @@ async function patchFirestoreDocument(documentPath, values, token) {
     method: 'PATCH',
     body: JSON.stringify({ fields: encodeFirestoreFields(values) }),
   });
+}
+
+async function deleteFirestoreDocument(documentPath, token) {
+  return googleJson(firestoreDocumentUrl(documentPath), token, {
+    method: 'DELETE',
+    allow404: true,
+  });
+}
+
+async function cleanupOldFirestoreReleases(job, token) {
+  const releases = await listFirestoreDocuments('', 'app_releases', token, 100);
+  const { remove } = splitReleaseRetention(releases, MAX_STORED_RELEASES);
+  for (const release of remove) {
+    if (!release.id) continue;
+    await deleteFirestoreDocument(`app_releases/${release.id}`, token);
+    logJob(job, `Deleted old release record v${release.versionName}+${release.versionCode}`);
+  }
+  if (!remove.length) logJob(job, `Release history cleanup: ${releases.length}/${MAX_STORED_RELEASES} records stored`);
 }
 
 async function listAuthUsers(token) {
@@ -750,6 +798,39 @@ async function beginPublish() {
   return publicJob(job);
 }
 
+async function beginSendExisting(input) {
+  if (activeJob?.state === 'running') {
+    throw new Error('A release job is already running. Please wait for it to finish.');
+  }
+  const releaseId = String(input.releaseId || '').trim();
+  if (!/^[A-Za-z0-9_-]+$/.test(releaseId)) {
+    throw new Error('releaseId is invalid');
+  }
+  const token = await firebaseAccessToken();
+  const release = await getFirestoreDocument(`app_releases/${releaseId}`, token);
+  if (!release) throw new Error('Release was not found');
+  validateReleaseVersion(release.versionName, Number(release.versionCode));
+  if (!release.updateUrl) throw new Error('Release does not have a download URL');
+
+  const job = {
+    id: `send_${Date.now()}`,
+    action: 'send-existing',
+    state: 'running',
+    step: 'Prepare',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    versionName: release.versionName,
+    versionCode: Number(release.versionCode),
+    logs: [],
+    error: null,
+    result: null,
+  };
+  activeJob = job;
+  persistReleaseState();
+  sendExistingPipeline(job, { ...release, versionCode: Number(release.versionCode) }).catch(() => {});
+  return publicJob(job);
+}
+
 async function publishPipeline(job, release) {
   try {
     release.downloadProvider = 'github-releases';
@@ -808,16 +889,10 @@ async function publishPipeline(job, release) {
       publishedAt: new Date(publishedAt),
     }, token);
 
-    setJobStep(job, 'Enable required update');
-    await patchFirestoreDocument('app_config/android', {
-      minimumVersionCode: release.versionCode,
-      latestVersionName: release.versionName,
-      updateUrl: release.updateUrl,
-      messageTh: release.messageTh,
-      messageEn: release.messageEn,
-      publishedAt: new Date(publishedAt),
-      sha256: release.sha256,
-    }, token);
+    await enableRequiredUpdate(job, release, token, publishedAt);
+
+    setJobStep(job, 'Cleanup old releases');
+    await cleanupStoredReleases(job, token, githubToken);
 
     stagedRelease = null;
     job.state = 'success';
@@ -832,6 +907,75 @@ async function publishPipeline(job, release) {
   } finally {
     job.finishedAt = new Date().toISOString();
     persistReleaseState();
+  }
+}
+
+async function sendExistingPipeline(job, release) {
+  try {
+    logJob(job, `Sending existing ${release.versionName}+${release.versionCode} to users`);
+    setJobStep(job, 'Check Firebase and GitHub');
+    const [token, githubToken] = await Promise.all([
+      firebaseAccessToken(),
+      githubAccessToken(),
+    ]);
+    await validateGitHubAccess(githubToken);
+    await verifyGitHubReleaseAsset(release, githubToken);
+
+    const currentConfig = await getFirestoreDocument('app_config/android', token) || {};
+    if (Number(release.versionCode) < Number(currentConfig.minimumVersionCode || 0)) {
+      logJob(job, `Rollback target is below current required version ${currentConfig.minimumVersionCode}; Android will not downgrade already-updated installs.`);
+    }
+
+    await enableRequiredUpdate(job, release, token, new Date().toISOString());
+    job.state = 'success';
+    job.step = 'Sent to users';
+    job.result = release;
+    logJob(job, `Versions below ${release.versionCode} now receive this release URL.`);
+  } catch (error) {
+    job.state = 'failed';
+    job.step = 'Failed';
+    job.error = error.message;
+    logJob(job, `ERROR: ${error.message}`);
+  } finally {
+    job.finishedAt = new Date().toISOString();
+    persistReleaseState();
+  }
+}
+
+async function verifyGitHubReleaseAsset(release, token) {
+  const tag = release.releaseTag || githubReleaseTag(release.versionName, Number(release.versionCode));
+  const githubRelease = await githubJson(
+    `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${encodeURIComponent(tag)}`,
+    token,
+    { allow404: true },
+  );
+  if (!githubRelease) throw new Error(`GitHub release ${tag} was not found`);
+  const url = String(release.updateUrl || '');
+  const asset = (githubRelease.assets || []).find((item) => url.includes(encodeURIComponent(item.name)) || url.includes(item.name));
+  if (!asset || asset.state !== 'uploaded') {
+    throw new Error(`APK asset for ${tag} was not found`);
+  }
+}
+
+async function enableRequiredUpdate(job, release, token, publishedAt) {
+  setJobStep(job, 'Enable required update');
+  await patchFirestoreDocument('app_config/android', {
+    minimumVersionCode: Number(release.versionCode),
+    latestVersionName: release.versionName,
+    updateUrl: release.updateUrl,
+    messageTh: release.messageTh || 'มีเวอร์ชันใหม่ กรุณาอัปเดตก่อนใช้งาน',
+    messageEn: release.messageEn || 'A new version is required. Please update to continue.',
+    publishedAt: new Date(publishedAt),
+    sha256: release.sha256 || '',
+  }, token);
+}
+
+async function cleanupStoredReleases(job, token, githubToken) {
+  try {
+    await cleanupOldGitHubReleases(job, githubToken);
+    await cleanupOldFirestoreReleases(job, token);
+  } catch (error) {
+    logJob(job, `Cleanup warning: ${error.message}`);
   }
 }
 
@@ -938,6 +1082,11 @@ const server = http.createServer(async (request, response) => {
       checkLocalMutation(request);
       await readJsonBody(request);
       return jsonResponse(response, 202, { release: await beginPublish() });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/release/send-existing') {
+      checkLocalMutation(request);
+      const body = await readJsonBody(request);
+      return jsonResponse(response, 202, { release: await beginSendExisting(body) });
     }
     if (request.method === 'GET' && serveStatic(request, response, url.pathname)) return;
     errorResponse(response, 404, new Error('Not found'));

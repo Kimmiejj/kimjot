@@ -11,6 +11,7 @@ const {
   nextPatchVersion,
   parsePubspecVersion,
   replacePubspecVersion,
+  splitReleaseRetention,
 } = require('../lib/core');
 
 test('parses and increments Flutter version', () => {
@@ -31,6 +32,17 @@ test('builds a stable GitHub Release APK URL', () => {
     githubReleaseDownloadUrl('Kimmiejj/kimjot', '1.1.2', 5, 'kimjod-1.1.2-5.apk'),
     'https://github.com/Kimmiejj/kimjot/releases/download/android-v1.1.2-5/kimjod-1.1.2-5.apk',
   );
+});
+
+test('keeps only newest releases for retention cleanup', () => {
+  const retention = splitReleaseRetention([
+    { tag: 'old', publishedAt: '2026-07-15T12:00:00Z' },
+    { tag: 'newest', publishedAt: '2026-07-17T12:00:00Z' },
+    { tag: 'middle', publishedAt: '2026-07-16T12:00:00Z' },
+    { tag: 'older', publishedAt: '2026-07-14T12:00:00Z' },
+  ], 3);
+  assert.deepEqual(retention.keep.map((release) => release.tag), ['newest', 'middle', 'old']);
+  assert.deepEqual(retention.remove.map((release) => release.tag), ['older']);
 });
 
 test('decodes Firestore REST values', () => {
