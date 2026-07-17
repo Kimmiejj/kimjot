@@ -242,6 +242,20 @@ class SettingsScreen extends StatelessWidget {
       await loadingFuture;
       if (!context.mounted) return;
       final message = switch (error) {
+        AccountDeletionException(code: 'network_unavailable') =>
+          strings.isThai
+              ? 'เชื่อมต่ออินเทอร์เน็ตไม่ได้ กรุณาตรวจ Wi-Fi หรืออินเทอร์เน็ตมือถือแล้วลองใหม่'
+              : 'No internet connection. Check Wi-Fi or mobile data and try again.',
+        AccountDeletionException(code: 'account_deletion_not_configured') =>
+          strings.isThai
+              ? 'ระบบลบบัญชียังตั้งค่าไม่ครบ กรุณาติดต่อผู้ดูแลระบบ'
+              : 'Account deletion is not configured on the server. Please contact support.',
+        AccountDeletionException(
+          code: 'account_deletion_endpoint_unavailable',
+        ) =>
+          strings.isThai
+              ? 'เซิร์ฟเวอร์ยังไม่รองรับการลบบัญชี กรุณาอัปเดตระบบแล้วลองใหม่'
+              : 'The server does not support account deletion yet. Please update it and try again.',
         AccountDeletionException(code: 'recent_login_required') =>
           strings.isThai
               ? 'กรุณายืนยันบัญชี Google แล้วลองใหม่อีกครั้ง'

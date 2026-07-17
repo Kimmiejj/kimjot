@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
@@ -36,15 +38,24 @@ class AccountDeletionService {
     }
 
     final origin = _backendUrl.replaceAll(RegExp(r'/+$'), '');
-    final response = await _client
-        .delete(
-          Uri.parse('$origin/v1/account'),
-          headers: <String, String>{
-            'authorization': 'Bearer $token',
-            'content-type': 'application/json',
-          },
-        )
-        .timeout(const Duration(seconds: 60));
+    late final http.Response response;
+    try {
+      response = await _client
+          .delete(
+            Uri.parse('$origin/v1/account'),
+            headers: <String, String>{
+              'authorization': 'Bearer $token',
+              'content-type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 60));
+    } on TimeoutException {
+      throw const AccountDeletionException('network_unavailable');
+    } on SocketException {
+      throw const AccountDeletionException('network_unavailable');
+    } on http.ClientException {
+      throw const AccountDeletionException('network_unavailable');
+    }
 
     Map<String, dynamic> json = const <String, dynamic>{};
     try {
@@ -56,7 +67,10 @@ class AccountDeletionService {
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw AccountDeletionException(
-        json['error']?.toString() ?? 'account_deletion_failed',
+        json['error']?.toString() ??
+            (response.statusCode == 404
+                ? 'account_deletion_endpoint_unavailable'
+                : 'account_deletion_failed'),
       );
     }
   }
