@@ -65,22 +65,23 @@ test("Firestore REST fields preserve escrow scalar values", () => {
   );
 });
 
-test("Gmail authentication failures expose an actionable recovery error", () => {
+test("Resend test-domain failures expose an actionable recovery error", () => {
   const mapped = recoveryEmailProviderError({
-    code: "EAUTH",
-    responseCode: 535,
-    message: "Invalid login",
+    response: {
+      status: 403,
+      data: {
+        message: "You can only send testing emails to your own email address. Please verify a domain.",
+      },
+    },
   });
 
   assert.equal(mapped.httpStatus, 503);
-  assert.equal(mapped.publicError, "recovery_email_auth_failed");
+  assert.equal(mapped.publicError, "recovery_sender_domain_not_verified");
 });
 
 test("invalid recovery recipients are reported separately", () => {
   const mapped = recoveryEmailProviderError({
-    code: "EENVELOPE",
-    responseCode: 550,
-    message: "Mailbox unavailable",
+    response: { status: 422, data: { message: "Invalid `to` field." } },
   });
 
   assert.equal(mapped.httpStatus, 422);

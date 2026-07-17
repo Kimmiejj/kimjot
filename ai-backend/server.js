@@ -2,7 +2,6 @@ const crypto = require("node:crypto");
 const express = require("express");
 const axios = require("axios");
 const admin = require("firebase-admin");
-const nodemailer = require("nodemailer");
 require("dotenv").config();
 
 const app = express();
@@ -24,10 +23,8 @@ const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 const RECOVERY_ESCROW_MASTER_KEY = parseEscrowMasterKey(
   process.env.RECOVERY_ESCROW_MASTER_KEY,
 );
-const RECOVERY_SMTP_USER = String(process.env.RECOVERY_SMTP_USER || "").trim();
-const RECOVERY_SMTP_APP_PASSWORD = String(
-  process.env.RECOVERY_SMTP_APP_PASSWORD || "",
-).replace(/\s/g, "");
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RECOVERY_FROM_EMAIL = process.env.RECOVERY_FROM_EMAIL;
 const RECOVERY_EMAIL_COOLDOWN_MS = 5 * 60 * 1000;
 const DAILY_LIMIT = Number.parseInt(process.env.AI_DAILY_LIMIT || "300", 10);
 const ALLOWED_EMAILS = new Set(
@@ -45,20 +42,11 @@ initializeFirebase();
 const db = FIREBASE_SERVICE_ACCOUNT_JSON ? admin.firestore() : null;
 const localUsage = new Map();
 const modelHealth = new Map();
-const recoveryEmailTransport = RECOVERY_SMTP_USER && RECOVERY_SMTP_APP_PASSWORD
-  ? nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: RECOVERY_SMTP_USER,
-        pass: RECOVERY_SMTP_APP_PASSWORD,
-      },
-    })
-  : null;
 
 app.get("/health", (_request, response) => {
   response.json({
     status: GEMINI_API_KEY ? "ready" : "setup_required",
-    recovery: RECOVERY_ESCROW_MASTER_KEY && recoveryEmailTransport
+    recovery: RECOVERY_ESCROW_MASTER_KEY && RESEND_API_KEY && RECOVERY_FROM_EMAIL
       ? "ready"
       : "setup_required",
     provider: "gemini",
@@ -180,19 +168,31 @@ app.post("/v1/recovery-key/email", recoveryRoute(async (request) => {
   }
   const aad = escrowAssociatedData(uid, email, keyVersion, escrowId);
   const recoveryKey = decryptEscrow(escrow, RECOVERY_ESCROW_MASTER_KEY, aad);
+  const windowId = Math.floor(Date.now() / RECOVERY_EMAIL_COOLDOWN_MS);
   try {
-    await recoveryEmailTransport.sendMail({
-      from: `Kimjod <${RECOVERY_SMTP_USER}>`,
-      to: email,
-      subject: "Kimjod recovery key",
-      text: [
-        "You requested your Kimjod recovery key.",
-        "",
-        recoveryKey,
-        "",
-        "Keep this key private. If you did not request this email, sign in to Kimjod and change the recovery key.",
-      ].join("\n"),
-    });
+    await axios.post(
+      "https://api.resend.com/emails",
+      {
+        from: RECOVERY_FROM_EMAIL,
+        to: [email],
+        subject: "Kimjod recovery key",
+        text: [
+          "You requested your Kimjod recovery key.",
+          "",
+          recoveryKey,
+          "",
+          "Keep this key private. If you did not request this email, sign in to Kimjod and change the recovery key.",
+        ].join("\n"),
+      },
+      {
+        headers: {
+          authorization: `Bearer ${RESEND_API_KEY}`,
+          "content-type": "application/json",
+          "idempotency-key": sha256(`${uid}|${escrowId}|${windowId}`),
+        },
+        timeout: 10000,
+      },
+    );
   } catch (error) {
     throw recoveryEmailProviderError(error);
   }
@@ -561,7 +561,7 @@ function aiRoute(handler) {
 
 function recoveryRoute(handler) {
   return async (request, response) => {
-    if (!RECOVERY_ESCROW_MASTER_KEY || !recoveryEmailTransport) {
+    if (!RECOVERY_ESCROW_MASTER_KEY || !RESEND_API_KEY || !RECOVERY_FROM_EMAIL) {
       return response.status(503).json({ error: "recovery_service_not_configured" });
     }
     try {
@@ -591,14 +591,21 @@ function verifiedRecoveryIdentity(user) {
 }
 
 function recoveryEmailProviderError(error) {
-  if (error.code === "EAUTH" || error.responseCode === 535) {
-    return Object.assign(new Error(error.message), {
+  const status = error.response?.status;
+  const providerMessage = String(
+    error.response?.data?.message || error.response?.data?.error || error.message || "",
+  );
+  if (
+    status === 403 &&
+    /own email|testing emails|verify(?: a)? domain/i.test(providerMessage)
+  ) {
+    return Object.assign(new Error(providerMessage), {
       httpStatus: 503,
-      publicError: "recovery_email_auth_failed",
+      publicError: "recovery_sender_domain_not_verified",
     });
   }
-  if (error.code === "EENVELOPE" || error.responseCode === 550) {
-    return Object.assign(new Error(error.message), {
+  if (status === 422) {
+    return Object.assign(new Error(providerMessage), {
       httpStatus: 422,
       publicError: "recovery_email_rejected",
     });
