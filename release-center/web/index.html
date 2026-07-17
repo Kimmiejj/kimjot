@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kimjod Release Center</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">K</span>
+          <span><strong>Kimjod</strong><small>Release Center</small></span>
+        </div>
+        <nav aria-label="Main navigation">
+          <a class="nav-link active" href="#overview">Overview</a>
+          <a class="nav-link" href="#usage">Usage</a>
+          <a class="nav-link" href="#release">Release</a>
+        </nav>
+        <div class="sidebar-note">
+          <span class="status-dot"></span>
+          <div><strong>Local only</strong><small>127.0.0.1 - private dashboard</small></div>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar" id="overview">
+          <div>
+            <p class="eyebrow">PRODUCT OPERATIONS</p>
+            <h1>Kimjod control room</h1>
+            <p class="subtitle">Monitor users, usage, versions, and publish Android updates from one local dashboard.</p>
+          </div>
+          <div class="top-actions">
+            <span class="soft-pill" id="syncStatus">Syncing...</span>
+            <button class="ghost-button" id="refreshButton" type="button">Refresh</button>
+            <span class="project-pill"><i></i><span id="projectLabel">kimjot</span></span>
+          </div>
+        </header>
+
+        <section class="alert hidden" id="pageAlert" role="alert"></section>
+
+        <section class="kpi-grid" aria-label="Key metrics">
+          <article class="kpi-card mint">
+            <div class="kpi-icon">U</div>
+            <p>Total users</p>
+            <strong id="totalUsers">-</strong>
+            <small id="newUsersToday">Waiting for data</small>
+          </article>
+          <article class="kpi-card blue">
+            <div class="kpi-icon">O</div>
+            <p>Online in last 15 minutes</p>
+            <strong id="onlineNow">-</strong>
+            <small>Estimated from app heartbeat</small>
+          </article>
+          <article class="kpi-card violet">
+            <div class="kpi-icon">7</div>
+            <p>Active 7 days</p>
+            <strong id="active7Days">-</strong>
+            <small id="activeToday">Waiting for data</small>
+          </article>
+          <article class="kpi-card coral">
+            <div class="kpi-icon">S</div>
+            <p>Sessions 30 days</p>
+            <strong id="sessions30Days">-</strong>
+            <small id="active30Days">Waiting for data</small>
+          </article>
+        </section>
+
+        <section class="dashboard-grid" id="usage">
+          <article class="panel wide">
+            <div class="panel-heading">
+              <div><p class="eyebrow">ENGAGEMENT</p><h2>Daily active users</h2></div>
+              <span class="soft-pill">Last 30 days</span>
+            </div>
+            <div class="line-chart" id="dailyChart" aria-label="Daily active users chart"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">FEATURES</p><h2>Feature usage</h2></div>
+            </div>
+            <div class="feature-layout">
+              <div class="donut" id="featureDonut"><span><strong>0</strong><small>events</small></span></div>
+              <div class="legend" id="featureLegend"></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">ADOPTION</p><h2>Versions in use</h2></div>
+            </div>
+            <div class="bar-list" id="versionBars"></div>
+          </article>
+        </section>
+
+        <section class="release-grid" id="release">
+          <article class="panel release-card">
+            <div class="panel-heading">
+              <div><p class="eyebrow">SAFE RELEASE</p><h2>Build, then Send</h2></div>
+              <span class="version-badge" id="currentVersion">v-</span>
+            </div>
+            <p class="release-explain">Build first without affecting users. Press Send only after the APK is ready; that uploads it and requires every lower version to update.</p>
+            <form id="releaseForm">
+              <div class="form-row">
+                <label>Version name<input id="versionName" name="versionName" inputmode="decimal" required pattern="[0-9]+\.[0-9]+\.[0-9]+"></label>
+                <label>Version code<input id="versionCode" name="versionCode" type="number" min="1" required></label>
+              </div>
+              <label>Update message (Thai)<textarea id="messageTh" name="messageTh" rows="2">มีเวอร์ชันใหม่ กรุณาอัปเดตก่อนใช้งาน</textarea></label>
+              <label>Update message (English)<textarea id="messageEn" name="messageEn" rows="2">A new version is required. Please update to continue.</textarea></label>
+              <div class="release-actions">
+                <button class="ghost-button build-button" id="releaseButton" type="submit">
+                  <span id="releaseButtonText">Build APK</span>
+                </button>
+                <button class="primary-button" id="publishButton" type="button" disabled>
+                  <span class="button-icon">Up</span><span id="publishButtonText">ส่งอัปเดตให้ผู้ใช้</span>
+                </button>
+              </div>
+              <p class="stage-note" id="stageStatus">ยังไม่มี APK ที่พร้อมส่ง</p>
+              <p class="danger-note">เมื่อกดส่ง ผู้ใช้ที่มี version code ต่ำกว่านี้จะถูกบังคับให้อัปเดตก่อนใช้งาน</p>
+            </form>
+          </article>
+
+          <article class="panel release-status">
+            <div class="panel-heading">
+              <div><p class="eyebrow">PIPELINE</p><h2>Release status</h2></div>
+              <span class="job-state idle" id="jobState">Ready</span>
+            </div>
+            <div class="pipeline">
+              <div class="pipeline-progress"><i id="pipelineProgress"></i></div>
+              <strong id="jobStep">No release is running</strong>
+            </div>
+            <div class="terminal" id="releaseLogs"><p>Release logs will appear here.</p></div>
+          </article>
+        </section>
+
+        <section class="panel history-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">HISTORY</p><h2>Recent releases</h2></div>
+            <a id="hostingLink" href="https://kimjot.web.app" target="_blank" rel="noreferrer">Open Hosting</a>
+          </div>
+          <div class="release-table" id="releaseHistory"><p class="empty">No releases yet</p></div>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

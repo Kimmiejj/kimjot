@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../ai/ai_settings_screen.dart';
 import '../auth/auth_service.dart';
 import '../auth/auth_user.dart';
@@ -152,8 +153,9 @@ class _ProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = KimjodLayout.isCompact(context);
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(compact ? 16 : 20),
       decoration: _cardDecoration(),
       child: Row(
         children: [
@@ -350,7 +352,12 @@ class _SettingsScaffold extends StatelessWidget {
         ),
         child: SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
+            padding: KimjodLayout.horizontal(
+              context,
+              regular: 20,
+              top: 14,
+              bottom: 120,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

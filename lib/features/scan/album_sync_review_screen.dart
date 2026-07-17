@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_language.dart';
 import '../../shared/formatters/money_formatter.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../auth/auth_user.dart';
 import '../transactions/category_localization.dart';
 import '../transactions/transaction_repository.dart';
@@ -239,9 +240,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
       _wasCancelled = true;
       for (var i = 0; i < _items.length; i++) {
         if (_items[i].status == _AlbumReviewStatus.reading) {
-          _items[i] = _items[i].copyWith(
-            status: _AlbumReviewStatus.cancelled,
-          );
+          _items[i] = _items[i].copyWith(status: _AlbumReviewStatus.cancelled);
         }
       }
     });
@@ -418,7 +417,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(KimjodLayout.gutter(context, regular: 20)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -843,8 +842,7 @@ class _AlbumResultTile extends StatelessWidget {
             _AlbumReviewStatus.duplicate =>
               context.strings.skippedDuplicateSlip,
             _AlbumReviewStatus.failed => context.strings.couldNotReadSlip,
-            _AlbumReviewStatus.cancelled =>
-              context.strings.albumSyncCancelled,
+            _AlbumReviewStatus.cancelled => context.strings.albumSyncCancelled,
           }
         : '${item.result?.bankDisplayName ?? 'Slip'}  •  ${formatOriginalNumber(item.amount!)}';
 

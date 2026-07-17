@@ -43,6 +43,7 @@ void main() {
     expect(service.updateStarts, 1);
     expect(service.lastApkUrl, 'https://example.com/kimjod.apk');
     expect(service.lastTargetVersionCode, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('allows the app when no update is required', (tester) async {
@@ -53,6 +54,31 @@ void main() {
 
     expect(find.text('PROTECTED APP'), findsOneWidget);
     expect(service.updateStarts, 0);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('detects a required update while the app stays open', (
+    tester,
+  ) async {
+    final service = _FakeAppUpdateService(null);
+    await tester.pumpWidget(_app(service));
+    await tester.pumpAndSettle();
+
+    service.requirement = const AppUpdateRequirement(
+      minimumVersionCode: 4,
+      installedVersionCode: 3,
+      installedVersionName: '1.1.1',
+      latestVersionName: '1.1.2',
+      updateUrl: 'https://example.com/kimjod-4.apk',
+      messageTh: null,
+      messageEn: null,
+    );
+    await tester.pump(const Duration(minutes: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('App update required'), findsOneWidget);
+    expect(service.updateStarts, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }
 
@@ -71,7 +97,7 @@ Widget _app(AppUpdateService service) {
 class _FakeAppUpdateService implements AppUpdateService {
   _FakeAppUpdateService(this.requirement);
 
-  final AppUpdateRequirement? requirement;
+  AppUpdateRequirement? requirement;
   int updateStarts = 0;
   String? lastApkUrl;
   int? lastTargetVersionCode;

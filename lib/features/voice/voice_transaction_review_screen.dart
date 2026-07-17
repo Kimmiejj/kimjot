@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_language.dart';
 import '../../shared/formatters/money_formatter.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../auth/auth_user.dart';
 import '../scan/external_ai_client.dart';
 import '../transactions/category_icons.dart';
@@ -141,7 +142,12 @@ class _VoiceTransactionReviewScreenState
             children: [
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+                  padding: KimjodLayout.horizontal(
+                    context,
+                    regular: 20,
+                    top: 10,
+                    bottom: 24,
+                  ),
                   children: [
                     Text(
                       thai
@@ -197,7 +203,12 @@ class _VoiceTransactionReviewScreenState
               ),
               if (_savedCount > 0)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
+                  padding: KimjodLayout.horizontal(
+                    context,
+                    regular: 20,
+                    top: 10,
+                    bottom: 18,
+                  ),
                   child: FilledButton.icon(
                     onPressed: _close,
                     icon: const Icon(Icons.check_rounded),

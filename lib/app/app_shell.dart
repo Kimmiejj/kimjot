@@ -14,6 +14,8 @@ import '../features/scan/scan_hub_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/transactions/transaction_repository.dart';
 import '../features/transactions/transaction_sync_status.dart';
+import '../features/usage/usage_analytics.dart';
+import '../shared/widgets/responsive_layout.dart';
 import 'app_language.dart';
 
 enum AppShellTab { home, scan, analytics, settings }
@@ -46,6 +48,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(UsageAnalytics.instance.startSession(widget.user.uid));
     _albumSyncOpenSubscription = AlbumSyncBackgroundService.openRequests.listen(
       (_) {
         AlbumSyncBackgroundService.consumeOpenRequest();
@@ -66,6 +69,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    UsageAnalytics.instance.stop();
     _albumSyncOpenSubscription?.cancel();
     _autoSyncOpenSubscription?.cancel();
     super.dispose();
@@ -74,6 +78,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(UsageAnalytics.instance.heartbeat());
       unawaited(_importPendingAutoSync());
     }
   }
@@ -87,6 +92,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       _selectedTab = tab;
       _transitionTick++;
     });
+    unawaited(UsageAnalytics.instance.trackFeature(tab.name));
   }
 
   Future<void> _openAlbumSyncFromNotification() async {
@@ -100,6 +106,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
 
     _isOpeningAlbumSync = true;
+    unawaited(UsageAnalytics.instance.trackFeature('album_sync'));
     bool? saved;
     try {
       setState(() {
@@ -237,9 +244,10 @@ class _FloatingNavigationBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final horizontalMargin = KimjodLayout.isCompact(context) ? 12.0 : 16.0;
 
     return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      minimum: EdgeInsets.fromLTRB(horizontalMargin, 0, horizontalMargin, 8),
       child: Container(
         height: 58,
         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -388,43 +396,52 @@ class _SyncStatusPill extends StatelessWidget {
             duration: const Duration(milliseconds: 220),
             child: IgnorePointer(
               ignoring: !visible,
-              child: Container(
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.sizeOf(context).width - 32,
                 ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF172826),
-                  borderRadius: BorderRadius.circular(999),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x30172826),
-                      blurRadius: 16,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      status.hasPendingWrites
-                          ? Icons.cloud_upload_outlined
-                          : Icons.cloud_off_outlined,
-                      size: 16,
-                      color: const Color(0xFFCFF7E9),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF172826),
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x30172826),
+                        blurRadius: 16,
+                        offset: Offset(0, 8),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        status.hasPendingWrites
+                            ? Icons.cloud_upload_outlined
+                            : Icons.cloud_off_outlined,
+                        size: 16,
+                        color: const Color(0xFFCFF7E9),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

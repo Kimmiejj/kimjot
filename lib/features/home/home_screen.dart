@@ -6,6 +6,7 @@ import '../../app/app_language.dart';
 import '../../shared/formatters/money_formatter.dart';
 import '../../shared/widgets/month_year_picker_dialog.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../ai/ai_chat_screen.dart';
 import '../ai/ai_consent_gate.dart';
 import '../auth/auth_user.dart';
@@ -133,9 +134,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (job == null || !job.isScanning || _isSavingAlbum) return;
     await AlbumSyncBackgroundService.requestCancel();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.strings.albumSyncCancelled)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(context.strings.albumSyncCancelled)));
   }
 
   Future<void> _openPage(BuildContext context, Widget page) async {
@@ -219,6 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final gutter = KimjodLayout.gutter(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F5EF),
@@ -235,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
             physics: const BouncingScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 22, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _HomeHeader(
                     displayName: widget.user.displayName ?? 'Kim',
@@ -248,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 28, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _SummaryBuilder(
                     userId: widget.user.uid,
@@ -259,7 +261,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _QuickActions(
                     onAdd: () => _openPage(
@@ -282,7 +284,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               if (_albumSyncJob != null)
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                  padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 0),
                   sliver: SliverToBoxAdapter(
                     child: _AlbumSyncHomeCard(
                       job: _albumSyncJob!,
@@ -294,13 +296,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _AiChatCard(onTap: _openAiChat),
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _BudgetStatusBuilder(
                     userId: widget.user.uid,
@@ -312,34 +314,33 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 22, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _SectionHeader(title: strings.installments),
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 10, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _InstallmentStatusBuilder(
                     month: _selectedMonth,
-                    onManageInstallments: () =>
-                        _openMoneySettings(
-                          InstallmentsScreen(
-                            user: widget.user,
-                            transactionRepository: widget.transactionRepository,
-                          ),
-                        ),
+                    onManageInstallments: () => _openMoneySettings(
+                      InstallmentsScreen(
+                        user: widget.user,
+                        transactionRepository: widget.transactionRepository,
+                      ),
+                    ),
                   ),
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 22, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _SectionHeader(title: strings.recentTransactions),
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 10, 24, 112),
+                padding: EdgeInsets.fromLTRB(gutter, 10, gutter, 112),
                 sliver: SliverToBoxAdapter(
                   child: _RecentTransactionsBuilder(
                     user: widget.user,
@@ -825,7 +826,9 @@ class _HomeHeader extends StatelessWidget {
           child: InkWell(
             onTap: onSettings,
             borderRadius: BorderRadius.circular(24),
-            child: const KimjodMascot(size: 64),
+            child: KimjodMascot(
+              size: KimjodLayout.isCompact(context) ? 54 : 64,
+            ),
           ),
         ),
       ],
@@ -874,9 +877,10 @@ class _BalancePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final compact = KimjodLayout.isCompact(context);
 
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: EdgeInsets.all(compact ? 18 : 22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -1011,6 +1015,7 @@ class _QuickActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final gap = KimjodLayout.isCompact(context) ? 8.0 : 12.0;
 
     return Row(
       children: [
@@ -1023,7 +1028,7 @@ class _QuickActions extends StatelessWidget {
             foregroundColor: const Color(0xFF111827),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: gap),
         Expanded(
           child: _ActionTile(
             icon: Icons.document_scanner_rounded,
@@ -1033,7 +1038,7 @@ class _QuickActions extends StatelessWidget {
             foregroundColor: const Color(0xFF111827),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: gap),
         Expanded(
           child: _ActionTile(
             icon: Icons.mic_rounded,
@@ -1799,130 +1804,129 @@ class _ListTileCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
           child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: categoryColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Center(
-              child: Icon(
-                categoryIcon,
-                color: categoryColor,
-                size: 22,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF111827),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
-                  ),
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: categoryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const SizedBox(height: 5),
-                Row(
+                child: Center(
+                  child: Icon(categoryIcon, color: categoryColor, size: 22),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F4),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.schedule_rounded,
-                            size: 12,
-                            color: Color(0xFF64748B),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            time,
-                            style: const TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF111827),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
                       ),
                     ),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0,
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F4),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.schedule_rounded,
+                                size: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                time,
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                decoration: BoxDecoration(
-                  color: amountColor.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  amount,
-                  style: TextStyle(
-                    color: amountColor,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
-                  ),
-                ),
               ),
-              const SizedBox(height: 5),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    context.strings.isThai ? 'รายละเอียด' : 'Details',
-                    style: const TextStyle(
-                      color: Color(0xFF94A3B8),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: amountColor.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      amount,
+                      style: TextStyle(
+                        color: amountColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
                     ),
                   ),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    size: 16,
-                    color: Color(0xFF94A3B8),
+                  const SizedBox(height: 5),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        context.strings.isThai ? 'รายละเอียด' : 'Details',
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 16,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ],
-          ),
-        ],
           ),
         ),
       ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kimjot/app/app_language.dart';
+import 'package:kimjot/app/app_shell.dart';
 import 'package:kimjot/features/auth/auth_gate.dart';
 import 'package:kimjot/features/auth/auth_service.dart';
 import 'package:kimjot/features/auth/auth_user.dart';
@@ -21,6 +22,49 @@ import 'package:kimjot/features/transactions/transaction_type.dart';
 import 'package:kimjot/features/transactions/update_transaction_input.dart';
 
 void main() {
+  for (final size in <Size>[const Size(375, 667), const Size(384, 824)]) {
+    testWidgets('main tabs fit ${size.width}x${size.height}', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final authService = _FakeAuthService();
+      final transactionRepository = _FakeTransactionRepository();
+      const user = AuthUser(
+        uid: 'test-user',
+        displayName: 'Test User',
+        email: 'test@example.com',
+      );
+
+      await tester.pumpWidget(
+        _buildTestApp(
+          AppShell(
+            user: user,
+            authService: authService,
+            transactionRepository: transactionRepository,
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(tester.takeException(), isNull);
+
+      for (final label in <String>['Slip', 'Graph', 'Settings']) {
+        await tester.tap(find.text(label).last);
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '$label overflowed at ${size.width}x${size.height}',
+        );
+      }
+
+      authService.dispose();
+    });
+  }
+
   testWidgets('shows the kimjod login screen', (WidgetTester tester) async {
     final authService = _FakeAuthService();
 

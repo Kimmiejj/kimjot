@@ -4,6 +4,7 @@ import '../../app/app_language.dart';
 import '../../shared/formatters/money_formatter.dart';
 import '../../shared/widgets/month_year_picker_dialog.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../auth/auth_user.dart';
 import 'category_icons.dart';
 import 'category_localization.dart';
@@ -117,6 +118,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final gutter = KimjodLayout.gutter(context, regular: 20);
     return Scaffold(
       backgroundColor: const Color(0xFFF4FBFF),
       body: DecoratedBox(
@@ -131,7 +133,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
           child: CustomScrollView(
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                padding: EdgeInsets.fromLTRB(gutter, 14, gutter, 0),
                 sliver: SliverToBoxAdapter(
                   child: _TransactionsHeader(
                     selectedMonth: _selectedMonth,
@@ -147,7 +149,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+                padding: EdgeInsets.fromLTRB(gutter, 18, gutter, 24),
                 sliver: StreamBuilder<List<TransactionRecord>>(
                   stream: widget.transactionRepository.watchMonthTransactions(
                     widget.user.uid,
@@ -171,7 +173,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                       itemCount: transactions.length,
                       itemBuilder: (context, index) {
                         final record = transactions[index];
-                        final startsNewDay = index == 0 ||
+                        final startsNewDay =
+                            index == 0 ||
                             !_isSameDate(
                               transactions[index - 1].transactionDate,
                               record.transactionDate,

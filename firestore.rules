@@ -105,6 +105,62 @@ service cloud.firestore {
         && request.resource.data.lastEmailSentAt is timestamp;
     }
 
+    function validUsageFeatures(features) {
+      return features is map
+        && features.keys().hasOnly([
+          'home',
+          'scan',
+          'analytics',
+          'settings',
+          'album_sync'
+        ])
+        && (!('home' in features) || (features.home is int && features.home >= 0))
+        && (!('scan' in features) || (features.scan is int && features.scan >= 0))
+        && (!('analytics' in features) || (features.analytics is int && features.analytics >= 0))
+        && (!('settings' in features) || (features.settings is int && features.settings >= 0))
+        && (!('album_sync' in features) || (features.album_sync is int && features.album_sync >= 0));
+    }
+
+    function validUsageUser(userId) {
+      return request.resource.data.keys().hasOnly([
+          'uid',
+          'lastSeenAt',
+          'versionName',
+          'versionCode',
+          'platform'
+        ])
+        && request.resource.data.uid == userId
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.versionName is string
+        && request.resource.data.versionCode is int
+        && request.resource.data.versionCode >= 0
+        && request.resource.data.platform == 'android';
+    }
+
+    function validDailyUsage(day, userId) {
+      return request.resource.data.keys().hasOnly([
+          'uid',
+          'day',
+          'lastSeenAt',
+          'versionName',
+          'versionCode',
+          'platform',
+          'sessions',
+          'features'
+        ])
+        && request.resource.data.uid == userId
+        && request.resource.data.day == day
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.versionName is string
+        && request.resource.data.versionCode is int
+        && request.resource.data.versionCode >= 0
+        && request.resource.data.platform == 'android'
+        && request.resource.data.sessions is int
+        && request.resource.data.sessions >= 0
+        && request.resource.data.sessions <= 1000000
+        && validUsageFeatures(request.resource.data.features);
+    }
+
     match /users/{userId} {
       allow read, write: if false;
 
@@ -140,6 +196,22 @@ service cloud.firestore {
     match /app_config/{platform} {
       allow read: if true;
       allow write: if false;
+    }
+
+    match /usage_users/{userId} {
+      allow read, delete: if false;
+      allow create, update: if ownsUserData(userId)
+        && validUsageUser(userId);
+    }
+
+    match /usage_days/{day}/daily_users/{userId} {
+      allow read, delete: if false;
+      allow create, update: if ownsUserData(userId)
+        && validDailyUsage(day, userId);
+    }
+
+    match /app_releases/{releaseId} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

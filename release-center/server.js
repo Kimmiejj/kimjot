@@ -1,0 +1,802 @@
+'use strict';
+
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const http = require('node:http');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+
+const {
+  aggregateUsage,
+  dateKeys,
+  decodeFirestoreFields,
+  encodeFirestoreFields,
+  nextPatchVersion,
+  parsePubspecVersion,
+  replacePubspecVersion,
+  validateReleaseVersion,
+} = require('./lib/core');
+
+const HOST = process.env.RELEASE_CENTER_HOST || '127.0.0.1';
+const PORT = Number(process.env.RELEASE_CENTER_PORT || 4173);
+const PROJECT_ID = process.env.KIMJOD_FIREBASE_PROJECT || 'kimjot';
+const HOSTING_SITE = process.env.KIMJOD_HOSTING_SITE || 'kimjot';
+const HOSTING_BASE_URL = process.env.KIMJOD_HOSTING_URL || 'https://kimjot.web.app';
+const ROOT = path.resolve(__dirname, '..');
+const WEB_DIR = path.join(__dirname, 'web');
+const PUBLISH_DIR = path.join(__dirname, 'publish');
+const STATE_PATH = path.join(__dirname, 'state.json');
+const PUBSPEC_PATH = path.join(ROOT, 'pubspec.yaml');
+const APK_PATH = path.join(ROOT, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+const FIREBASE_BIN = process.env.FIREBASE_BIN || defaultFirebasePath();
+const FLUTTER_BIN = process.env.FLUTTER_BIN || defaultFlutterPath();
+const GOOGLE_CLIENT_ID = '563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com';
+const GOOGLE_CLIENT_SECRET = 'j9iVZfS8kkCEFUPaAeJV0sAi';
+
+const restoredState = readReleaseState();
+let activeJob = restoredState.release || null;
+let stagedRelease = restoredState.stagedRelease || null;
+let cachedToken = null;
+
+if (activeJob?.state === 'running') {
+  activeJob.state = 'failed';
+  activeJob.step = 'Interrupted';
+  activeJob.error = 'Release Center was closed while this job was running. Start the step again.';
+  activeJob.finishedAt = new Date().toISOString();
+  activeJob.logs = [...(activeJob.logs || []), {
+    at: activeJob.finishedAt,
+    line: `ERROR: ${activeJob.error}`,
+  }];
+  persistReleaseState();
+}
+
+function readReleaseState() {
+  try {
+    if (!fs.existsSync(STATE_PATH)) return {};
+    const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    return state && typeof state === 'object' ? state : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function persistReleaseState() {
+  fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
+  fs.writeFileSync(STATE_PATH, `${JSON.stringify({
+    release: publicJob(activeJob),
+    stagedRelease,
+  }, null, 2)}\n`, 'utf8');
+}
+
+function defaultFirebasePath() {
+  if (process.platform !== 'win32') return 'firebase';
+  const candidate = process.env.APPDATA
+    ? path.join(process.env.APPDATA, 'npm', 'firebase.cmd')
+    : '';
+  return candidate && fs.existsSync(candidate) ? candidate : 'firebase.cmd';
+}
+
+function defaultFlutterPath() {
+  if (process.platform !== 'win32') return 'flutter';
+  const candidate = process.env.USERPROFILE
+    ? path.join(process.env.USERPROFILE, 'development', 'flutter', 'bin', 'flutter.bat')
+    : '';
+  return candidate && fs.existsSync(candidate) ? candidate : 'flutter';
+}
+
+function jsonResponse(response, status, body) {
+  response.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  response.end(JSON.stringify(body));
+}
+
+function errorResponse(response, status, error) {
+  jsonResponse(response, status, {
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+function readJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 32_000) {
+        reject(new Error('Request body is too large'));
+        request.destroy();
+      }
+    });
+    request.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (_) {
+        reject(new Error('Invalid JSON'));
+      }
+    });
+    request.on('error', reject);
+  });
+}
+
+function checkLocalMutation(request) {
+  if (request.headers['content-type']?.split(';')[0] !== 'application/json') {
+    throw new Error('Only application/json requests are supported');
+  }
+  const origin = request.headers.origin;
+  if (origin && origin !== `http://${HOST}:${PORT}` && origin !== `http://localhost:${PORT}`) {
+    throw new Error('Blocked request from another origin');
+  }
+}
+
+async function statusPayload() {
+  const pubspec = fs.readFileSync(PUBSPEC_PATH, 'utf8');
+  const current = parsePubspecVersion(pubspec);
+  let updateConfig = {};
+  try {
+    const token = await firebaseAccessToken();
+    updateConfig = await getFirestoreDocument('app_config/android', token) || {};
+  } catch (error) {
+    updateConfig = { warning: authHelp(error) };
+  }
+  const retryBuild = activeJob?.action === 'build' && activeJob.state === 'failed';
+  const suggested = stagedRelease
+    ? {
+        versionName: stagedRelease.versionName,
+        versionCode: stagedRelease.versionCode,
+      }
+    : retryBuild
+      ? {
+          versionName: activeJob.versionName,
+          versionCode: activeJob.versionCode,
+        }
+    : nextPatchVersion(current);
+  return {
+    projectId: PROJECT_ID,
+    hostingUrl: HOSTING_BASE_URL,
+    current,
+    suggested,
+    updateConfig,
+    tools: {
+      flutter: FLUTTER_BIN,
+      firebase: FIREBASE_BIN,
+      flutterFound: executableLooksAvailable(FLUTTER_BIN),
+      firebaseFound: executableLooksAvailable(FIREBASE_BIN),
+    },
+    release: publicJob(activeJob),
+    stagedRelease,
+  };
+}
+
+function executableLooksAvailable(executable) {
+  return executable.includes(path.sep) ? fs.existsSync(executable) : true;
+}
+
+function publicJob(job) {
+  if (!job) return null;
+  return {
+    id: job.id,
+    state: job.state,
+    step: job.step,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    action: job.action,
+    versionName: job.versionName,
+    versionCode: job.versionCode,
+    logs: job.logs.slice(-120),
+    error: job.error,
+    result: job.result,
+  };
+}
+
+async function dashboardPayload(days = 30) {
+  const safeDays = Math.min(90, Math.max(7, Number(days) || 30));
+  const keys = dateKeys(safeDays);
+  const warnings = [];
+  let token = '';
+  try {
+    token = await firebaseAccessToken();
+  } catch (error) {
+    const dashboard = aggregateUsage(keys, {}, [], [], {});
+    dashboard.summary.onlineNow = 0;
+    dashboard.warnings = [authHelp(error)];
+    return dashboard;
+  }
+  let authUsersResult = [];
+  let presence = [];
+  let dayResults = [];
+  let releases = [];
+  let config = {};
+  try {
+    [authUsersResult, presence, dayResults, releases, config] = await Promise.all([
+      listAuthUsers(token).catch((error) => {
+        warnings.push(`Auth users unavailable: ${error.message}`);
+        return [];
+      }),
+      listFirestoreDocuments('', 'usage_users', token),
+      Promise.all(keys.map(async (day) => [day, await listFirestoreDocuments(`usage_days/${day}`, 'daily_users', token)])),
+      listFirestoreDocuments('', 'app_releases', token, 30),
+      getFirestoreDocument('app_config/android', token).catch(() => ({})),
+    ]);
+  } catch (error) {
+    const dashboard = aggregateUsage(keys, {}, [], [], {});
+    dashboard.summary.onlineNow = 0;
+    dashboard.warnings = [authHelp(error)];
+    return dashboard;
+  }
+
+  const byDay = Object.fromEntries(dayResults);
+  const fallbackUsers = presence.map((item) => ({
+    localId: item.uid || item.id,
+    createdAt: '0',
+  }));
+  const users = authUsersResult.length ? authUsersResult : fallbackUsers;
+  const sortedReleases = releases.sort((a, b) => String(b.publishedAt || '').localeCompare(String(a.publishedAt || '')));
+  const dashboard = aggregateUsage(keys, byDay, users, sortedReleases, config || {});
+  const onlineThreshold = Date.now() - (15 * 60 * 1000);
+  dashboard.summary.onlineNow = presence.filter((item) => {
+    const lastSeen = Date.parse(item.lastSeenAt || '');
+    return Number.isFinite(lastSeen) && lastSeen >= onlineThreshold;
+  }).length;
+  dashboard.summary.totalUsers = Math.max(dashboard.summary.totalUsers, presence.length, dashboard.summary.active30Days);
+  dashboard.warnings = warnings;
+  return dashboard;
+}
+
+async function firebaseAccessToken() {
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.token;
+
+  const attempts = [
+    () => accessTokenFromExplicitEnv(),
+    () => accessTokenFromServiceAccount(),
+    () => accessTokenFromGcloud(),
+    () => accessTokenFromFirebaseConfig(),
+  ];
+  const errors = [];
+  for (const attempt of attempts) {
+    try {
+      const result = await attempt();
+      if (result?.token) {
+        await validateAccessToken(result.token);
+        cachedToken = result;
+        return result.token;
+      }
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+  throw new Error(`Could not authenticate with Firebase. ${errors.filter(Boolean).join(' | ')}`);
+}
+
+async function validateAccessToken(token) {
+  const url = new URL('https://www.googleapis.com/oauth2/v1/tokeninfo');
+  url.searchParams.set('access_token', token);
+  const response = await fetch(url);
+  const text = await response.text();
+  if (!response.ok) {
+    let detail = text;
+    try {
+      detail = JSON.parse(text).error_description || JSON.parse(text).error || text;
+    } catch (_) {
+      // Keep the original text.
+    }
+    throw new Error(`Access token was rejected by Google (${detail}). Run firebase login --reauth.`);
+  }
+}
+
+function accessTokenFromExplicitEnv() {
+  if (process.env.KIMJOD_GOOGLE_ACCESS_TOKEN) {
+    return {
+      token: process.env.KIMJOD_GOOGLE_ACCESS_TOKEN,
+      expiresAt: Date.now() + 45 * 60 * 1000,
+    };
+  }
+  if (!process.env.FIREBASE_TOKEN) return null;
+  return refreshGoogleAccessToken(process.env.FIREBASE_TOKEN);
+}
+
+async function accessTokenFromServiceAccount() {
+  const filePath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!filePath) return null;
+  const credentials = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (!credentials.client_email || !credentials.private_key) {
+    throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not a service account JSON file');
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = base64Url(JSON.stringify({
+    iss: credentials.client_email,
+    scope: 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/firebase',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  }));
+  const unsigned = `${header}.${claim}`;
+  const signature = crypto.createSign('RSA-SHA256').update(unsigned).sign(credentials.private_key);
+  const assertion = `${unsigned}.${base64Url(signature)}`;
+  const data = await formPost('https://oauth2.googleapis.com/token', {
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion,
+  });
+  return {
+    token: data.access_token,
+    expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
+  };
+}
+
+async function accessTokenFromGcloud() {
+  const bin = process.platform === 'win32' ? 'gcloud.cmd' : 'gcloud';
+  const token = (await runCapturedCommand(bin, ['auth', 'print-access-token'], {
+    cwd: ROOT,
+    sensitive: true,
+  })).trim();
+  if (!token) throw new Error('gcloud did not return an access token');
+  return { token, expiresAt: Date.now() + 45 * 60 * 1000 };
+}
+
+async function accessTokenFromFirebaseConfig() {
+  const config = readFirebaseConfigstore();
+  const account = selectFirebaseAccount(config);
+  const refreshToken = account?.tokens?.refresh_token || config.tokens?.refresh_token;
+  if (!refreshToken) throw new Error('Firebase CLI is not logged in. Run firebase login or set GOOGLE_APPLICATION_CREDENTIALS.');
+  return refreshGoogleAccessToken(refreshToken);
+}
+
+function readFirebaseConfigstore() {
+  const candidates = [];
+  if (process.env.XDG_CONFIG_HOME) {
+    candidates.push(path.join(process.env.XDG_CONFIG_HOME, 'configstore', 'firebase-tools.json'));
+  }
+  if (process.env.USERPROFILE) {
+    candidates.push(path.join(process.env.USERPROFILE, '.config', 'configstore', 'firebase-tools.json'));
+  }
+  if (process.env.APPDATA) {
+    candidates.push(path.join(process.env.APPDATA, 'configstore', 'firebase-tools.json'));
+  }
+  const existing = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!existing) throw new Error('Firebase CLI config was not found. Run firebase login.');
+  return JSON.parse(fs.readFileSync(existing, 'utf8'));
+}
+
+function selectFirebaseAccount(config) {
+  const accounts = [];
+  if (config.user || config.tokens) accounts.push({ user: config.user, tokens: config.tokens });
+  accounts.push(...(config.additionalAccounts || []));
+  const activeEmail = config.activeAccounts?.[ROOT];
+  if (activeEmail) {
+    return accounts.find((account) => account.user?.email === activeEmail) || accounts[0];
+  }
+  return accounts[0];
+}
+
+function refreshGoogleAccessToken(refreshToken) {
+  return formPost('https://accounts.google.com/o/oauth2/token', {
+    refresh_token: refreshToken,
+    client_id: GOOGLE_CLIENT_ID,
+    client_secret: GOOGLE_CLIENT_SECRET,
+    grant_type: 'refresh_token',
+  }).then((data) => ({
+    token: data.access_token,
+    expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
+  }));
+}
+
+async function formPost(url, fields) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(fields),
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error(data.error_description || data.error?.message || data.error || `Token request failed with ${response.status}`);
+  }
+  return data;
+}
+
+function base64Url(value) {
+  const buffer = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  return buffer.toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function authHelp(error) {
+  return `${error.message}. Try: firebase login, or set GOOGLE_APPLICATION_CREDENTIALS to a service account JSON with Firebase/Firestore access.`;
+}
+
+async function googleJson(url, token, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  if (response.status === 404 && options.allow404) return null;
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_) {
+    data = { error: { message: text } };
+  }
+  if (!response.ok) {
+    throw new Error(data.error?.message || `Google API returned ${response.status}`);
+  }
+  return data;
+}
+
+function firestoreDocumentUrl(documentPath) {
+  const encoded = documentPath
+    .split('/')
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(PROJECT_ID)}/databases/(default)/documents`;
+  return encoded ? `${base}/${encoded}` : `${base}/`;
+}
+
+async function getFirestoreDocument(documentPath, token) {
+  const document = await googleJson(firestoreDocumentUrl(documentPath), token, { allow404: true });
+  return document ? decodeFirestoreFields(document.fields) : null;
+}
+
+async function listFirestoreDocuments(parentPath, collectionId, token, pageSize = 1000) {
+  const documents = [];
+  let pageToken = '';
+  do {
+    const base = `${firestoreDocumentUrl(parentPath)}${encodeURIComponent(collectionId)}`;
+    const url = new URL(base);
+    url.searchParams.set('pageSize', String(pageSize));
+    if (pageToken) url.searchParams.set('pageToken', pageToken);
+    const result = await googleJson(url.toString(), token, { allow404: true });
+    if (!result) return documents;
+    for (const document of result.documents || []) {
+      documents.push({
+        id: document.name?.split('/').at(-1),
+        ...decodeFirestoreFields(document.fields),
+      });
+    }
+    pageToken = result.nextPageToken || '';
+  } while (pageToken);
+  return documents;
+}
+
+async function patchFirestoreDocument(documentPath, values, token) {
+  const url = new URL(firestoreDocumentUrl(documentPath));
+  for (const key of Object.keys(values)) {
+    url.searchParams.append('updateMask.fieldPaths', key);
+  }
+  return googleJson(url.toString(), token, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: encodeFirestoreFields(values) }),
+  });
+}
+
+async function listAuthUsers(token) {
+  const users = [];
+  let nextPageToken = '';
+  do {
+    const url = new URL(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(PROJECT_ID)}/accounts:batchGet`);
+    url.searchParams.set('maxResults', '1000');
+    if (nextPageToken) url.searchParams.set('nextPageToken', nextPageToken);
+    const result = await googleJson(url.toString(), token);
+    users.push(...(result.users || []));
+    nextPageToken = result.nextPageToken || '';
+  } while (nextPageToken);
+  return users;
+}
+
+async function beginBuild(input) {
+  if (activeJob?.state === 'running') {
+    throw new Error('A release job is already running. Please wait for it to finish.');
+  }
+  const versionName = String(input.versionName || '').trim();
+  const versionCode = Number(input.versionCode);
+  validateReleaseVersion(versionName, versionCode);
+  const current = parsePubspecVersion(fs.readFileSync(PUBSPEC_PATH, 'utf8'));
+  if (versionCode < current.versionCode) {
+    throw new Error(`versionCode must be at least ${current.versionCode}`);
+  }
+  const messageTh = String(input.messageTh || 'มีเวอร์ชันใหม่ กรุณาอัปเดตก่อนใช้งาน').trim().slice(0, 240);
+  const messageEn = String(input.messageEn || 'A new version is required. Please update to continue.').trim().slice(0, 240);
+  const job = {
+    id: crypto.randomUUID(),
+    action: 'build',
+    state: 'running',
+    step: 'Prepare build',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    versionName,
+    versionCode,
+    logs: [],
+    error: null,
+    result: null,
+  };
+  activeJob = job;
+  persistReleaseState();
+  buildPipeline(job, { versionName, versionCode, messageTh, messageEn }).catch(() => {});
+  return publicJob(job);
+}
+
+async function buildPipeline(job, release) {
+  const originalPubspec = fs.readFileSync(PUBSPEC_PATH, 'utf8');
+  try {
+    logJob(job, `Starting build ${release.versionName}+${release.versionCode}`);
+    setJobStep(job, 'Check Flutter');
+    if (!executableLooksAvailable(FLUTTER_BIN)) throw new Error(`Flutter was not found at ${FLUTTER_BIN}`);
+
+    setJobStep(job, 'Update version');
+    const nextPubspec = replacePubspecVersion(originalPubspec, release.versionName, release.versionCode);
+    fs.writeFileSync(PUBSPEC_PATH, nextPubspec, 'utf8');
+    logJob(job, `Updated pubspec.yaml to ${release.versionName}+${release.versionCode}`);
+
+    setJobStep(job, 'Build Android APK');
+    await runLoggedCommand(
+      job,
+      FLUTTER_BIN,
+      ['build', 'apk', '--release', `--build-name=${release.versionName}`, `--build-number=${release.versionCode}`],
+      { cwd: ROOT },
+    );
+    if (!fs.existsSync(APK_PATH)) throw new Error('Build finished but app-release.apk was not found');
+
+    setJobStep(job, 'Prepare files');
+    const downloadsDir = path.join(PUBLISH_DIR, 'downloads');
+    fs.mkdirSync(downloadsDir, { recursive: true });
+    const apkName = `kimjod-${release.versionName}-${release.versionCode}.apk`;
+    const publishedApk = path.join(downloadsDir, apkName);
+    fs.copyFileSync(APK_PATH, publishedApk);
+    const apkBuffer = fs.readFileSync(publishedApk);
+    const sha256 = crypto.createHash('sha256').update(apkBuffer).digest('hex');
+    const updateUrl = `${HOSTING_BASE_URL}/downloads/${apkName}`;
+    const builtAt = new Date().toISOString();
+    const manifest = {
+      applicationId: 'com.kimjot.project',
+      versionName: release.versionName,
+      versionCode: release.versionCode,
+      updateUrl,
+      sha256,
+      sizeBytes: apkBuffer.length,
+      builtAt,
+    };
+    fs.writeFileSync(path.join(PUBLISH_DIR, 'release.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    logJob(job, `Prepared APK ${(apkBuffer.length / 1024 / 1024).toFixed(1)} MB and SHA-256`);
+
+    stagedRelease = {
+      ...manifest,
+      apkName,
+      messageTh: release.messageTh,
+      messageEn: release.messageEn,
+    };
+    job.state = 'success';
+    job.step = 'Ready to send';
+    job.result = manifest;
+    logJob(job, 'Build completed. Review the version, then press Send update.');
+  } catch (error) {
+    fs.writeFileSync(PUBSPEC_PATH, originalPubspec, 'utf8');
+    logJob(job, 'Restored pubspec.yaml because the build did not finish');
+    job.state = 'failed';
+    job.step = 'Failed';
+    job.error = error.message;
+    logJob(job, `ERROR: ${error.message}`);
+  } finally {
+    job.finishedAt = new Date().toISOString();
+    persistReleaseState();
+  }
+}
+
+async function beginPublish() {
+  if (activeJob?.state === 'running') {
+    throw new Error('A release job is already running. Please wait for it to finish.');
+  }
+  if (!stagedRelease) {
+    throw new Error('Build an APK before sending an update.');
+  }
+  const apkPath = path.join(PUBLISH_DIR, 'downloads', stagedRelease.apkName);
+  if (!fs.existsSync(apkPath)) {
+    throw new Error('The staged APK is missing. Build it again before sending.');
+  }
+  const job = {
+    id: crypto.randomUUID(),
+    action: 'publish',
+    state: 'running',
+    step: 'Prepare send',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    versionName: stagedRelease.versionName,
+    versionCode: stagedRelease.versionCode,
+    logs: [],
+    error: null,
+    result: null,
+  };
+  activeJob = job;
+  persistReleaseState();
+  publishPipeline(job, { ...stagedRelease }).catch(() => {});
+  return publicJob(job);
+}
+
+async function publishPipeline(job, release) {
+  try {
+    logJob(job, `Sending ${release.versionName}+${release.versionCode} to users`);
+    setJobStep(job, 'Check Firebase');
+    const token = await firebaseAccessToken();
+    if (!executableLooksAvailable(FIREBASE_BIN)) throw new Error(`Firebase CLI was not found at ${FIREBASE_BIN}`);
+    const currentConfig = await getFirestoreDocument('app_config/android', token) || {};
+    if (release.versionCode < Number(currentConfig.minimumVersionCode || 0)) {
+      throw new Error(`Cannot send versionCode ${release.versionCode}; users already require ${currentConfig.minimumVersionCode}`);
+    }
+
+    const publishedAt = new Date().toISOString();
+    const manifest = { ...release, publishedAt };
+    delete manifest.apkName;
+    delete manifest.messageTh;
+    delete manifest.messageEn;
+    fs.writeFileSync(path.join(PUBLISH_DIR, 'release.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+    setJobStep(job, 'Deploy APK and rules');
+    await runLoggedCommand(
+      job,
+      FIREBASE_BIN,
+      ['deploy', '--only', `hosting:${HOSTING_SITE},firestore:rules`, '--project', PROJECT_ID, '--non-interactive'],
+      { cwd: ROOT },
+    );
+    logJob(job, `Uploaded APK: ${release.updateUrl}`);
+
+    setJobStep(job, 'Record release');
+    const releaseId = `${publishedAt.replace(/[^0-9]/g, '').slice(0, 14)}_${release.versionCode}`;
+    await patchFirestoreDocument(`app_releases/${releaseId}`, {
+      ...manifest,
+      messageTh: release.messageTh,
+      messageEn: release.messageEn,
+      publishedAt: new Date(publishedAt),
+    }, token);
+
+    setJobStep(job, 'Enable required update');
+    await patchFirestoreDocument('app_config/android', {
+      minimumVersionCode: release.versionCode,
+      latestVersionName: release.versionName,
+      updateUrl: release.updateUrl,
+      messageTh: release.messageTh,
+      messageEn: release.messageEn,
+      publishedAt: new Date(publishedAt),
+      sha256: release.sha256,
+    }, token);
+
+    stagedRelease = null;
+    job.state = 'success';
+    job.step = 'Sent to users';
+    job.result = manifest;
+    logJob(job, `Versions below ${release.versionCode} must now update before using the app.`);
+  } catch (error) {
+    job.state = 'failed';
+    job.step = 'Failed';
+    job.error = error.message;
+    logJob(job, `ERROR: ${error.message}`);
+  } finally {
+    job.finishedAt = new Date().toISOString();
+    persistReleaseState();
+  }
+}
+
+function setJobStep(job, step) {
+  job.step = step;
+  persistReleaseState();
+}
+
+function logJob(job, line) {
+  const safe = String(line).replace(/ya29\.[A-Za-z0-9._-]+/g, '[REDACTED]');
+  job.logs.push({ at: new Date().toISOString(), line: safe.slice(0, 1000) });
+  persistReleaseState();
+}
+
+function runCapturedCommand(executable, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, {
+      cwd: options.cwd || ROOT,
+      shell: process.platform === 'win32',
+      windowsHide: true,
+      env: { ...process.env, CI: '1' },
+    });
+    let output = '';
+    let errorOutput = '';
+    child.stdout.on('data', (chunk) => { output += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { errorOutput += chunk.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) return resolve(output);
+      const message = options.sensitive
+        ? `${path.basename(executable)} failed with code ${code}`
+        : (errorOutput || output || `command failed with code ${code}`).trim();
+      reject(new Error(message));
+    });
+  });
+}
+
+function runLoggedCommand(job, executable, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    logJob(job, `$ ${path.basename(executable)} ${args.join(' ')}`);
+    const child = spawn(executable, args, {
+      cwd: options.cwd || ROOT,
+      shell: process.platform === 'win32',
+      windowsHide: true,
+      env: { ...process.env, CI: '1' },
+    });
+    const consume = (chunk) => {
+      for (const line of chunk.toString().split(/\r?\n/)) {
+        if (line.trim()) logJob(job, line.trim());
+      }
+    };
+    child.stdout.on('data', consume);
+    child.stderr.on('data', consume);
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${path.basename(executable)} exited with code ${code}`));
+    });
+  });
+}
+
+function serveStatic(request, response, pathname) {
+  const requested = pathname === '/' ? 'index.html' : pathname.slice(1);
+  const filePath = path.resolve(WEB_DIR, requested);
+  if (!filePath.startsWith(`${WEB_DIR}${path.sep}`) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    return false;
+  }
+  const extension = path.extname(filePath);
+  const contentTypes = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'application/javascript; charset=utf-8',
+    '.svg': 'image/svg+xml',
+  };
+  response.writeHead(200, {
+    'Content-Type': contentTypes[extension] || 'application/octet-stream',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+  });
+  fs.createReadStream(filePath).pipe(response);
+  return true;
+}
+
+const server = http.createServer(async (request, response) => {
+  const url = new URL(request.url, `http://${request.headers.host || `${HOST}:${PORT}`}`);
+  try {
+    if (request.method === 'GET' && url.pathname === '/api/status') {
+      return jsonResponse(response, 200, await statusPayload());
+    }
+    if (request.method === 'GET' && url.pathname === '/api/dashboard') {
+      return jsonResponse(response, 200, await dashboardPayload(url.searchParams.get('days')));
+    }
+    if (request.method === 'GET' && url.pathname === '/api/release/status') {
+      return jsonResponse(response, 200, { release: publicJob(activeJob) });
+    }
+    if (request.method === 'POST' && (url.pathname === '/api/release' || url.pathname === '/api/release/build')) {
+      checkLocalMutation(request);
+      const body = await readJsonBody(request);
+      return jsonResponse(response, 202, { release: await beginBuild(body) });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/release/publish') {
+      checkLocalMutation(request);
+      await readJsonBody(request);
+      return jsonResponse(response, 202, { release: await beginPublish() });
+    }
+    if (request.method === 'GET' && serveStatic(request, response, url.pathname)) return;
+    errorResponse(response, 404, new Error('Not found'));
+  } catch (error) {
+    errorResponse(response, 400, error);
+  }
+});
+
+if (require.main === module) {
+  fs.mkdirSync(PUBLISH_DIR, { recursive: true });
+  server.listen(PORT, HOST, () => {
+    console.log(`Kimjod Release Center: http://${HOST}:${PORT}`);
+    console.log(`Firebase project: ${PROJECT_ID}`);
+  });
+}
+
+module.exports = { dashboardPayload, server, statusPayload };

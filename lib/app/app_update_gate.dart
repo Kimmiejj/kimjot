@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -111,15 +113,55 @@ class AppUpdateGate extends StatefulWidget {
   State<AppUpdateGate> createState() => _AppUpdateGateState();
 }
 
-class _AppUpdateGateState extends State<AppUpdateGate> {
+class _AppUpdateGateState extends State<AppUpdateGate>
+    with WidgetsBindingObserver {
+  static const _checkInterval = Duration(minutes: 1);
+
   late final AppUpdateService _service =
       widget.service ?? FirebaseAndroidAppUpdateService();
-  late Future<AppUpdateRequirement?> _check = _service.checkForRequiredUpdate();
 
+  Timer? _checkTimer;
+  AppUpdateRequirement? _requirement;
+  var _initializing = true;
+  var _checking = false;
   var _automaticUpdateStarted = false;
   var _updating = false;
   var _updateStarted = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkForUpdate();
+    _checkTimer = Timer.periodic(_checkInterval, (_) => _checkForUpdate());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkForUpdate();
+  }
+
+  @override
+  void dispose() {
+    _checkTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (_checking) return;
+    _checking = true;
+    final requirement = await _service.checkForRequiredUpdate();
+    _checking = false;
+    if (!mounted) return;
+    setState(() {
+      _initializing = false;
+      // Once a required update is known, keep the app blocked through temporary
+      // network failures. A successful installation restarts the process.
+      if (requirement != null) _requirement = requirement;
+    });
+  }
 
   Future<void> _startUpdate(AppUpdateRequirement requirement) async {
     if (_updating) return;
@@ -148,39 +190,32 @@ class _AppUpdateGateState extends State<AppUpdateGate> {
       _automaticUpdateStarted = false;
       _updateStarted = false;
       _error = null;
-      _check = _service.checkForRequiredUpdate();
     });
+    _checkForUpdate();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<AppUpdateRequirement?>(
-      future: _check,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
+    if (_initializing) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
-        final requirement = snapshot.data;
-        if (requirement == null) return widget.child;
+    final requirement = _requirement;
+    if (requirement == null) return widget.child;
 
-        if (!_automaticUpdateStarted) {
-          _automaticUpdateStarted = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _startUpdate(requirement);
-          });
-        }
-        return _RequiredUpdateScreen(
-          requirement: requirement,
-          updating: _updating,
-          updateStarted: _updateStarted,
-          error: _error,
-          onUpdate: () => _startUpdate(requirement),
-          onRetryCheck: _retryCheck,
-        );
-      },
+    if (!_automaticUpdateStarted) {
+      _automaticUpdateStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startUpdate(requirement);
+      });
+    }
+    return _RequiredUpdateScreen(
+      requirement: requirement,
+      updating: _updating,
+      updateStarted: _updateStarted,
+      error: _error,
+      onUpdate: () => _startUpdate(requirement),
+      onRetryCheck: _retryCheck,
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../app/app_language.dart';
 import '../../shared/widgets/brand_mark.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import 'auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -76,20 +77,26 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
+              final compact = KimjodLayout.isCompact(context);
+              final verticalPadding = compact ? 32.0 : 52.0;
               return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+                padding: KimjodLayout.horizontal(
+                  context,
+                  top: compact ? 16 : 24,
+                  bottom: compact ? 16 : 28,
+                ),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 52,
+                    minHeight: constraints.maxHeight - verticalPadding,
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Center(child: KimjodMascot(size: 96)),
-                      const SizedBox(height: 14),
+                      Center(child: KimjodMascot(size: compact ? 78 : 96)),
+                      SizedBox(height: compact ? 8 : 14),
                       const BrandMark(),
-                      const SizedBox(height: 28),
+                      SizedBox(height: compact ? 18 : 28),
                       Text(
                         strings.loginHeadline,
                         textAlign: TextAlign.center,
@@ -100,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           letterSpacing: 0,
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      SizedBox(height: compact ? 10 : 14),
                       Text(
                         strings.loginSubtitle,
                         textAlign: TextAlign.center,
@@ -110,7 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           letterSpacing: 0,
                         ),
                       ),
-                      const SizedBox(height: 34),
+                      SizedBox(height: compact ? 22 : 34),
                       _LoginCard(
                         isSigningIn: _isSigningIn,
                         onSignIn: _isSigningIn ? null : _signIn,
@@ -142,9 +149,10 @@ class _LoginCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final compact = KimjodLayout.isCompact(context);
 
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: EdgeInsets.all(compact ? 18 : 22),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.76),
         borderRadius: BorderRadius.circular(34),

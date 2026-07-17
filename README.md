@@ -36,6 +36,42 @@ the installation. Android only permits fully silent installation for managed
 device-owner/profile-owner deployments.
 
 Every APK update must keep the same `applicationId` and signing certificate as
-the installed app. Configure a permanent release keystore before distributing
-the bootstrap updater build; the current Gradle release configuration still
-uses the local debug signing key.
+the installed app. This workspace's ignored `android/key.properties` points to
+the existing signing key at `C:/Users/ChisanuchaK/.android/debug.keystore` so
+updates remain compatible with currently installed builds. Back up that
+keystore securely outside the source repository; losing it means future APKs
+cannot be installed over users' existing app.
+
+## Local Release Center
+
+The local dashboard builds and publishes an Android release, updates the
+Firestore minimum version, and reports Firebase Auth plus privacy-safe app usage
+telemetry.
+
+Prerequisites:
+
+- Flutter and Firebase CLI installed.
+- `firebase login` completed with access to the `kimjot` project.
+- The Android signing certificate must match the certificate used by installed
+  copies of the app.
+
+Run it from the project root:
+
+```powershell
+node release-center/server.js
+```
+
+Then open `http://127.0.0.1:4173`. **Build APK** updates `pubspec.yaml` and stages
+the versioned release without affecting users. **Send update** deploys the APK
+and Firestore rules, records the release, and only then raises
+`app_config/android.minimumVersionCode`. The staged build survives a Release
+Center restart. If build or Hosting deploy fails, the required-version document
+is not changed and the staged APK can be retried.
+
+Dashboard metrics include registered users, active users, sessions, recent
+online presence, feature usage, installed versions, and release history. The app
+does not send transaction amounts or encrypted transaction payloads as usage
+telemetry.
+
+On Windows, double-click `เปิด Kimjod Release Center.cmd` in the project folder
+to start the local server and open the dashboard without entering a command.

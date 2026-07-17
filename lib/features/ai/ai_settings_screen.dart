@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../scan/external_ai_client.dart';
 import 'ai_models.dart';
 import 'ai_settings_store.dart';
@@ -58,7 +59,12 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         child: AnimatedBuilder(
           animation: AiSettingsStore.instance,
           builder: (context, _) => ListView(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
+            padding: KimjodLayout.horizontal(
+              context,
+              regular: 20,
+              top: 10,
+              bottom: 32,
+            ),
             children: [
               _ConnectionCard(
                 status: _status,

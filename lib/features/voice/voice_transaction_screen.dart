@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../ai/ai_models.dart';
 import '../ai/ai_settings_screen.dart';
 import '../ai/ai_settings_store.dart';
@@ -163,6 +164,7 @@ class _VoiceTransactionScreenState extends State<VoiceTransactionScreen> {
   @override
   Widget build(BuildContext context) {
     final thai = context.strings.isThai;
+    final compact = KimjodLayout.isCompact(context);
     final configured = ExternalAiClient.instance.isConfigured;
     final stateText = !configured
         ? (thai ? 'เชื่อม AI ก่อนเริ่มใช้งาน' : 'Connect AI to get started')
@@ -188,7 +190,12 @@ class _VoiceTransactionScreenState extends State<VoiceTransactionScreen> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+            padding: KimjodLayout.horizontal(
+              context,
+              regular: 20,
+              top: 10,
+              bottom: 24,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -235,7 +242,12 @@ class _VoiceTransactionScreenState extends State<VoiceTransactionScreen> {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.fromLTRB(22, 28, 22, 22),
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 18 : 22,
+                    compact ? 22 : 28,
+                    compact ? 18 : 22,
+                    compact ? 18 : 22,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.82),
                     borderRadius: BorderRadius.circular(32),

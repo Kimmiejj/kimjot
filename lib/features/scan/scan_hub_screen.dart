@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../app/app_language.dart';
 import '../../shared/widgets/pastel_kit.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../auth/auth_user.dart';
 import '../transactions/create_transaction_input.dart';
 import '../transactions/category_localization.dart';
@@ -493,39 +494,41 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 12),
-                MascotTip(message: strings.scanHubTip, mood: MascotMood.calm),
-                const SizedBox(height: 16),
-                _ScanOption(
-                  icon: Icons.photo_library_rounded,
-                  title: strings.importFromGallery,
-                  subtitle: strings.chooseSlipFromGallery,
-                  onTap: () => _pickSlipFromGallery(context),
-                ),
-                const SizedBox(height: 12),
-                _ScanOption(
-                  icon: Icons.collections_rounded,
-                  title: strings.syncAlbumTitle,
-                  subtitle: strings.syncAlbumSubtitle,
-                  onTap: () => _pickAlbumImages(context),
-                ),
-                if (_selectedImages.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _AlbumSyncPanel(
-                    images: _selectedImages,
-                    statusByPath: _statusByPath,
-                    isSyncing: _isSyncing,
-                    onSync: () => _syncSelectedAlbum(context),
-                    onTrain: () => _trainSelectedImages(context),
-                  ),
-                ],
-              ],
+          child: ListView(
+            physics: const BouncingScrollPhysics(),
+            padding: KimjodLayout.horizontal(
+              context,
+              regular: 20,
+              top: 12,
+              bottom: widget.showBackButton ? 24 : 104,
             ),
+            children: [
+              MascotTip(message: strings.scanHubTip, mood: MascotMood.calm),
+              const SizedBox(height: 16),
+              _ScanOption(
+                icon: Icons.photo_library_rounded,
+                title: strings.importFromGallery,
+                subtitle: strings.chooseSlipFromGallery,
+                onTap: () => _pickSlipFromGallery(context),
+              ),
+              const SizedBox(height: 12),
+              _ScanOption(
+                icon: Icons.collections_rounded,
+                title: strings.syncAlbumTitle,
+                subtitle: strings.syncAlbumSubtitle,
+                onTap: () => _pickAlbumImages(context),
+              ),
+              if (_selectedImages.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _AlbumSyncPanel(
+                  images: _selectedImages,
+                  statusByPath: _statusByPath,
+                  isSyncing: _isSyncing,
+                  onSync: () => _syncSelectedAlbum(context),
+                  onTrain: () => _trainSelectedImages(context),
+                ),
+              ],
+            ],
           ),
         ),
       ),
@@ -838,6 +841,7 @@ class _ScanOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = KimjodLayout.isCompact(context);
     return Material(
       color: Colors.white.withValues(alpha: 0.9),
       borderRadius: BorderRadius.circular(26),
@@ -850,12 +854,12 @@ class _ScanOption extends StatelessWidget {
               },
         borderRadius: BorderRadius.circular(26),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(compact ? 16 : 20),
           child: Row(
             children: [
               Container(
-                width: 52,
-                height: 52,
+                width: compact ? 46 : 52,
+                height: compact ? 46 : 52,
                 decoration: BoxDecoration(
                   color: const Color(0xFF172826),
                   borderRadius: BorderRadius.circular(18),

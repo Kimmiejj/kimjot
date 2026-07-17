@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../auth/auth_user.dart';
 import '../scan/external_ai_client.dart';
 import '../transactions/home_summary.dart';
@@ -296,7 +297,12 @@ class _EmptyChat extends StatelessWidget {
             'Where can I cut spending?',
           ];
     return ListView(
-      padding: const EdgeInsets.fromLTRB(22, 30, 22, 20),
+      padding: KimjodLayout.horizontal(
+        context,
+        regular: 22,
+        top: 30,
+        bottom: 20,
+      ),
       children: [
         const Icon(
           Icons.chat_bubble_outline_rounded,

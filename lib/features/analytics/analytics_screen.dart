@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../app/app_language.dart';
 import '../../shared/formatters/money_formatter.dart';
+import '../../shared/widgets/responsive_layout.dart';
 import '../ai/ai_models.dart';
 import '../ai/ai_settings_store.dart';
 import '../ai/ai_consent_gate.dart';
@@ -73,6 +74,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final thai = context.strings.isThai;
+    final gutter = KimjodLayout.gutter(context, regular: 22);
     return Scaffold(
       backgroundColor: const Color(0xFFF7F5EF),
       body: DecoratedBox(
@@ -101,13 +103,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 physics: const BouncingScrollPhysics(),
                 slivers: [
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 18, 22, 0),
+                    padding: EdgeInsets.fromLTRB(gutter, 18, gutter, 0),
                     sliver: SliverToBoxAdapter(
                       child: _Header(thai: thai, onBack: widget.onBack),
                     ),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+                    padding: EdgeInsets.fromLTRB(gutter, 22, gutter, 0),
                     sliver: SliverToBoxAdapter(
                       child: _RangeSelector(
                         selected: _range,
@@ -123,7 +125,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 18, 22, 0),
+                    padding: EdgeInsets.fromLTRB(gutter, 18, gutter, 0),
                     sliver: SliverToBoxAdapter(
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 420),
@@ -147,25 +149,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
+                    padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 0),
                     sliver: SliverToBoxAdapter(
                       child: _TrendCard(data: data, thai: thai),
                     ),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
+                    padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 0),
                     sliver: SliverToBoxAdapter(
                       child: _CategoryCard(data: data, thai: thai),
                     ),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
+                    padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 0),
                     sliver: SliverToBoxAdapter(
                       child: _LocalAdviceCard(data: data, thai: thai),
                     ),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 120),
+                    padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 120),
                     sliver: SliverToBoxAdapter(
                       child: AnimatedBuilder(
                         animation: AiSettingsStore.instance,
@@ -340,8 +342,9 @@ class _OverviewHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final positive = data.balance >= 0;
+    final compact = KimjodLayout.isCompact(context);
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: EdgeInsets.all(compact ? 18 : 22),
       decoration: BoxDecoration(
         color: const Color(0xFF172826),
         borderRadius: BorderRadius.circular(30),
