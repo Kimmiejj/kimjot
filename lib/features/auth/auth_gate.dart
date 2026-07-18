@@ -46,6 +46,7 @@ class AuthGate extends StatelessWidget {
           return TransactionEncryptionGate(
             user: user,
             controller: controller,
+            onCancel: authService.signOut,
             child: appShell,
           );
         }

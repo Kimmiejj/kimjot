@@ -15,6 +15,7 @@ import '../features/settings/settings_screen.dart';
 import '../features/transactions/transaction_repository.dart';
 import '../features/transactions/transaction_sync_status.dart';
 import '../features/usage/usage_analytics.dart';
+import '../shared/widgets/app_exit_animation.dart';
 import '../shared/widgets/responsive_layout.dart';
 import 'app_language.dart';
 
@@ -42,6 +43,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   StreamSubscription<void>? _autoSyncOpenSubscription;
   bool _isOpeningAlbumSync = false;
   bool _isImportingAutoSync = false;
+  bool _isExiting = false;
   var _transitionTick = 0;
 
   @override
@@ -166,9 +168,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _playExitAnimation() async {
+    if (_isExiting) return;
+    setState(() => _isExiting = true);
+    await Future<void>.delayed(AppExitAnimation.duration);
+    if (!mounted) return;
+    await SystemNavigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final scaffold = Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFF7F5EF),
       bottomNavigationBar: _FloatingNavigationBar(
@@ -226,6 +236,23 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               return _SyncStatusPill(status: status);
             },
           ),
+        ],
+      ),
+    );
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_playExitAnimation());
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          scaffold,
+          if (_isExiting)
+            const Positioned.fill(
+              child: AbsorbPointer(child: AppExitAnimation()),
+            ),
         ],
       ),
     );

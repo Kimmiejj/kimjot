@@ -7,7 +7,10 @@ import 'package:kimjot/features/security/transaction_encryption_gate.dart';
 import 'package:kimjot/features/security/transaction_encryption_manager.dart';
 
 void main() {
-  const user = AuthUser(uid: 'firebase-user-123');
+  const user = AuthUser(
+    uid: 'firebase-user-123',
+    email: 'user-created@example.com',
+  );
 
   testWidgets('lets a legacy account without config set a recovery key', (
     tester,
@@ -99,9 +102,6 @@ void main() {
           .obscureText,
       isFalse,
     );
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    expect(find.byType(Dialog), findsOneWidget);
     await tester.enterText(
       find.byType(TextField),
       _FakeEncryptionController.recoveryKey,
@@ -114,6 +114,25 @@ void main() {
     expect(find.text('ENCRYPTED APP'), findsOneWidget);
   });
 
+  testWidgets('cancels the key prompt and requests account switching', (
+    tester,
+  ) async {
+    final controller = _FakeEncryptionController(
+      TransactionEncryptionAccess.recoveryKeyRequired,
+    );
+    var cancelRequests = 0;
+    await tester.pumpWidget(
+      _app(user, controller, onCancel: () async => cancelRequests += 1),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('cancel-encryption-gate')));
+    await tester.pump();
+
+    expect(cancelRequests, 1);
+    expect(controller.clearRequests, 1);
+  });
+
   testWidgets(
     'remembers a verified key and requests biometrics on next launch',
     (tester) async {
@@ -121,7 +140,9 @@ void main() {
       final firstController = _FakeEncryptionController(
         TransactionEncryptionAccess.recoveryKeyRequired,
       );
-      await tester.pumpWidget(_app(user, firstController, biometricStore));
+      await tester.pumpWidget(
+        _app(user, firstController, biometricKeyStore: biometricStore),
+      );
       await tester.pump();
 
       await tester.enterText(
@@ -138,7 +159,9 @@ void main() {
         TransactionEncryptionAccess.recoveryKeyRequired,
       );
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pumpWidget(_app(user, nextController, biometricStore));
+      await tester.pumpWidget(
+        _app(user, nextController, biometricKeyStore: biometricStore),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pumpAndSettle();
@@ -158,7 +181,9 @@ void main() {
     )..unlockError = Exception('temporary unlock failure');
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pumpWidget(_app(user, controller, biometricStore));
+    await tester.pumpWidget(
+      _app(user, controller, biometricKeyStore: biometricStore),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
@@ -182,7 +207,13 @@ void main() {
     await tester.pumpWidget(_app(user, controller));
     await tester.pump();
 
-    await tester.tap(find.text('Forgot key? Send it to Google email'));
+    expect(
+      find.text('Forgot key? Send it to user-created@example.com'),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.text('Forgot key? Send it to user-created@example.com'),
+    );
     await tester.pumpAndSettle();
 
     expect(controller.emailRequests, 1);
@@ -192,9 +223,10 @@ void main() {
 
 Widget _app(
   AuthUser user,
-  TransactionEncryptionController controller, [
+  TransactionEncryptionController controller, {
   BiometricRecoveryKeyStore? biometricKeyStore,
-]) {
+  Future<void> Function()? onCancel,
+}) {
   return AppLanguageScope(
     controller: AppLanguageController(initialLanguage: AppLanguage.en),
     child: MaterialApp(
@@ -202,6 +234,7 @@ Widget _app(
       home: TransactionEncryptionGate(
         user: user,
         controller: controller,
+        onCancel: onCancel ?? () async {},
         biometricKeyStore:
             biometricKeyStore ?? _FakeBiometricRecoveryKeyStore(),
         child: const Scaffold(body: Text('ENCRYPTED APP')),
@@ -247,9 +280,12 @@ class _FakeEncryptionController implements TransactionEncryptionController {
   String? createdRecoveryKey;
   Object? unlockError;
   int emailRequests = 0;
+  int clearRequests = 0;
 
   @override
-  void clearEncryptionKey() {}
+  void clearEncryptionKey() {
+    clearRequests += 1;
+  }
 
   @override
   Future<String> createRecoveryKey(String userId, {String? recoveryKey}) async {

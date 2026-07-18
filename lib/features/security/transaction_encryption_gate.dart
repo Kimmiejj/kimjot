@@ -11,6 +11,7 @@ class TransactionEncryptionGate extends StatefulWidget {
   const TransactionEncryptionGate({
     required this.user,
     required this.controller,
+    required this.onCancel,
     required this.child,
     this.biometricKeyStore,
     super.key,
@@ -18,6 +19,7 @@ class TransactionEncryptionGate extends StatefulWidget {
 
   final AuthUser user;
   final TransactionEncryptionController controller;
+  final Future<void> Function() onCancel;
   final Widget child;
   final BiometricRecoveryKeyStore? biometricKeyStore;
 
@@ -298,6 +300,26 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
     }
   }
 
+  Future<void> _cancel() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    widget.controller.clearEncryptionKey();
+    try {
+      await widget.onCancel();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = context.strings.isThai
+            ? 'ออกจากบัญชีไม่สำเร็จ กรุณาลองใหม่'
+            : 'Could not sign out. Try again.';
+      });
+    }
+  }
+
   String _recoveryEmailError(Object error, bool isThai) {
     final code = error.toString();
     if (code.contains('recovery_email_rate_limited')) {
@@ -344,6 +366,9 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
 
     return PopScope(
       canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _cancel();
+      },
       child: Scaffold(
         body: Stack(
           fit: StackFit.expand,
@@ -447,6 +472,14 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
                                       ),
                                     ),
                                   ),
+                                ),
+                                IconButton(
+                                  key: const ValueKey('cancel-encryption-gate'),
+                                  onPressed: _busy ? null : _cancel,
+                                  tooltip: isThai
+                                      ? 'ยกเลิกและเปลี่ยนบัญชี'
+                                      : 'Cancel and switch account',
+                                  icon: const Icon(Icons.close_rounded),
                                 ),
                               ],
                             ),
@@ -616,6 +649,14 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
   }
 
   List<Widget> _buildUnlock(bool isThai) {
+    final accountEmail = widget.user.email?.trim();
+    final recoveryEmailLabel = accountEmail == null || accountEmail.isEmpty
+        ? (isThai
+              ? 'ลืมคีย์? ส่งไปยังอีเมลบัญชี'
+              : 'Forgot key? Send it to the account email')
+        : (isThai
+              ? 'ลืมคีย์? ส่งไปที่ $accountEmail'
+              : 'Forgot key? Send it to $accountEmail');
     return [
       if (_hasBiometricKey) ...[
         FilledButton.icon(
@@ -678,11 +719,7 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
         onPressed: _busy ? null : _sendRecoveryEmail,
         icon: const Icon(Icons.mark_email_read_outlined),
         style: _secondaryButtonStyle,
-        label: Text(
-          isThai
-              ? 'ลืมคีย์? ส่งไปยังอีเมล Google'
-              : 'Forgot key? Send it to Google email',
-        ),
+        label: Text(recoveryEmailLabel),
       ),
     ];
   }
