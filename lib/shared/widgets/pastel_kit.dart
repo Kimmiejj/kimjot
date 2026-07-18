@@ -26,15 +26,24 @@ Widget kimjodDatePickerTheme(BuildContext context, Widget? child) {
 }
 
 class KimjodMascot extends StatelessWidget {
-  const KimjodMascot({this.size = 88, this.mood = MascotMood.happy, super.key});
+  const KimjodMascot({
+    this.size = 88,
+    this.mood = MascotMood.happy,
+    this.scene = MascotScene.general,
+    super.key,
+  });
 
   final double size;
   final MascotMood mood;
+  final MascotScene scene;
 
   @override
   Widget build(BuildContext context) {
-    final faceSize = size * 0.74;
-    final cheekSize = size * 0.12;
+    final resolvedScene =
+        mood == MascotMood.calm && scene == MascotScene.general
+        ? MascotScene.calm
+        : scene;
+    final decoration = _mascotDecoration(resolvedScene);
 
     return SizedBox(
       width: size,
@@ -43,25 +52,25 @@ class KimjodMascot extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Positioned(
-            right: size * 0.02,
-            bottom: size * 0.02,
+            right: 0,
+            bottom: size * 0.03,
             child: Container(
-              width: size * 0.58,
-              height: size * 0.58,
+              width: size * 0.6,
+              height: size * 0.6,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFD7E5).withValues(alpha: 0.7),
+                color: decoration.backdrop.withValues(alpha: 0.7),
                 shape: BoxShape.circle,
               ),
             ),
           ),
           Positioned(
-            left: size * 0.02,
-            top: size * 0.06,
+            left: 0,
+            top: size * 0.04,
             child: Container(
-              width: size * 0.46,
-              height: size * 0.46,
+              width: size * 0.5,
+              height: size * 0.5,
               decoration: BoxDecoration(
-                color: const Color(0xFFC8F6DD).withValues(alpha: 0.84),
+                color: const Color(0xFFC8F6DD).withValues(alpha: 0.88),
                 shape: BoxShape.circle,
               ),
             ),
@@ -69,81 +78,47 @@ class KimjodMascot extends StatelessWidget {
           Align(
             alignment: Alignment.center,
             child: Container(
-              width: faceSize,
-              height: faceSize,
+              width: size * 0.78,
+              height: size * 0.78,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFFFFFFF),
-                    Color(0xFFE8FCFF),
-                    Color(0xFFFFEFF7),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(size * 0.28),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  width: 2,
-                ),
+                borderRadius: BorderRadius.circular(size * 0.25),
+                border: Border.all(color: Colors.white, width: 2),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x1F305472),
-                    blurRadius: 24,
-                    offset: Offset(0, 12),
+                    color: Color(0x29305472),
+                    blurRadius: 18,
+                    offset: Offset(0, 9),
                   ),
                 ],
               ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: faceSize * 0.25,
-                    top: faceSize * 0.34,
-                    child: _Eye(size: size),
-                  ),
-                  Positioned(
-                    right: faceSize * 0.25,
-                    top: faceSize * 0.34,
-                    child: _Eye(size: size),
-                  ),
-                  Positioned(
-                    left: faceSize * 0.22,
-                    top: faceSize * 0.56,
-                    child: _Cheek(size: cheekSize),
-                  ),
-                  Positioned(
-                    right: faceSize * 0.22,
-                    top: faceSize * 0.56,
-                    child: _Cheek(size: cheekSize),
-                  ),
-                  Align(
-                    alignment: const Alignment(0, 0.26),
-                    child: Icon(
-                      mood == MascotMood.calm
-                          ? Icons.horizontal_rule_rounded
-                          : Icons.keyboard_arrow_up_rounded,
-                      color: const Color(0xFF173054),
-                      size: size * 0.23,
-                    ),
-                  ),
-                ],
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(size * 0.23),
+                child: Image.asset(
+                  'assets/branding/kimjod_sloth_icon.png',
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.medium,
+                ),
               ),
             ),
           ),
           Positioned(
-            right: size * 0.05,
-            top: size * 0.05,
+            right: size * 0.01,
+            top: size * 0.01,
             child: Container(
-              width: size * 0.18,
-              height: size * 0.18,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFE59D),
+              width: size * 0.27,
+              height: size * 0.27,
+              decoration: BoxDecoration(
+                color: decoration.badge,
                 shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: size * 0.025),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x26305472), blurRadius: 8),
+                ],
               ),
               child: Icon(
-                Icons.add_rounded,
-                size: size * 0.14,
-                color: const Color(0xFF9A6A00),
+                decoration.icon,
+                size: size * 0.16,
+                color: decoration.iconColor,
               ),
             ),
           ),
@@ -155,40 +130,62 @@ class KimjodMascot extends StatelessWidget {
 
 enum MascotMood { happy, calm }
 
-class _Eye extends StatelessWidget {
-  const _Eye({required this.size});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size * 0.07,
-      height: size * 0.09,
-      decoration: BoxDecoration(
-        color: const Color(0xFF173054),
-        borderRadius: BorderRadius.circular(999),
-      ),
-    );
-  }
+enum MascotScene {
+  general,
+  welcome,
+  home,
+  transaction,
+  history,
+  settings,
+  calm,
 }
 
-class _Cheek extends StatelessWidget {
-  const _Cheek({required this.size});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size * 0.62,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFAFC6).withValues(alpha: 0.58),
-        borderRadius: BorderRadius.circular(999),
-      ),
-    );
-  }
+({Color backdrop, Color badge, Color iconColor, IconData icon})
+_mascotDecoration(MascotScene scene) {
+  return switch (scene) {
+    MascotScene.welcome => (
+      backdrop: const Color(0xFFFFD7E5),
+      badge: const Color(0xFFFF9CB9),
+      iconColor: Colors.white,
+      icon: Icons.favorite_rounded,
+    ),
+    MascotScene.home => (
+      backdrop: const Color(0xFFBFEDE1),
+      badge: const Color(0xFFA8F2D7),
+      iconColor: const Color(0xFF164B43),
+      icon: Icons.home_rounded,
+    ),
+    MascotScene.transaction => (
+      backdrop: const Color(0xFFFFE4A8),
+      badge: const Color(0xFFFFCF68),
+      iconColor: const Color(0xFF704B00),
+      icon: Icons.add_card_rounded,
+    ),
+    MascotScene.history => (
+      backdrop: const Color(0xFFD6E8FF),
+      badge: const Color(0xFFAED2FF),
+      iconColor: const Color(0xFF194F87),
+      icon: Icons.receipt_long_rounded,
+    ),
+    MascotScene.settings => (
+      backdrop: const Color(0xFFDAD7FF),
+      badge: const Color(0xFFBDB7FF),
+      iconColor: const Color(0xFF38306F),
+      icon: Icons.settings_rounded,
+    ),
+    MascotScene.calm => (
+      backdrop: const Color(0xFFE2DBFF),
+      badge: const Color(0xFFCFC5FF),
+      iconColor: const Color(0xFF4D427A),
+      icon: Icons.bedtime_rounded,
+    ),
+    MascotScene.general => (
+      backdrop: const Color(0xFFFFD7E5),
+      badge: const Color(0xFFFFE59D),
+      iconColor: const Color(0xFF765400),
+      icon: Icons.auto_awesome_rounded,
+    ),
+  };
 }
 
 class PastelHeroCard extends StatelessWidget {
@@ -455,11 +452,13 @@ class MascotTip extends StatelessWidget {
   const MascotTip({
     required this.message,
     this.mood = MascotMood.happy,
+    this.scene = MascotScene.general,
     super.key,
   });
 
   final String message;
   final MascotMood mood;
+  final MascotScene scene;
 
   @override
   Widget build(BuildContext context) {
@@ -467,7 +466,7 @@ class MascotTip extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       child: Row(
         children: [
-          KimjodMascot(size: 54, mood: mood),
+          KimjodMascot(size: 54, mood: mood, scene: scene),
           const SizedBox(width: 12),
           Expanded(
             child: Text(

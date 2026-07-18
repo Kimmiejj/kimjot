@@ -93,7 +93,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Center(child: KimjodMascot(size: compact ? 78 : 96)),
+                      Center(
+                        child: KimjodMascot(
+                          size: compact ? 78 : 96,
+                          scene: MascotScene.welcome,
+                        ),
+                      ),
                       SizedBox(height: compact ? 8 : 14),
                       const BrandMark(),
                       SizedBox(height: compact ? 18 : 28),

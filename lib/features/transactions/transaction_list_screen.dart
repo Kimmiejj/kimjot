@@ -281,7 +281,11 @@ class _TransactionsHeader extends StatelessWidget {
         const SizedBox(height: 18),
         const Align(
           alignment: Alignment.centerRight,
-          child: KimjodMascot(size: 62, mood: MascotMood.calm),
+          child: KimjodMascot(
+            size: 62,
+            mood: MascotMood.calm,
+            scene: MascotScene.history,
+          ),
         ),
         const SizedBox(height: 8),
         Text(

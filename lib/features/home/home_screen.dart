@@ -836,6 +836,7 @@ class _HomeHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             child: KimjodMascot(
               size: KimjodLayout.isCompact(context) ? 54 : 64,
+              scene: MascotScene.home,
             ),
           ),
         ),

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../shared/widgets/loading_screen.dart';
 import 'app_language.dart';
 
 abstract interface class AppUpdateService {
@@ -197,7 +198,10 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   @override
   Widget build(BuildContext context) {
     if (_initializing) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return LoadingScreen(
+        message: context.strings.startingKimjod,
+        completed: true,
+      );
     }
 
     final requirement = _requirement;

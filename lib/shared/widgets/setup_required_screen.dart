@@ -26,7 +26,11 @@ class SetupRequiredScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Center(
-                  child: KimjodMascot(size: 88, mood: MascotMood.calm),
+                  child: KimjodMascot(
+                    size: 88,
+                    mood: MascotMood.calm,
+                    scene: MascotScene.settings,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 Text(

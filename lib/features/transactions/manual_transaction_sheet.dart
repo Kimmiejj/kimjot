@@ -603,7 +603,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
                 const SizedBox(width: 12),
                 const Padding(
                   padding: EdgeInsets.only(top: 2),
-                  child: KimjodMascot(size: 58),
+                  child: KimjodMascot(size: 58, scene: MascotScene.transaction),
                 ),
               ],
             ),
