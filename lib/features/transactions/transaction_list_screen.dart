@@ -98,7 +98,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
             user: widget.user,
             transactionRepository: widget.transactionRepository,
             source: record.source,
-            title: 'Edit transaction',
+            title: context.strings.editTransaction,
             description: localizedCategoryName(
               strings: context.strings,
               categoryId: record.categoryId,
@@ -386,7 +386,7 @@ class _TransactionsHeader extends StatelessWidget {
                     onPressed: onClearSearch,
                     icon: const Icon(Icons.close_rounded),
                     color: const Color(0xFF65748B),
-                    tooltip: 'Clear search',
+                    tooltip: context.strings.clearSearch,
                   ),
             filled: true,
             fillColor: Colors.white.withValues(alpha: 0.78),
@@ -581,7 +581,7 @@ class TransactionRow extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       '${context.strings.formatTime(record.transactionDate)} · '
-                      '${record.source.firestoreValue} · $categoryName',
+                      '${record.source.localizedName(context.strings)} · $categoryName',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -608,9 +608,9 @@ class TransactionRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
-                    'Edit',
-                    style: TextStyle(
+                  Text(
+                    context.strings.edit,
+                    style: const TextStyle(
                       color: Color(0xFF65748B),
                       fontSize: 11,
                       fontWeight: FontWeight.w800,

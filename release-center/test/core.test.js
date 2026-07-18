@@ -9,8 +9,10 @@ const {
   decodeFirestoreFields,
   githubReleaseDownloadUrl,
   githubReleaseTag,
+  nextAvailableVersionCode,
   nextPatchVersion,
   parsePubspecVersion,
+  releaseVersionCode,
   replacePubspecVersion,
   splitReleaseRetention,
 } = require('../lib/core');
@@ -64,6 +66,17 @@ test('builds a stable GitHub Release APK URL', () => {
     githubReleaseDownloadUrl('Kimmiejj/kimjot', '1.1.2', 5, 'kimjod-1.1.2-5.apk'),
     'https://github.com/Kimmiejj/kimjot/releases/download/android-v1.1.2-5/kimjod-1.1.2-5.apk',
   );
+});
+
+test('chooses a rollback build number above every published release', () => {
+  assert.equal(releaseVersionCode({ versionCode: 12 }), 12);
+  assert.equal(releaseVersionCode({ tag_name: 'android-v1.1.8-13' }), 13);
+  assert.equal(releaseVersionCode({ releaseTag: 'not-an-app-release' }), 0);
+  assert.equal(nextAvailableVersionCode([
+    11,
+    { versionCode: 12 },
+    { tag_name: 'android-v1.1.8-13' },
+  ]), 14);
 });
 
 test('keeps only newest releases for retention cleanup', () => {

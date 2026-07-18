@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
@@ -15,8 +16,10 @@ const {
   encodeFirestoreFields,
   githubReleaseDownloadUrl,
   githubReleaseTag,
+  nextAvailableVersionCode,
   nextPatchVersion,
   parsePubspecVersion,
+  releaseVersionCode,
   replacePubspecVersion,
   splitReleaseRetention,
   validateReleaseVersion,
@@ -781,6 +784,44 @@ async function cleanupOldFirestoreReleases(job, token) {
   if (!remove.length) logJob(job, `Release history cleanup: ${releases.length}/${MAX_STORED_RELEASES} records stored`);
 }
 
+async function deleteReleasesNewerThan(job, token, githubToken, targetVersionCode, keepReleaseId, keepTag) {
+  setJobStep(job, 'Delete newer releases');
+  const [firestoreReleases, githubReleases] = await Promise.all([
+    listFirestoreDocuments('', 'app_releases', token, 100),
+    listGitHubReleases(githubToken),
+  ]);
+
+  for (const release of firestoreReleases) {
+    if (!release.id || release.id === keepReleaseId) continue;
+    if (releaseVersionCode(release) <= targetVersionCode) continue;
+    await deleteFirestoreDocument(`app_releases/${release.id}`, token);
+    logJob(job, `Deleted newer release record v${release.versionName}+${release.versionCode}`);
+  }
+
+  for (const release of githubReleases) {
+    if (release.tag_name === keepTag) continue;
+    if (releaseVersionCode(release) <= targetVersionCode) continue;
+    await deleteGitHubReleaseAndTag(release, githubToken);
+    logJob(job, `Deleted newer GitHub release ${release.tag_name}`);
+  }
+}
+
+function deleteLocalReleasesNewerThan(job, targetVersionCode, keepApkName) {
+  const downloadsDir = path.join(PUBLISH_DIR, 'downloads');
+  if (fs.existsSync(downloadsDir)) {
+    for (const apkName of fs.readdirSync(downloadsDir)) {
+      const match = apkName.match(/-(\d+)\.apk$/);
+      if (apkName === keepApkName || !match || Number(match[1]) <= targetVersionCode) continue;
+      fs.unlinkSync(path.join(downloadsDir, apkName));
+      logJob(job, `Deleted newer local APK ${apkName}`);
+    }
+  }
+  if (stagedRelease && Number(stagedRelease.versionCode) > targetVersionCode) {
+    logJob(job, `Discarded staged v${stagedRelease.versionName}+${stagedRelease.versionCode}`);
+    stagedRelease = null;
+  }
+}
+
 async function listAuthUsers(token) {
   const users = [];
   let nextPageToken = '';
@@ -963,6 +1004,130 @@ async function beginSendExisting(input) {
   return publicJob(job);
 }
 
+async function ensureLocalGitTag(job, tag) {
+  if (!/^android-v\d+\.\d+\.\d+-\d+$/.test(tag)) {
+    throw new Error(`Rollback source tag is invalid: ${tag}`);
+  }
+  try {
+    return String(await runCapturedCommand(
+      'git',
+      ['rev-parse', '--verify', `refs/tags/${tag}^{commit}`],
+      { cwd: ROOT },
+    )).trim();
+  } catch (_) {
+    setJobStep(job, 'Fetch rollback source');
+    await runLoggedCommand(job, 'git', ['fetch', 'origin', 'tag', tag], { cwd: ROOT });
+    return String(await runCapturedCommand(
+      'git',
+      ['rev-parse', '--verify', `refs/tags/${tag}^{commit}`],
+      { cwd: ROOT },
+    )).trim();
+  }
+}
+
+function copyRollbackSigningConfiguration(worktree) {
+  const sourceProperties = path.join(ROOT, 'android', 'key.properties');
+  if (!fs.existsSync(sourceProperties)) return;
+  const targetProperties = path.join(worktree, 'android', 'key.properties');
+  fs.mkdirSync(path.dirname(targetProperties), { recursive: true });
+  fs.copyFileSync(sourceProperties, targetProperties);
+
+  const properties = fs.readFileSync(sourceProperties, 'utf8');
+  const storeLine = properties.match(/^storeFile\s*=\s*(.+)\s*$/m);
+  if (!storeLine) return;
+  const storeFile = storeLine[1].trim();
+  if (path.isAbsolute(storeFile)) return;
+  const sourceStore = path.resolve(ROOT, 'android', 'app', storeFile);
+  const targetStore = path.resolve(worktree, 'android', 'app', storeFile);
+  if (!fs.existsSync(sourceStore)) {
+    throw new Error('Android signing keystore referenced by key.properties was not found');
+  }
+  if (!targetStore.startsWith(`${worktree}${path.sep}`)) {
+    throw new Error('Android signing keystore path must stay inside the project');
+  }
+  fs.mkdirSync(path.dirname(targetStore), { recursive: true });
+  fs.copyFileSync(sourceStore, targetStore);
+}
+
+async function buildRollbackRelease(job, selectedRelease, versionCode) {
+  const sourceRef = selectedRelease.sourceRef
+    || selectedRelease.releaseTag
+    || githubReleaseTag(selectedRelease.versionName, Number(selectedRelease.versionCode));
+  const commit = await ensureLocalGitTag(job, sourceRef);
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kimjod-rollback-'));
+  const worktree = path.join(temporaryRoot, 'source');
+  let worktreeAdded = false;
+  try {
+    setJobStep(job, 'Prepare rollback source');
+    await runLoggedCommand(job, 'git', ['worktree', 'add', '--detach', worktree, commit], { cwd: ROOT });
+    worktreeAdded = true;
+    copyRollbackSigningConfiguration(worktree);
+
+    setJobStep(job, 'Build rollback APK');
+    await runLoggedCommand(
+      job,
+      FLUTTER_BIN,
+      [
+        'build',
+        'apk',
+        '--release',
+        `--build-name=${selectedRelease.versionName}`,
+        `--build-number=${versionCode}`,
+      ],
+      { cwd: worktree },
+    );
+
+    const builtApk = path.join(worktree, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+    if (!fs.existsSync(builtApk)) throw new Error('Rollback build finished but app-release.apk was not found');
+    const downloadsDir = path.join(PUBLISH_DIR, 'downloads');
+    fs.mkdirSync(downloadsDir, { recursive: true });
+    const apkName = `kimjod-${selectedRelease.versionName}-${versionCode}.apk`;
+    const apkPath = path.join(downloadsDir, apkName);
+    fs.copyFileSync(builtApk, apkPath);
+    const apkBuffer = fs.readFileSync(apkPath);
+    const builtAt = new Date().toISOString();
+    return {
+      applicationId: 'com.kimjot.project',
+      versionName: selectedRelease.versionName,
+      versionCode,
+      apkName,
+      updateUrl: githubReleaseDownloadUrl(
+        GITHUB_REPOSITORY,
+        selectedRelease.versionName,
+        versionCode,
+        apkName,
+      ),
+      downloadProvider: 'github-releases',
+      releaseTag: githubReleaseTag(selectedRelease.versionName, versionCode),
+      sourceRef,
+      rollbackTargetVersionCode: Number(selectedRelease.versionCode),
+      sha256: crypto.createHash('sha256').update(apkBuffer).digest('hex'),
+      sizeBytes: apkBuffer.length,
+      builtAt,
+      messageTh: selectedRelease.messageTh,
+      messageEn: selectedRelease.messageEn,
+    };
+  } finally {
+    if (worktreeAdded) {
+      await runCapturedCommand('git', ['worktree', 'remove', '--force', worktree], { cwd: ROOT })
+        .catch(() => {});
+    }
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+function advanceMainBuildNumber(job, versionCode) {
+  const pubspec = fs.readFileSync(PUBSPEC_PATH, 'utf8');
+  const current = parsePubspecVersion(pubspec);
+  if (current.versionCode >= versionCode) return;
+  fs.writeFileSync(
+    PUBSPEC_PATH,
+    replacePubspecVersion(pubspec, current.versionName, versionCode),
+    'utf8',
+  );
+  logJob(job, `Advanced main pubspec build number to ${versionCode}`);
+}
+
 async function publishPipeline(job, release) {
   try {
     release.downloadProvider = 'github-releases';
@@ -1044,7 +1209,8 @@ async function publishPipeline(job, release) {
 
 async function sendExistingPipeline(job, release) {
   try {
-    logJob(job, `Sending existing ${release.versionName}+${release.versionCode} to users`);
+    const targetVersionCode = Number(release.versionCode);
+    logJob(job, `Rolling all users back to ${release.versionName}+${targetVersionCode}`);
     setJobStep(job, 'Check Firebase and GitHub');
     const [token, githubToken] = await Promise.all([
       firebaseAccessToken(),
@@ -1053,16 +1219,65 @@ async function sendExistingPipeline(job, release) {
     await validateGitHubAccess(githubToken);
     await verifyGitHubReleaseAsset(release, githubToken);
 
-    const currentConfig = await getFirestoreDocument('app_config/android', token) || {};
-    if (Number(release.versionCode) < Number(currentConfig.minimumVersionCode || 0)) {
-      logJob(job, `Rollback target is below current required version ${currentConfig.minimumVersionCode}; Android will not downgrade already-updated installs.`);
-    }
+    const [currentConfig, firestoreReleases, githubReleases] = await Promise.all([
+      getFirestoreDocument('app_config/android', token).then((value) => value || {}),
+      listFirestoreDocuments('', 'app_releases', token, 100),
+      listGitHubReleases(githubToken),
+    ]);
+    const currentPubspec = parsePubspecVersion(fs.readFileSync(PUBSPEC_PATH, 'utf8'));
+    const rollbackVersionCode = nextAvailableVersionCode([
+      currentPubspec.versionCode,
+      Number(currentConfig.minimumVersionCode || 0),
+      Number(currentConfig.highestPublishedVersionCode || 0),
+      ...firestoreReleases,
+      ...githubReleases,
+    ]);
+    logJob(job, `Using forward-only rollback build number ${rollbackVersionCode}`);
 
-    await enableRequiredUpdate(job, release, token, new Date().toISOString());
+    const rollbackRelease = await buildRollbackRelease(job, release, rollbackVersionCode);
+    setJobStep(job, 'Upload rollback APK');
+    const rollbackApkPath = path.join(PUBLISH_DIR, 'downloads', rollbackRelease.apkName);
+    const asset = await publishGitHubApk(rollbackRelease, rollbackApkPath, githubToken);
+    rollbackRelease.updateUrl = asset.browser_download_url || rollbackRelease.updateUrl;
+
+    const publishedAt = new Date().toISOString();
+    const manifest = { ...rollbackRelease, publishedAt };
+    delete manifest.apkName;
+    delete manifest.messageTh;
+    delete manifest.messageEn;
+    fs.writeFileSync(
+      path.join(PUBLISH_DIR, 'release.json'),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      'utf8',
+    );
+
+    setJobStep(job, 'Record rollback release');
+    const rollbackReleaseId = `${publishedAt.replace(/[^0-9]/g, '').slice(0, 14)}_${rollbackVersionCode}`;
+    await patchFirestoreDocument(`app_releases/${rollbackReleaseId}`, {
+      ...manifest,
+      messageTh: rollbackRelease.messageTh,
+      messageEn: rollbackRelease.messageEn,
+      publishedAt: new Date(publishedAt),
+    }, token);
+
+    await enableRequiredUpdate(job, rollbackRelease, token, publishedAt);
+    await deleteReleasesNewerThan(
+      job,
+      token,
+      githubToken,
+      targetVersionCode,
+      rollbackReleaseId,
+      rollbackRelease.releaseTag,
+    );
+    deleteLocalReleasesNewerThan(job, targetVersionCode, rollbackRelease.apkName);
+    advanceMainBuildNumber(job, rollbackVersionCode);
+    await cleanupStoredReleases(job, token, githubToken);
+
     job.state = 'success';
-    job.step = 'Sent to users';
-    job.result = release;
-    logJob(job, `Versions below ${release.versionCode} now receive this release URL.`);
+    job.step = 'Rollback sent to users';
+    job.versionCode = rollbackVersionCode;
+    job.result = manifest;
+    logJob(job, `All installs below build ${rollbackVersionCode} must now install rollback v${release.versionName}.`);
   } catch (error) {
     job.state = 'failed';
     job.step = 'Failed';
@@ -1091,8 +1306,14 @@ async function verifyGitHubReleaseAsset(release, token) {
 
 async function enableRequiredUpdate(job, release, token, publishedAt) {
   setJobStep(job, 'Enable required update');
+  const currentConfig = await getFirestoreDocument('app_config/android', token) || {};
   await patchFirestoreDocument('app_config/android', {
     minimumVersionCode: Number(release.versionCode),
+    highestPublishedVersionCode: Math.max(
+      Number(currentConfig.highestPublishedVersionCode || 0),
+      Number(currentConfig.minimumVersionCode || 0),
+      Number(release.versionCode),
+    ),
     latestVersionName: release.versionName,
     updateUrl: release.updateUrl,
     messageTh: release.messageTh || 'มีเวอร์ชันใหม่ กรุณาอัปเดตก่อนใช้งาน',

@@ -1,3 +1,5 @@
+import '../../app/app_language.dart';
+
 enum TransactionSource {
   manual,
   gallerySlip;
@@ -6,6 +8,13 @@ enum TransactionSource {
     return switch (this) {
       TransactionSource.manual => 'manual',
       TransactionSource.gallerySlip => 'gallery_slip',
+    };
+  }
+
+  String localizedName(AppStrings strings) {
+    return switch (this) {
+      TransactionSource.manual => strings.manualSource,
+      TransactionSource.gallerySlip => strings.gallerySlipSource,
     };
   }
 }

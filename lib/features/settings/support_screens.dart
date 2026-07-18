@@ -63,7 +63,7 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
     });
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Budget saved.')));
+    ).showSnackBar(SnackBar(content: Text(context.strings.budgetSaved)));
   }
 
   void _setBudget(double amount) {
@@ -77,7 +77,7 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
     final strings = context.strings;
 
     return _SupportScaffold(
-      status: 'LOCAL SETTINGS',
+      status: strings.localSettings,
       smallLabel: strings.budget,
       title: strings.budgetControl,
       child: FutureBuilder<MoneySettingsSnapshot>(
@@ -96,29 +96,29 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
                 title: budget == null
                     ? strings.noBudgetYet
                     : '${strings.totalMonthlyBudget}: ${_formatMoney(budget)}',
-                message:
-                    'Home will compare this budget with the selected month expense total.',
+                message: strings.budgetHomeComparison,
               ),
               const SizedBox(height: 16),
               _SupportStatStrip(
                 children: [
                   _SupportStatCard(
-                    label: 'Current',
+                    label: strings.current,
                     value: budgetStatus,
                     tone: _SupportTone.mint,
                   ),
                   _SupportStatCard(
-                    label: 'Categories',
-                    value: '${_expenseCategoryDefinitions.length} ready',
+                    label: strings.categories,
+                    value: strings.categoriesReady(
+                      _expenseCategoryDefinitions.length,
+                    ),
                     tone: _SupportTone.sky,
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              const _SectionCaption(
-                title: 'Monthly budget',
-                subtitle:
-                    'Set the total limit here. Category budgets stay separate from installment plans.',
+              _SectionCaption(
+                title: strings.monthlyBudgetSetup,
+                subtitle: strings.monthlyBudgetDescription,
               ),
               const SizedBox(height: 10),
               _InputCard(
@@ -158,7 +158,7 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2.2),
                       )
                     : const Icon(Icons.save_rounded),
-                label: _saving ? strings.saving : 'Save budget',
+                label: _saving ? strings.saving : strings.saveBudget,
               ),
               const SizedBox(height: 12),
               _SecondaryActionButton(
@@ -169,29 +169,26 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
                         await _save();
                       },
                 icon: const Icon(Icons.clear_rounded),
-                label: 'Clear budget',
+                label: strings.clearBudget,
               ),
               const SizedBox(height: 16),
-              const _SectionCaption(
-                title: 'Category budget view',
-                subtitle:
-                    'Expense categories are ready for budget-level grouping. Installments are managed on their own page.',
+              _SectionCaption(
+                title: strings.categoryBudgetView,
+                subtitle: strings.categoryBudgetDescription,
               ),
               const SizedBox(height: 10),
               for (final category in _expenseCategoryDefinitions.take(4)) ...[
                 _CategoryUsageTile(
                   definition: category,
-                  subtitle:
-                      'Available for budget grouping and expense tracking',
-                  tags: const ['Expense', 'Budget'],
+                  subtitle: strings.availableForBudgetGrouping,
+                  tags: [strings.expense, strings.budget],
                 ),
                 const SizedBox(height: 10),
               ],
               _SoftNoteCard(
                 icon: Icons.credit_card_rounded,
-                title: 'Installments stay separate',
-                message:
-                    'Marking an installment as paid creates its own tracked expense flow. It does not overwrite the monthly budget value here.',
+                title: strings.installmentsStaySeparate,
+                message: strings.installmentsSeparateDescription,
               ),
             ],
           );
@@ -298,7 +295,7 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
     final strings = context.strings;
 
     return _SupportScaffold(
-      status: 'LOCAL SETTINGS',
+      status: strings.localSettings,
       smallLabel: strings.installments,
       title: strings.installments,
       action: IconButton(
@@ -330,34 +327,34 @@ class _InstallmentsScreenState extends State<InstallmentsScreen> {
                 title: plans.isEmpty
                     ? strings.noInstallmentsYet
                     : '${plans.length} ${strings.activePlans}',
-                message:
-                    'Home shows active plans for the selected month. Marking paid updates the next due count.',
+                message: strings.installmentHomeDescription,
               ),
               const SizedBox(height: 16),
               _SupportStatStrip(
                 children: [
                   _SupportStatCard(
-                    label: 'Active',
+                    label: strings.active,
                     value: '${plans.length}',
                     tone: _SupportTone.sky,
                   ),
                   _SupportStatCard(
-                    label: 'Monthly load',
-                    value: plans.isEmpty ? 'THB 0' : _formatMoney(totalPlanned),
+                    label: strings.monthlyLoad,
+                    value: plans.isEmpty
+                        ? '${strings.amountPrefix}0'
+                        : _formatMoney(totalPlanned),
                     tone: _SupportTone.rose,
                   ),
                   _SupportStatCard(
-                    label: 'Remaining',
+                    label: strings.remaining,
                     value: '$totalRemaining',
                     tone: _SupportTone.mint,
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              const _SectionCaption(
-                title: 'Installment plans',
-                subtitle:
-                    'These plans are tracked separately from monthly budget setup.',
+              _SectionCaption(
+                title: strings.installmentPlans,
+                subtitle: strings.installmentPlansDescription,
               ),
               const SizedBox(height: 10),
               if (plans.isEmpty)
@@ -838,8 +835,8 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                         Expanded(
                           child: Text(
                             widget.plan == null
-                                ? 'Add installment'
-                                : 'Edit installment',
+                                ? strings.addInstallment
+                                : strings.editInstallment,
                             style: _pageTitleStyle.copyWith(fontSize: 24),
                           ),
                         ),
@@ -857,19 +854,20 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                     ),
                     const SizedBox(height: 14),
                     _InputCard(
-                      label: 'Name',
+                      label: strings.name,
                       child: TextFormField(
                         controller: _titleController,
-                        decoration: const InputDecoration.collapsed(
-                          hintText: 'Phone, laptop, card plan',
-                          hintStyle: TextStyle(
+                        decoration: InputDecoration.collapsed(
+                          hintText: strings.installmentNameHint,
+                          hintStyle: const TextStyle(
                             color: Color(0x6665748B),
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0,
                           ),
                         ),
-                        validator: (value) =>
-                            value?.trim().isEmpty ?? true ? 'Required' : null,
+                        validator: (value) => value?.trim().isEmpty ?? true
+                            ? strings.requiredField
+                            : null,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -909,7 +907,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                       children: [
                         Expanded(
                           child: _InputCard(
-                            label: 'Total',
+                            label: strings.total,
                             child: TextFormField(
                               controller: _totalController,
                               keyboardType: TextInputType.number,
@@ -921,7 +919,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                               ),
                               validator: (value) =>
                                   (int.tryParse(value ?? '') ?? 0) <= 0
-                                  ? 'Required'
+                                  ? strings.requiredField
                                   : null,
                             ),
                           ),
@@ -929,7 +927,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: _InputCard(
-                            label: 'Paid',
+                            label: strings.paid,
                             child: TextFormField(
                               controller: _paidController,
                               keyboardType: TextInputType.number,
@@ -941,7 +939,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                               ),
                               validator: (value) =>
                                   int.tryParse(value ?? '') == null
-                                  ? 'Required'
+                                  ? strings.requiredField
                                   : null,
                             ),
                           ),
@@ -964,7 +962,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                           60,
                         ])
                           _QuickValueChip(
-                            label: '$total months',
+                            label: strings.monthsCount(total),
                             onTap: () => _setNumber(_totalController, total),
                           ),
                       ],
@@ -976,7 +974,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                       children: [
                         for (final years in const [5, 10, 15, 20, 25, 30])
                           _QuickValueChip(
-                            label: '$years years',
+                            label: strings.yearsCount(years),
                             onTap: () =>
                                 _setNumber(_totalController, years * 12),
                           ),
@@ -987,7 +985,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                       children: [
                         Expanded(
                           child: _InputCard(
-                            label: 'Start',
+                            label: strings.start,
                             child: InkWell(
                               onTap: _pickStartMonth,
                               child: Padding(
@@ -1005,7 +1003,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: _InputCard(
-                            label: 'Due day',
+                            label: strings.dueDay,
                             child: TextFormField(
                               controller: _dueDayController,
                               keyboardType: TextInputType.number,
@@ -1033,7 +1031,7 @@ class _InstallmentEditorState extends State<_InstallmentEditor> {
                       children: [
                         for (final day in const [1, 5, 15, 25])
                           _QuickValueChip(
-                            label: 'Day $day',
+                            label: strings.dayNumber(day),
                             onTap: () => _setNumber(_dueDayController, day),
                           ),
                       ],
@@ -1085,6 +1083,7 @@ class _InstallmentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
     final progress = '${plan.paidInstallments}/${plan.totalInstallments}';
     final ratio = plan.totalInstallments == 0
         ? 0.0
@@ -1107,7 +1106,7 @@ class _InstallmentTile extends StatelessWidget {
                     Text(plan.title, style: _rowTitleStyle),
                     const SizedBox(height: 3),
                     Text(
-                      '${_formatMoney(plan.amount)} per cycle',
+                      strings.amountPerCycle(_formatMoney(plan.amount)),
                       style: _mutedStyle,
                     ),
                   ],
@@ -1115,20 +1114,20 @@ class _InstallmentTile extends StatelessWidget {
               ),
               _CircleActionButton(
                 icon: Icons.edit_rounded,
-                tooltip: 'Edit installment',
+                tooltip: strings.editInstallmentTooltip,
                 onPressed: onEdit,
               ),
               const SizedBox(width: 8),
               _CircleActionButton(
                 icon: Icons.check_rounded,
-                tooltip: 'Mark installment as paid',
+                tooltip: strings.markInstallmentPaidTooltip,
                 onPressed: onPaid,
                 palette: _SupportTone.mint,
               ),
               const SizedBox(width: 8),
               _CircleActionButton(
                 icon: Icons.delete_outline_rounded,
-                tooltip: 'Delete installment',
+                tooltip: strings.deleteInstallmentTooltip,
                 onPressed: onDelete,
                 palette: _SupportTone.rose,
               ),
@@ -1138,18 +1137,18 @@ class _InstallmentTile extends StatelessWidget {
           _SupportStatStrip(
             children: [
               _SupportStatCard(
-                label: 'Progress',
+                label: strings.progress,
                 value: progress,
                 tone: _SupportTone.sky,
               ),
               _SupportStatCard(
-                label: 'Due day',
+                label: strings.dueDay,
                 value: '${plan.dueDay}',
                 tone: _SupportTone.mint,
               ),
               _SupportStatCard(
-                label: 'Start',
-                value: _formatMonthShort(plan.startMonth),
+                label: strings.start,
+                value: strings.formatMonthYear(plan.startMonth),
                 tone: _SupportTone.rose,
               ),
             ],
@@ -1867,24 +1866,6 @@ enum _SupportTone {
 
   final List<Color> gradient;
   final Color foreground;
-}
-
-String _formatMonthShort(DateTime date) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return '${months[date.month - 1]} ${date.year}';
 }
 
 const _expenseCategoryDefinitions = [

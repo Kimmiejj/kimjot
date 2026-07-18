@@ -588,7 +588,7 @@ class _BudgetStatusBuilder extends StatelessWidget {
             title: context.strings.budget,
             message: context.strings.noBudget,
             icon: Icons.account_balance_wallet_rounded,
-            actionLabel: 'Set',
+            actionLabel: context.strings.set,
             actionIcon: Icons.tune_rounded,
             onAction: onManageBudget,
           );
@@ -632,7 +632,7 @@ class _InstallmentStatusBuilder extends StatelessWidget {
             title: context.strings.noDueInstallment,
             message: context.strings.installmentHint,
             icon: Icons.event_available_rounded,
-            actionLabel: 'Add',
+            actionLabel: context.strings.add,
             actionIcon: Icons.add_rounded,
             onAction: onManageInstallments,
           );
@@ -1372,8 +1372,8 @@ class _BudgetProgressCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       isOver
-                          ? 'Over by ${_formatMoney(remaining.abs())}'
-                          : '${_formatMoney(remaining)} left',
+                          ? strings.overBy(_formatMoney(remaining.abs()))
+                          : strings.amountLeft(_formatMoney(remaining)),
                       style: const TextStyle(
                         color: Color(0xFF64748B),
                         fontSize: 13,
@@ -1397,7 +1397,7 @@ class _BudgetProgressCard extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               IconButton(
-                tooltip: 'Edit budget',
+                tooltip: strings.editBudget,
                 onPressed: onEdit,
                 icon: const Icon(Icons.tune_rounded),
                 style: IconButton.styleFrom(
@@ -1422,7 +1422,10 @@ class _BudgetProgressCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '${_formatMoney(spent)} spent of ${_formatMoney(budget)}',
+            strings.spentOf(
+              spent: _formatMoney(spent),
+              budget: _formatMoney(budget),
+            ),
             style: const TextStyle(
               color: Color(0xFF64748B),
               fontSize: 12,
@@ -1462,6 +1465,7 @@ class _InstallmentDueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
     final total = plans.fold<double>(0, (sum, plan) => sum + plan.amount);
     final first = plans.first;
     final moreCount = plans.length - 1;
@@ -1513,8 +1517,11 @@ class _InstallmentDueCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   moreCount > 0
-                      ? '${_formatMoney(total)} due across ${plans.length} plans'
-                      : '${_formatMoney(first.amount)} due this month',
+                      ? strings.dueAcrossPlans(
+                          amount: _formatMoney(total),
+                          count: plans.length,
+                        )
+                      : strings.dueThisMonth(_formatMoney(first.amount)),
                   style: const TextStyle(
                     color: Color(0xFF64748B),
                     fontSize: 13,
@@ -1528,7 +1535,7 @@ class _InstallmentDueCard extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           IconButton(
-            tooltip: 'Manage installments',
+            tooltip: strings.manageInstallments,
             onPressed: onManage,
             icon: const Icon(Icons.add_rounded),
             style: IconButton.styleFrom(
@@ -1772,7 +1779,8 @@ class _TransactionListTile extends StatelessWidget {
       categoryColor: categoryAccentColor(record.categoryId),
       title: title,
       time: context.strings.formatTime(record.transactionDate),
-      subtitle: '$categoryName · ${record.source.firestoreValue}',
+      subtitle:
+          '$categoryName · ${record.source.localizedName(context.strings)}',
       amount:
           '${_transactionPrefix(record.type)}${_formatMoney(record.amount)}',
       amountColor: _transactionColor(record.type),

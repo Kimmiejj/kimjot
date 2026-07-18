@@ -505,7 +505,10 @@ class _SlipSummaryCard extends StatelessWidget {
         children: [
           Text(strings.slipSummary, style: _summaryTitleStyle),
           const SizedBox(height: 12),
-          _SummaryRow(label: strings.bank, value: result.bankDisplayName),
+          _SummaryRow(
+            label: strings.bank,
+            value: result.bankName ?? strings.unknownBank,
+          ),
           if (amount != null)
             _SummaryRow(
               label: strings.amount,

@@ -23,6 +23,8 @@ object AutoSlipSync {
     const val OPEN_REQUEST_EXTRA = "kimjod_open_auto_slip_sync"
 
     private const val PREFERENCES_NAME = "kimjod_auto_slip_sync"
+    private const val FLUTTER_PREFERENCES_NAME = "FlutterSharedPreferences"
+    private const val APP_LANGUAGE_KEY = "flutter.app.language"
     private const val FOLDER_URI_KEY = "folder_uri"
     private const val FOLDER_URIS_KEY = "folder_uris"
     private const val KNOWN_DOCUMENT_IDS_KEY = "known_document_ids"
@@ -241,15 +243,24 @@ object AutoSlipSync {
     }
 
     private fun showNewSlipNotification(context: Context, count: Int) {
+        val isThai = context
+            .getSharedPreferences(FLUTTER_PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .getString(APP_LANGUAGE_KEY, "en") == "th"
+        val channelName = if (isThai) "ซิงก์สลิปอัตโนมัติ" else "Auto slip sync"
+        val channelDescription = if (isThai) {
+            "แจ้งเตือนเมื่อพบรูปสลิปใหม่ในโฟลเดอร์ที่เลือก"
+        } else {
+            "Notifies when new slip images are found in the selected folder."
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(
                 NotificationChannel(
                     NOTIFICATION_CHANNEL_ID,
-                    "Auto slip sync",
+                    channelName,
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = "Notifies when new slip images are found in the selected folder."
+                    description = channelDescription
                 }
             )
         }
@@ -268,8 +279,14 @@ object AutoSlipSync {
         )
         val notification = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(com.kimjot.project.R.drawable.ic_bg_service_small)
-            .setContentTitle("พบสลิปใหม่ · New slips found")
-            .setContentText("พบ $count รูปใหม่ แตะเพื่อตรวจและกดบันทึกเอง")
+            .setContentTitle(if (isThai) "พบสลิปใหม่" else "New slips found")
+            .setContentText(
+                if (isThai) {
+                    "พบรูปใหม่ $count รูป แตะเพื่อตรวจสอบและบันทึก"
+                } else {
+                    "$count new images found. Tap to review and save."
+                }
+            )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)

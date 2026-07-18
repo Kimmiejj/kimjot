@@ -32,4 +32,29 @@ void main() {
       contains('09:05'),
     );
   });
+
+  test('new app surfaces have distinct Thai and English copy', () {
+    const thai = AppStrings(AppLanguage.th);
+    const english = AppStrings(AppLanguage.en);
+
+    final pairs = <(String, String)>[
+      (thai.firebaseSetupRequired, english.firebaseSetupRequired),
+      (thai.budgetSaved, english.budgetSaved),
+      (thai.monthlyBudgetSetup, english.monthlyBudgetSetup),
+      (thai.addInstallment, english.addInstallment),
+      (thai.editTransaction, english.editTransaction),
+      (thai.clearSearch, english.clearSearch),
+      (thai.albumScanComplete, english.albumScanComplete),
+      (thai.trainingComplete, english.trainingComplete),
+      (thai.manualSource, english.manualSource),
+      (thai.gallerySlipSource, english.gallerySlipSource),
+      (thai.albumSyncProgressChannel, english.albumSyncProgressChannel),
+    ];
+
+    for (final (thaiText, englishText) in pairs) {
+      expect(thaiText, isNot(equals(englishText)));
+      expect(thaiText, matches(RegExp(r'[ก-๙]')));
+      expect(englishText, matches(RegExp(r'[A-Za-z]')));
+    }
+  });
 }

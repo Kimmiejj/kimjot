@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_language.dart';
 import 'pastel_kit.dart';
 
 class SetupRequiredScreen extends StatelessWidget {
@@ -9,6 +10,7 @@ class SetupRequiredScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
     return Scaffold(
       body: DecoratedBox(
         decoration: const BoxDecoration(
@@ -34,7 +36,7 @@ class SetupRequiredScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  'Firebase setup required',
+                  strings.firebaseSetupRequired,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w900,
@@ -42,10 +44,13 @@ class SetupRequiredScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Add google-services.json for package com.kimjot.project, add SHA-1/SHA-256 in Firebase Console, and enable Google sign-in.',
+                Text(
+                  strings.firebaseSetupInstructions,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF65748B), height: 1.45),
+                  style: const TextStyle(
+                    color: Color(0xFF65748B),
+                    height: 1.45,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 SelectableText(

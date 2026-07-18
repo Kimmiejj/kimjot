@@ -631,7 +631,9 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
       final v = double.tryParse(p.replaceAll(',', ''));
       if (v == null) {
         if (!mounted) return;
-        messenger.showSnackBar(SnackBar(content: Text('Invalid number: $p')));
+        messenger.showSnackBar(
+          SnackBar(content: Text(strings.invalidNumber(p))),
+        );
         return;
       }
       amounts.add(v);
@@ -688,7 +690,7 @@ class _ScanHubScreenState extends State<ScanHubScreen> {
     });
 
     if (!mounted) return;
-    messenger.showSnackBar(const SnackBar(content: Text('Training complete')));
+    messenger.showSnackBar(SnackBar(content: Text(strings.trainingComplete)));
   }
 }
 

@@ -184,9 +184,19 @@ class MainActivity : FlutterFragmentActivity() {
         }
 
         try {
+            val isThai = getSharedPreferences(
+                FLUTTER_PREFERENCES_NAME,
+                Context.MODE_PRIVATE
+            ).getString(APP_LANGUAGE_KEY, "en") == "th"
             val request = DownloadManager.Request(uri)
                 .setTitle("Kimjod ${targetVersionCode}")
-                .setDescription("Downloading the required app update")
+                .setDescription(
+                    if (isThai) {
+                        "กำลังดาวน์โหลดอัปเดตที่จำเป็น"
+                    } else {
+                        "Downloading the required app update"
+                    }
+                )
                 .setMimeType(APK_MIME_TYPE)
                 .setNotificationVisibility(
                     DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
@@ -597,6 +607,8 @@ class MainActivity : FlutterFragmentActivity() {
         private const val DEVICE_AUDIO_CHANNEL = "kimjod/device_audio"
         private const val APP_UPDATE_CHANNEL = "kimjod/app_update"
         private const val UPDATE_PREFS = "kimjod_app_update"
+        private const val FLUTTER_PREFERENCES_NAME = "FlutterSharedPreferences"
+        private const val APP_LANGUAGE_KEY = "flutter.app.language"
         private const val PREF_UPDATE_DOWNLOAD_ID = "download_id"
         private const val PREF_UPDATE_TARGET_VERSION = "target_version"
         private const val PREF_UPDATE_URL = "apk_url"

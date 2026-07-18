@@ -206,7 +206,7 @@ class _LoginCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _TrustTile(
-                  label: 'OCR',
+                  label: strings.ocrLabel,
                   value: strings.onDevice,
                   icon: Icons.document_scanner_rounded,
                 ),

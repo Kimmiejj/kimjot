@@ -466,7 +466,11 @@ byId('publishButton').addEventListener('click', async () => {
 byId('releaseHistory').addEventListener('click', async (event) => {
   const button = event.target.closest('.send-existing-button');
   if (!button) return;
-  const ok = window.confirm(`ส่ง v${button.dataset.version} ให้ผู้ใช้หรือไม่?\n\nAndroid จะไม่ downgrade เครื่องที่มี versionCode สูงกว่า`);
+  const ok = window.confirm(
+    `ROLLBACK ผู้ใช้ทั้งหมดไป v${button.dataset.version} หรือไม่?\n\n`
+    + 'ระบบจะสร้าง rollback APK ด้วย build number ใหม่ ลบ release ที่ใหม่กว่าเวอร์ชันที่เลือก '
+    + 'และบังคับให้ผู้ใช้ทุกคนติดตั้ง rollback นี้',
+  );
   if (!ok) return;
   clearAlert();
   button.disabled = true;

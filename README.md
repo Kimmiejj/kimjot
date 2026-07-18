@@ -70,6 +70,12 @@ rules, uploads the APK to GitHub Releases, records the release, and only then ra
 Center restart. If build or Hosting deploy fails, the required-version document
 is not changed and the staged APK can be retried.
 
+The release-history **Send** button is a forward-only rollback. It rebuilds the
+selected Git-tagged source with a version code higher than every prior build,
+switches the required update to that APK, and deletes releases newer than the
+selected target. Android can therefore install the selected app version without
+uninstalling the app or clearing user data.
+
 Dashboard metrics include registered users, active users, sessions, recent
 online presence, feature usage, installed versions, and release history. The app
 does not send transaction amounts or encrypted transaction payloads as usage

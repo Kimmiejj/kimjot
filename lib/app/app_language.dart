@@ -106,6 +106,7 @@ class AppStrings {
       isThai ? 'เข้าสู่ระบบด้วย Google' : 'Continue with Google';
   String get signingIn => isThai ? 'กำลังเข้าสู่ระบบ...' : 'Signing in...';
   String get onDevice => isThai ? 'บนเครื่อง' : 'On-device';
+  String get ocrLabel => isThai ? 'อ่านสลิป' : 'OCR';
   String get storage => isThai ? 'ที่เก็บรูป' : 'Storage';
   String get noSlipImage => isThai ? 'ไม่เก็บรูปสลิป' : 'No slip image';
   String get privacyNote => isThai
@@ -190,6 +191,139 @@ class AppStrings {
   String get couldNotSaveTransaction =>
       isThai ? 'บันทึกรายการไม่สำเร็จ' : 'Could not save transaction.';
   String get back => isThai ? 'กลับ' : 'Back';
+
+  String get firebaseSetupRequired =>
+      isThai ? 'ต้องตั้งค่า Firebase' : 'Firebase setup required';
+  String get firebaseSetupInstructions => isThai
+      ? 'เพิ่มไฟล์ google-services.json สำหรับแพ็กเกจ com.kimjot.project เพิ่ม SHA-1/SHA-256 ใน Firebase Console และเปิดใช้การเข้าสู่ระบบด้วย Google'
+      : 'Add google-services.json for package com.kimjot.project, add SHA-1/SHA-256 in Firebase Console, and enable Google sign-in.';
+  String get localSettings => isThai ? 'การตั้งค่าในเครื่อง' : 'LOCAL SETTINGS';
+  String get current => isThai ? 'ปัจจุบัน' : 'Current';
+  String get categories => isThai ? 'หมวดหมู่' : 'Categories';
+  String get active => isThai ? 'ใช้งานอยู่' : 'Active';
+  String get remaining => isThai ? 'คงเหลือ' : 'Remaining';
+  String get total => isThai ? 'ทั้งหมด' : 'Total';
+  String get ready => isThai ? 'พร้อม' : 'Ready';
+  String get duplicate => isThai ? 'ซ้ำ' : 'Duplicate';
+  String get failed => isThai ? 'ไม่สำเร็จ' : 'Failed';
+  String get stopped => isThai ? 'หยุดแล้ว' : 'Stopped';
+  String get done => isThai ? 'เสร็จแล้ว' : 'Done';
+  String get slip => isThai ? 'สลิป' : 'Slip';
+  String get set => isThai ? 'ตั้งค่า' : 'Set';
+  String get clearSearch => isThai ? 'ล้างการค้นหา' : 'Clear search';
+  String get editTransaction => isThai ? 'แก้ไขรายการ' : 'Edit transaction';
+  String get edit => isThai ? 'แก้ไข' : 'Edit';
+  String get saveChanges => isThai ? 'บันทึกการแก้ไข' : 'Save changes';
+  String get deleteTransaction => isThai ? 'ลบรายการ' : 'Delete transaction';
+  String get googleAccount => isThai ? 'บัญชี Google' : 'Google account';
+  String get kimjodUser => isThai ? 'ผู้ใช้ Kimjod' : 'Kimjod user';
+  String get unknownBank => isThai ? 'ไม่ทราบธนาคาร' : 'Unknown bank';
+  String get manualSource => isThai ? 'เพิ่มเอง' : 'Manual';
+  String get gallerySlipSource => isThai ? 'สลิปจากแกลเลอรี' : 'Gallery slip';
+
+  String get budgetSaved => isThai ? 'บันทึกงบประมาณแล้ว' : 'Budget saved.';
+  String get budgetHomeComparison => isThai
+      ? 'หน้าแรกจะเปรียบเทียบงบนี้กับรายจ่ายรวมของเดือนที่เลือก'
+      : 'Home will compare this budget with the selected month expense total.';
+  String categoriesReady(int count) =>
+      isThai ? 'พร้อม $count หมวดหมู่' : '$count ready';
+  String get monthlyBudgetSetup => isThai ? 'ตั้งงบรายเดือน' : 'Monthly budget';
+  String get monthlyBudgetDescription => isThai
+      ? 'กำหนดวงเงินรวมที่นี่ งบแยกหมวดหมู่จะแยกจากแผนรายการผ่อน'
+      : 'Set the total limit here. Category budgets stay separate from installment plans.';
+  String get saveBudget => isThai ? 'บันทึกงบประมาณ' : 'Save budget';
+  String get clearBudget => isThai ? 'ล้างงบประมาณ' : 'Clear budget';
+  String get categoryBudgetView =>
+      isThai ? 'งบประมาณแยกหมวดหมู่' : 'Category budget view';
+  String get categoryBudgetDescription => isThai
+      ? 'หมวดหมู่รายจ่ายพร้อมใช้สำหรับจัดกลุ่มงบประมาณ ส่วนรายการผ่อนจัดการแยกในหน้าของตัวเอง'
+      : 'Expense categories are ready for budget-level grouping. Installments are managed on their own page.';
+  String get availableForBudgetGrouping => isThai
+      ? 'พร้อมใช้จัดกลุ่มงบประมาณและติดตามรายจ่าย'
+      : 'Available for budget grouping and expense tracking';
+  String get installmentsStaySeparate =>
+      isThai ? 'รายการผ่อนจัดการแยกกัน' : 'Installments stay separate';
+  String get installmentsSeparateDescription => isThai
+      ? 'เมื่อทำเครื่องหมายว่าจ่ายค่างวดแล้ว ระบบจะสร้างรายการรายจ่ายแยกต่างหาก และจะไม่เขียนทับงบรายเดือนในหน้านี้'
+      : 'Marking an installment as paid creates its own tracked expense flow. It does not overwrite the monthly budget value here.';
+  String get installmentHomeDescription => isThai
+      ? 'หน้าแรกจะแสดงแผนที่ใช้งานในเดือนที่เลือก เมื่อทำเครื่องหมายว่าจ่ายแล้ว จำนวนงวดคงเหลือจะอัปเดตตาม'
+      : 'Home shows active plans for the selected month. Marking paid updates the next due count.';
+  String get monthlyLoad => isThai ? 'ยอดผ่อนต่อเดือน' : 'Monthly load';
+  String get installmentPlans => isThai ? 'แผนรายการผ่อน' : 'Installment plans';
+  String get installmentPlansDescription => isThai
+      ? 'แผนเหล่านี้ติดตามแยกจากการตั้งงบรายเดือน'
+      : 'These plans are tracked separately from monthly budget setup.';
+  String get addInstallment => isThai ? 'เพิ่มรายการผ่อน' : 'Add installment';
+  String get editInstallment => isThai ? 'แก้ไขรายการผ่อน' : 'Edit installment';
+  String get name => isThai ? 'ชื่อ' : 'Name';
+  String get installmentNameHint =>
+      isThai ? 'โทรศัพท์ แล็ปท็อป หรือแผนผ่อนบัตร' : 'Phone, laptop, card plan';
+  String get requiredField => isThai ? 'จำเป็นต้องกรอก' : 'Required';
+  String get paid => isThai ? 'จ่ายแล้ว' : 'Paid';
+  String monthsCount(int count) => isThai ? '$count เดือน' : '$count months';
+  String yearsCount(int count) => isThai ? '$count ปี' : '$count years';
+  String get start => isThai ? 'เริ่มต้น' : 'Start';
+  String get dueDay => isThai ? 'วันครบกำหนด' : 'Due day';
+  String dayNumber(int day) => isThai ? 'วันที่ $day' : 'Day $day';
+  String get progress => isThai ? 'ความคืบหน้า' : 'Progress';
+  String amountPerCycle(String amount) =>
+      isThai ? '$amount ต่องวด' : '$amount per cycle';
+  String get editInstallmentTooltip =>
+      isThai ? 'แก้ไขรายการผ่อน' : 'Edit installment';
+  String get markInstallmentPaidTooltip =>
+      isThai ? 'ทำเครื่องหมายว่าจ่ายแล้ว' : 'Mark installment as paid';
+  String get deleteInstallmentTooltip =>
+      isThai ? 'ลบรายการผ่อน' : 'Delete installment';
+  String overBy(String amount) => isThai ? 'เกินงบ $amount' : 'Over by $amount';
+  String amountLeft(String amount) => isThai ? 'เหลือ $amount' : '$amount left';
+  String get editBudget => isThai ? 'แก้ไขงบประมาณ' : 'Edit budget';
+  String spentOf({required String spent, required String budget}) =>
+      isThai ? 'ใช้ไป $spent จาก $budget' : '$spent spent of $budget';
+  String dueAcrossPlans({required String amount, required int count}) => isThai
+      ? 'ครบกำหนด $amount จาก $count แผน'
+      : '$amount due across $count plans';
+  String dueThisMonth(String amount) =>
+      isThai ? 'ครบกำหนด $amount เดือนนี้' : '$amount due this month';
+  String get manageInstallments =>
+      isThai ? 'จัดการรายการผ่อน' : 'Manage installments';
+  String invalidNumber(String value) =>
+      isThai ? 'ตัวเลขไม่ถูกต้อง: $value' : 'Invalid number: $value';
+  String get trainingComplete =>
+      isThai ? 'ฝึกตัวอ่านเสร็จแล้ว' : 'Training complete';
+  String get albumScanComplete =>
+      isThai ? 'อ่านสลิปเสร็จแล้ว' : 'Scan complete';
+  String get albumScanCompleteDescription => isThai
+      ? 'อ่านอัลบั้มเสร็จแล้ว ตรวจสอบรายการหรือบันทึกทั้งหมดได้ทันที'
+      : 'Album scan complete. Review it or save everything now.';
+  String get albumSyncProgressChannel =>
+      isThai ? 'ความคืบหน้าการซิงก์อัลบั้ม' : 'Album sync progress';
+  String get albumSyncProgressDescription => isThai
+      ? 'แสดงความคืบหน้าระหว่างอ่านสลิปจากอัลบั้ม'
+      : 'Shows album sync progress while slips are being read.';
+  String get albumSyncCompleteChannel =>
+      isThai ? 'ซิงก์อัลบั้มเสร็จแล้ว' : 'Album sync complete';
+  String get albumSyncCompleteDescription => isThai
+      ? 'แจ้งเมื่ออ่านสลิปจากอัลบั้มเสร็จแล้ว'
+      : 'Shows when album sync has finished reading slips.';
+  String get preparingSlipScan =>
+      isThai ? 'กำลังเตรียมอ่านสลิป...' : 'Preparing slip scan...';
+  String albumSyncProgressBody({required int completed, required int total}) =>
+      isThai
+      ? 'กำลังอ่าน $completed/$total สลิป แตะเพื่อตรวจสอบ'
+      : 'Reading $completed/$total slips. Tap to review.';
+  String albumSyncCompleteBody({
+    required int ready,
+    required int skipped,
+    required int unreadable,
+  }) => isThai
+      ? 'พร้อม $ready ข้ามรายการซ้ำ $skipped อ่านไม่ได้ $unreadable แตะเพื่อตรวจสอบ'
+      : 'Ready $ready, skipped $skipped, unreadable $unreadable. Tap to review.';
+  String get albumSyncStopped =>
+      isThai ? 'หยุดการซิงก์อัลบั้ม' : 'Album sync stopped';
+  String albumSyncStoppedBody(int total) => isThai
+      ? 'อ่านสลิป $total รายการไม่สำเร็จ แตะเพื่อตรวจสอบ'
+      : 'Could not finish reading $total slips. Tap to review.';
 
   String get scanHub => isThai ? 'นำเข้าสลิป' : 'Slip Import';
   String get scanHubTip => isThai

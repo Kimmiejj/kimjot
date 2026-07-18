@@ -171,9 +171,9 @@ class _ChangeRecoveryKeyScreenState extends State<ChangeRecoveryKeyScreen> {
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(color: const Color(0x245D81AD)),
                     ),
-                    child: const Text(
-                      'SECURITY',
-                      style: TextStyle(
+                    child: Text(
+                      isThai ? 'ความปลอดภัย' : 'SECURITY',
+                      style: const TextStyle(
                         color: Color(0xFF145CC8),
                         fontSize: 11,
                         fontWeight: FontWeight.w900,

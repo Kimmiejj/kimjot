@@ -59,6 +59,26 @@ function githubReleaseDownloadUrl(repository, versionName, versionCode, apkName)
   return `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(apkName)}`;
 }
 
+function releaseVersionCode(release) {
+  const direct = Number(release?.versionCode);
+  if (Number.isSafeInteger(direct) && direct > 0) return direct;
+  const tag = String(release?.releaseTag || release?.tag_name || release?.tag || '');
+  const match = tag.match(/^android-v\d+\.\d+\.\d+-(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function nextAvailableVersionCode(candidates) {
+  const highest = candidates.reduce((current, candidate) => {
+    const versionCode = typeof candidate === 'object'
+      ? releaseVersionCode(candidate)
+      : Number(candidate);
+    return Number.isSafeInteger(versionCode) && versionCode > current
+      ? versionCode
+      : current;
+  }, 0);
+  return highest + 1;
+}
+
 function releaseTimestamp(release) {
   const parsed = Date.parse(release.publishedAt || release.published_at || release.created_at || '');
   return Number.isFinite(parsed) ? parsed : 0;
@@ -299,8 +319,10 @@ module.exports = {
   githubReleaseDownloadUrl,
   githubReleaseTag,
   nextPatchVersion,
+  nextAvailableVersionCode,
   parsePubspecVersion,
   parseVersion,
+  releaseVersionCode,
   replacePubspecVersion,
   splitReleaseRetention,
   validateReleaseVersion,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_language.dart';
+import '../../shared/widgets/loading_screen.dart';
 import '../auth/auth_user.dart';
 import 'biometric_recovery_key_store.dart';
 import 'transaction_encryption_manager.dart';
@@ -358,7 +359,11 @@ class _TransactionEncryptionGateState extends State<TransactionEncryptionGate>
       return widget.child;
     }
     if (_access == null && _error == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return LoadingScreen(
+        key: const ValueKey('encryption-startup-hold'),
+        message: context.strings.startingKimjod,
+        completed: true,
+      );
     }
 
     final isThai = context.strings.isThai;

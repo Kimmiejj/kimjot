@@ -7,6 +7,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../app/app_language.dart';
 import '../transactions/transaction_type.dart';
 import 'album_sync_ai_analyzer.dart';
 import 'slip_fingerprint.dart';
@@ -60,6 +61,7 @@ class AlbumSyncBackgroundService {
       return;
     }
 
+    final strings = await _notificationStrings();
     final notifications = FlutterLocalNotificationsPlugin();
     await notifications.initialize(
       settings: const InitializationSettings(
@@ -85,18 +87,18 @@ class AlbumSyncBackgroundService {
           AndroidFlutterLocalNotificationsPlugin
         >();
     await androidNotifications?.createNotificationChannel(
-      const AndroidNotificationChannel(
+      AndroidNotificationChannel(
         _albumSyncProgressChannelId,
-        'Album sync progress',
-        description: 'Shows album sync progress while slips are being read.',
+        strings.albumSyncProgressChannel,
+        description: strings.albumSyncProgressDescription,
         importance: Importance.low,
       ),
     );
     await androidNotifications?.createNotificationChannel(
-      const AndroidNotificationChannel(
+      AndroidNotificationChannel(
         _albumSyncCompleteChannelId,
-        'Album sync complete',
-        description: 'Shows when album sync has finished reading slips.',
+        strings.albumSyncCompleteChannel,
+        description: strings.albumSyncCompleteDescription,
         importance: Importance.high,
       ),
     );
@@ -108,8 +110,8 @@ class AlbumSyncBackgroundService {
         autoStartOnBoot: false,
         isForegroundMode: true,
         notificationChannelId: _albumSyncProgressChannelId,
-        initialNotificationTitle: 'Sync album',
-        initialNotificationContent: 'Preparing slip scan...',
+        initialNotificationTitle: strings.syncAlbumTitle,
+        initialNotificationContent: strings.preparingSlipScan,
         foregroundServiceNotificationId: _albumSyncProgressNotificationId,
         foregroundServiceTypes: const [AndroidForegroundType.dataSync],
       ),
@@ -684,18 +686,20 @@ Future<void> _showProgressNotification(AlbumSyncJobSnapshot snapshot) async {
     return;
   }
 
+  final strings = await _notificationStrings();
   await FlutterLocalNotificationsPlugin().show(
     id: _albumSyncProgressNotificationId,
-    title: 'Sync album',
-    body:
-        'Reading ${snapshot.completedCount}/${snapshot.totalCount} slips. Tap to review.',
+    title: strings.syncAlbumTitle,
+    body: strings.albumSyncProgressBody(
+      completed: snapshot.completedCount,
+      total: snapshot.totalCount,
+    ),
     payload: _albumSyncOpenPayload,
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         _albumSyncProgressChannelId,
-        'Album sync progress',
-        channelDescription:
-            'Shows album sync progress while slips are being read.',
+        strings.albumSyncProgressChannel,
+        channelDescription: strings.albumSyncProgressDescription,
         icon: 'ic_bg_service_small',
         ongoing: true,
         autoCancel: false,
@@ -715,17 +719,21 @@ Future<void> _showCompletedNotification(AlbumSyncJobSnapshot snapshot) async {
     return;
   }
 
+  final strings = await _notificationStrings();
   await FlutterLocalNotificationsPlugin().show(
     id: _albumSyncCompleteNotificationId,
-    title: 'Album sync complete',
-    body:
-        'Ready ${snapshot.readyCount}, skipped ${snapshot.duplicateCount}, unreadable ${snapshot.failedCount}. Tap to review.',
+    title: strings.albumSyncCompleteChannel,
+    body: strings.albumSyncCompleteBody(
+      ready: snapshot.readyCount,
+      skipped: snapshot.duplicateCount,
+      unreadable: snapshot.failedCount,
+    ),
     payload: _albumSyncOpenPayload,
-    notificationDetails: const NotificationDetails(
+    notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         _albumSyncCompleteChannelId,
-        'Album sync complete',
-        channelDescription: 'Shows when album sync has finished reading slips.',
+        strings.albumSyncCompleteChannel,
+        channelDescription: strings.albumSyncCompleteDescription,
         icon: 'ic_bg_service_small',
         importance: Importance.high,
         priority: Priority.high,
@@ -741,17 +749,17 @@ Future<void> _showFailedNotification(AlbumSyncJobSnapshot snapshot) async {
     return;
   }
 
+  final strings = await _notificationStrings();
   await FlutterLocalNotificationsPlugin().show(
     id: _albumSyncCompleteNotificationId,
-    title: 'Album sync stopped',
-    body:
-        'Could not finish reading ${snapshot.totalCount} slips. Tap to review.',
+    title: strings.albumSyncStopped,
+    body: strings.albumSyncStoppedBody(snapshot.totalCount),
     payload: _albumSyncOpenPayload,
-    notificationDetails: const NotificationDetails(
+    notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         _albumSyncCompleteChannelId,
-        'Album sync complete',
-        channelDescription: 'Shows when album sync has finished reading slips.',
+        strings.albumSyncCompleteChannel,
+        channelDescription: strings.albumSyncCompleteDescription,
         icon: 'ic_bg_service_small',
         importance: Importance.high,
         priority: Priority.high,
@@ -760,6 +768,10 @@ Future<void> _showFailedNotification(AlbumSyncJobSnapshot snapshot) async {
       ),
     ),
   );
+}
+
+Future<AppStrings> _notificationStrings() async {
+  return AppStrings(await AppLanguageController.loadSavedLanguage());
 }
 
 void _onNotificationResponse(NotificationResponse response) {

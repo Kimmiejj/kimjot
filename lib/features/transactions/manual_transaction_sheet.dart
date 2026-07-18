@@ -19,7 +19,7 @@ class ManualTransactionSheet extends StatefulWidget {
     required this.user,
     required this.transactionRepository,
     this.source = TransactionSource.manual,
-    this.title = 'Add transaction',
+    this.title,
     this.description,
     this.initialType = TransactionType.expense,
     this.initialDate,
@@ -38,7 +38,7 @@ class ManualTransactionSheet extends StatefulWidget {
   final AuthUser user;
   final TransactionRepository transactionRepository;
   final TransactionSource source;
-  final String title;
+  final String? title;
   final String? description;
   final TransactionType initialType;
   final double? initialAmount;
@@ -72,7 +72,7 @@ class _ManualTransactionSheetState extends State<ManualTransactionSheet> {
             user: widget.user,
             transactionRepository: widget.transactionRepository,
             source: widget.source,
-            title: widget.title,
+            title: widget.title ?? context.strings.addTransaction,
             description: widget.description,
             initialType: widget.initialType,
             initialAmount: widget.initialAmount,
@@ -652,7 +652,9 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
           const SizedBox(height: 16),
           _PrimaryButton(
             label: widget.isEditing
-                ? (_isSaving ? context.strings.saving : 'Save changes')
+                ? (_isSaving
+                      ? context.strings.saving
+                      : context.strings.saveChanges)
                 : (_isSaving
                       ? context.strings.saving
                       : context.strings.saveTransaction),
@@ -663,7 +665,7 @@ class _ManualTransactionFormState extends State<ManualTransactionForm> {
             _DangerButton(
               label: _isDeleting
                   ? context.strings.saving
-                  : 'Delete transaction',
+                  : context.strings.deleteTransaction,
               onPressed: _isBusy ? null : _delete,
             ),
           ],

@@ -426,9 +426,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
                       ? strings.readingSlip
                       : _wasCancelled
                       ? strings.albumSyncCancelled
-                      : strings.isThai
-                      ? '\u0E2A\u0E41\u0E01\u0E19\u0E2D\u0E31\u0E25\u0E1A\u0E31\u0E49\u0E21\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27 \u0E01\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22'
-                      : 'Album scan complete. Review it or save everything now.',
+                      : strings.albumScanCompleteDescription,
                   mood: MascotMood.calm,
                 ),
                 const SizedBox(height: 16),
@@ -661,9 +659,7 @@ class _AlbumSummaryCard extends StatelessWidget {
                           : 'Reading slips')
                     : wasCancelled
                     ? context.strings.albumSyncCancelled
-                    : (context.strings.isThai
-                          ? '\u0E2D\u0E48\u0E32\u0E19\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27'
-                          : 'Scan complete'),
+                    : context.strings.albumScanComplete,
                 style: const TextStyle(
                   color: Color(0xFF10233F),
                   fontSize: 15,
@@ -695,12 +691,15 @@ class _AlbumSummaryCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _SummaryPill(label: 'Total', value: '$totalCount'),
+                child: _SummaryPill(
+                  label: context.strings.total,
+                  value: '$totalCount',
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _SummaryPill(
-                  label: 'Ready',
+                  label: context.strings.ready,
                   value: '$readyCount',
                   tint: const Color(0xFFEAF8F1),
                   valueColor: const Color(0xFF1B8F73),
@@ -710,7 +709,7 @@ class _AlbumSummaryCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _SummaryPill(
-                  label: 'Dup',
+                  label: context.strings.duplicate,
                   value: '$duplicateCount',
                   tint: const Color(0xFFFFF6DD),
                   valueColor: const Color(0xFFB8942D),
@@ -720,7 +719,9 @@ class _AlbumSummaryCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _SummaryPill(
-                  label: cancelledCount > 0 ? 'Stop' : 'Fail',
+                  label: cancelledCount > 0
+                      ? context.strings.stopped
+                      : context.strings.failed,
                   value: cancelledCount > 0
                       ? '$cancelledCount'
                       : '$failedCount',
@@ -811,40 +812,38 @@ class _AlbumResultTile extends StatelessWidget {
       _AlbumReviewStatus.ready => (
         Icons.check_circle_rounded,
         const Color(0xFF1B8F73),
-        'Done',
+        context.strings.done,
         const Color(0xFFEAF8F1),
       ),
       _AlbumReviewStatus.duplicate => (
         Icons.remove_circle_rounded,
         const Color(0xFFB8942D),
-        'Dup',
+        context.strings.duplicate,
         const Color(0xFFFFF6DD),
       ),
       _AlbumReviewStatus.failed => (
         Icons.error_rounded,
         const Color(0xFFD94768),
-        'Fail',
+        context.strings.failed,
         const Color(0xFFFFEFF1),
       ),
       _AlbumReviewStatus.cancelled => (
         Icons.stop_circle_rounded,
         const Color(0xFFD94768),
-        context.strings.isThai
-            ? '\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01'
-            : 'Stopped',
+        context.strings.stopped,
         const Color(0xFFFFEFF1),
       ),
     };
     final detailText = item.amount == null
         ? switch (item.status) {
             _AlbumReviewStatus.reading => context.strings.readingSlip,
-            _AlbumReviewStatus.ready => categoryLabel ?? 'Done',
+            _AlbumReviewStatus.ready => categoryLabel ?? context.strings.done,
             _AlbumReviewStatus.duplicate =>
               context.strings.skippedDuplicateSlip,
             _AlbumReviewStatus.failed => context.strings.couldNotReadSlip,
             _AlbumReviewStatus.cancelled => context.strings.albumSyncCancelled,
           }
-        : '${item.result?.bankDisplayName ?? 'Slip'}  •  ${formatOriginalNumber(item.amount!)}';
+        : '${item.result?.bankName ?? context.strings.slip}  •  ${formatOriginalNumber(item.amount!)}';
 
     return Container(
       padding: const EdgeInsets.all(14),

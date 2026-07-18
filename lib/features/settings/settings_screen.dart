@@ -280,6 +280,7 @@ class _ProfileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final compact = KimjodLayout.isCompact(context);
+    final strings = context.strings;
     return Container(
       padding: EdgeInsets.all(compact ? 16 : 20),
       decoration: _cardDecoration(),
@@ -318,7 +319,7 @@ class _ProfileCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  user.displayName ?? 'Kim',
+                  user.displayName ?? strings.kimjodUser,
                   style: const TextStyle(
                     color: Color(0xFF10233F),
                     fontSize: 17,
@@ -328,7 +329,7 @@ class _ProfileCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${user.email ?? 'Google account'} · Google account',
+                  '${user.email ?? strings.googleAccount} · ${strings.googleAccount}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _mutedStyle,
