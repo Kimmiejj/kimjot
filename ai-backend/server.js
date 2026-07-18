@@ -255,7 +255,7 @@ app.post("/v1/slip/analyze", aiRoute(async (request) => {
   const allowed = Array.isArray(request.body.allowedCategoryIds)
     ? request.body.allowedCategoryIds.map(String).slice(0, 40)
     : [];
-  if (!request.body.rawText || allowed.length === 0) {
+  if (!hasSlipAnalyzeInput(request.body, allowed)) {
     return httpError(400, "invalid_slip_input");
   }
 
@@ -273,7 +273,7 @@ app.post("/v1/slip/analyze", aiRoute(async (request) => {
   if (typeof request.body.imageBase64 === "string") {
     content.push({
       type: "input_image",
-      image_url: `data:image/jpeg;base64,${request.body.imageBase64}`,
+      image_url: `data:${safeImageMimeType(request.body.imageMimeType)};base64,${request.body.imageBase64}`,
     });
   }
 
@@ -1097,6 +1097,19 @@ function httpError(httpStatus, error) {
   return { httpStatus, error };
 }
 
+function hasSlipAnalyzeInput(body, allowedCategoryIds) {
+  const hasOcrText = typeof body.rawText === "string" && body.rawText.trim().length > 0;
+  const hasImage = typeof body.imageBase64 === "string" && body.imageBase64.length > 0;
+  return allowedCategoryIds.length > 0 && (hasOcrText || hasImage);
+}
+
+function safeImageMimeType(value) {
+  const mimeType = String(value || "").trim().toLowerCase();
+  return ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"].includes(mimeType)
+    ? mimeType
+    : "image/jpeg";
+}
+
 function initializeFirebase() {
   if (admin.apps.length > 0) return;
   if (FIREBASE_SERVICE_ACCOUNT_JSON) {
@@ -1179,11 +1192,13 @@ module.exports._test = {
   decryptEscrow,
   encryptEscrow,
   escrowAssociatedData,
+  hasSlipAnalyzeInput,
   markModelFailure,
   markModelSuccess,
   maskEmail,
   modelCandidates,
   parseEscrowMasterKey,
   recoveryEmailProviderError,
+  safeImageMimeType,
   selectModel,
 };

@@ -1,5 +1,4 @@
 import '../ai/ai_settings_store.dart';
-import '../transactions/transaction_type.dart';
 import 'external_ai_client.dart';
 import 'slip_scan_result.dart';
 import 'slip_transaction_resolver.dart';
@@ -28,16 +27,6 @@ Future<AlbumSyncAiResolution> analyzeAlbumSyncSlip({
   AlbumSyncAiAnalyzer? analyzeWithAi,
 }) async {
   final localDecision = resolveBestEffortSlipDecision(result);
-  if (localDecision?.type == TransactionType.internalTransfer &&
-      result.amount != null &&
-      result.amount! > 0) {
-    return AlbumSyncAiResolution(
-      result: result,
-      decision: localDecision,
-      usedAi: false,
-    );
-  }
-
   ExternalSlipAnalysis? ai;
   try {
     ai = await (analyzeWithAi ?? _analyzeWithConfiguredAi)(result, imagePath);
@@ -88,8 +77,7 @@ SlipScanResult _mergeAiFields(SlipScanResult result, ExternalSlipAnalysis ai) {
       aiAmount != null &&
       aiAmount > 0 &&
       (result.amount == null ||
-          ai.confidence == null ||
-          ai.confidence! >= 0.65);
+          (ai.confidence != null && ai.confidence! >= 0.65));
   return result.copyWith(
     amount: useAiAmount ? aiAmount : result.amount,
     amountConfidence: useAiAmount

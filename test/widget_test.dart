@@ -414,6 +414,7 @@ void main() {
           user: user,
           transactionRepository: transactionRepository,
           imagePaths: const ['missing-scb-internal-transfer.png'],
+          analyzeWithAi: (_, _) async => null,
           scanImagePath: (_) async => const SlipScanResult(
             rawText:
                 'SCB\n'

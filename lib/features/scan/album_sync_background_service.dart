@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/app_language.dart';
+import '../../firebase_options.dart';
 import '../transactions/transaction_type.dart';
 import 'album_sync_ai_analyzer.dart';
 import 'slip_fingerprint.dart';
@@ -488,6 +490,16 @@ Future<bool> _onAlbumSyncIosBackground(ServiceInstance service) async {
 @pragma('vm:entry-point')
 void _onAlbumSyncServiceStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+  } catch (_) {
+    // OCR remains available when Firebase is temporarily unavailable. The AI
+    // analyzer will fall back to the local result instead of failing the job.
+  }
   await _initializeBackgroundNotifications();
 
   service.on('startAlbumSync').listen((_) {

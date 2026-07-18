@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../ai/ai_models.dart';
 import '../ai/ai_settings_store.dart';
 import '../transactions/transaction_type.dart';
+import 'ai_image_payload.dart';
 import 'slip_scan_result.dart';
 
 /// Authenticated client for the Kimjod AI backend.
@@ -69,8 +70,11 @@ class ExternalAiClient {
     };
 
     if (includeImage && imagePath != null) {
-      final image = await _smallEnoughImage(imagePath);
-      if (image != null) body['imageBase64'] = image;
+      final image = await prepareAiImagePayload(imagePath);
+      if (image != null) {
+        body['imageBase64'] = base64Encode(image.bytes);
+        body['imageMimeType'] = image.mimeType;
+      }
     }
 
     final json = await _postJson('/v1/slip/analyze', body);
@@ -274,17 +278,6 @@ class ExternalAiClient {
       }
       final decoded = jsonDecode(response.body);
       return decoded is Map<String, dynamic> ? decoded : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<String?> _smallEnoughImage(String path) async {
-    try {
-      final file = File(path);
-      final length = await file.length();
-      if (length <= 0 || length > 4 * 1024 * 1024) return null;
-      return base64Encode(await file.readAsBytes());
     } catch (_) {
       return null;
     }

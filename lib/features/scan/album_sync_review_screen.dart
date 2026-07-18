@@ -25,6 +25,7 @@ class AlbumSyncReviewScreen extends StatefulWidget {
     required this.transactionRepository,
     required this.imagePaths,
     this.scanImagePath,
+    this.analyzeWithAi,
     super.key,
   });
 
@@ -32,6 +33,7 @@ class AlbumSyncReviewScreen extends StatefulWidget {
   final TransactionRepository transactionRepository;
   final List<String> imagePaths;
   final Future<SlipScanResult> Function(String imagePath)? scanImagePath;
+  final AlbumSyncAiAnalyzer? analyzeWithAi;
 
   @override
   State<AlbumSyncReviewScreen> createState() => _AlbumSyncReviewScreenState();
@@ -168,6 +170,7 @@ class _AlbumSyncReviewScreenState extends State<AlbumSyncReviewScreen> {
         final analysis = await analyzeAlbumSyncSlip(
           result: scannedResult,
           imagePath: item.path,
+          analyzeWithAi: widget.analyzeWithAi,
         );
         if (_cancelRequested || !mounted) {
           return;
