@@ -15,7 +15,6 @@ import '../features/settings/settings_screen.dart';
 import '../features/transactions/transaction_repository.dart';
 import '../features/transactions/transaction_sync_status.dart';
 import '../features/usage/usage_analytics.dart';
-import '../shared/widgets/app_exit_animation.dart';
 import '../shared/widgets/responsive_layout.dart';
 import 'app_language.dart';
 
@@ -43,12 +42,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   StreamSubscription<void>? _autoSyncOpenSubscription;
   bool _isOpeningAlbumSync = false;
   bool _isImportingAutoSync = false;
-  bool _isExiting = false;
   var _transitionTick = 0;
+  late Stream<TransactionSyncStatus> _syncStatusStream;
+  final _loadedTabs = <AppShellTab>{AppShellTab.home};
 
   @override
   void initState() {
     super.initState();
+    _syncStatusStream = widget.transactionRepository.watchSyncStatus(
+      widget.user.uid,
+    );
     WidgetsBinding.instance.addObserver(this);
     unawaited(UsageAnalytics.instance.startSession(widget.user.uid));
     _albumSyncOpenSubscription = AlbumSyncBackgroundService.openRequests.listen(
@@ -66,6 +69,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       }
       unawaited(_importPendingAutoSync());
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant AppShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.uid != widget.user.uid ||
+        oldWidget.transactionRepository != widget.transactionRepository) {
+      _syncStatusStream = widget.transactionRepository.watchSyncStatus(
+        widget.user.uid,
+      );
+    }
   }
 
   @override
@@ -91,6 +105,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
 
     setState(() {
+      _loadedTabs.add(tab);
       _selectedTab = tab;
       _transitionTick++;
     });
@@ -112,6 +127,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     bool? saved;
     try {
       setState(() {
+        _loadedTabs.add(AppShellTab.scan);
         _selectedTab = AppShellTab.scan;
       });
       saved = await Navigator.of(context).push<bool>(
@@ -168,12 +184,32 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _playExitAnimation() async {
-    if (_isExiting) return;
-    setState(() => _isExiting = true);
-    await Future<void>.delayed(AppExitAnimation.duration);
-    if (!mounted) return;
-    await SystemNavigator.pop();
+  Widget _buildTab(AppShellTab tab) {
+    if (!_loadedTabs.contains(tab)) return const SizedBox.shrink();
+
+    return switch (tab) {
+      AppShellTab.home => HomeScreen(
+        user: widget.user,
+        transactionRepository: widget.transactionRepository,
+        onOpenScan: () => _selectTab(AppShellTab.scan),
+        onOpenSettings: () => _selectTab(AppShellTab.settings),
+      ),
+      AppShellTab.scan => ScanHubScreen(
+        user: widget.user,
+        transactionRepository: widget.transactionRepository,
+        showBackButton: false,
+        onReturnHome: () => _selectTab(AppShellTab.home),
+      ),
+      AppShellTab.analytics => AnalyticsScreen(
+        user: widget.user,
+        transactionRepository: widget.transactionRepository,
+      ),
+      AppShellTab.settings => SettingsScreen(
+        user: widget.user,
+        authService: widget.authService,
+        transactionRepository: widget.transactionRepository,
+      ),
+    };
   }
 
   @override
@@ -201,35 +237,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             ),
             child: IndexedStack(
               index: _selectedTab.index,
-              children: [
-                HomeScreen(
-                  user: widget.user,
-                  transactionRepository: widget.transactionRepository,
-                  onOpenScan: () => _selectTab(AppShellTab.scan),
-                  onOpenSettings: () => _selectTab(AppShellTab.settings),
-                ),
-                ScanHubScreen(
-                  user: widget.user,
-                  transactionRepository: widget.transactionRepository,
-                  showBackButton: false,
-                  onReturnHome: () => _selectTab(AppShellTab.home),
-                ),
-                AnalyticsScreen(
-                  user: widget.user,
-                  transactionRepository: widget.transactionRepository,
-                ),
-                SettingsScreen(
-                  user: widget.user,
-                  authService: widget.authService,
-                  transactionRepository: widget.transactionRepository,
-                ),
-              ],
+              children: AppShellTab.values.map(_buildTab).toList(),
             ),
           ),
           StreamBuilder<TransactionSyncStatus>(
-            stream: widget.transactionRepository.watchSyncStatus(
-              widget.user.uid,
-            ),
+            stream: _syncStatusStream,
             builder: (context, snapshot) {
               final status =
                   snapshot.data ?? const TransactionSyncStatus.synced();
@@ -243,18 +255,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) unawaited(_playExitAnimation());
+        if (!didPop) unawaited(SystemNavigator.pop());
       },
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          scaffold,
-          if (_isExiting)
-            const Positioned.fill(
-              child: AbsorbPointer(child: AppExitAnimation()),
-            ),
-        ],
-      ),
+      child: scaffold,
     );
   }
 }

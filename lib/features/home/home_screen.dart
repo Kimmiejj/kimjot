@@ -685,7 +685,7 @@ class _MoneySettingsBuilderState extends State<_MoneySettingsBuilder> {
   }
 }
 
-class _SummaryBuilder extends StatelessWidget {
+class _SummaryBuilder extends StatefulWidget {
   const _SummaryBuilder({
     required this.userId,
     required this.month,
@@ -699,11 +699,41 @@ class _SummaryBuilder extends StatelessWidget {
   final Widget Function(HomeSummary summary) builder;
 
   @override
+  State<_SummaryBuilder> createState() => _SummaryBuilderState();
+}
+
+class _SummaryBuilderState extends State<_SummaryBuilder> {
+  late Stream<HomeSummary> _summaryStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _summaryStream = _watchSummary();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SummaryBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId ||
+        oldWidget.month != widget.month ||
+        oldWidget.transactionRepository != widget.transactionRepository) {
+      _summaryStream = _watchSummary();
+    }
+  }
+
+  Stream<HomeSummary> _watchSummary() {
+    return widget.transactionRepository.watchMonthSummary(
+      widget.userId,
+      widget.month,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<HomeSummary>(
-      stream: transactionRepository.watchMonthSummary(userId, month),
+      stream: _summaryStream,
       builder: (context, snapshot) {
-        return builder(snapshot.data ?? const HomeSummary.empty());
+        return widget.builder(snapshot.data ?? const HomeSummary.empty());
       },
     );
   }
@@ -1608,7 +1638,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _RecentTransactionsBuilder extends StatelessWidget {
+class _RecentTransactionsBuilder extends StatefulWidget {
   const _RecentTransactionsBuilder({
     required this.user,
     required this.userId,
@@ -1624,13 +1654,42 @@ class _RecentTransactionsBuilder extends StatelessWidget {
   final VoidCallback onSeeMore;
 
   @override
+  State<_RecentTransactionsBuilder> createState() =>
+      _RecentTransactionsBuilderState();
+}
+
+class _RecentTransactionsBuilderState
+    extends State<_RecentTransactionsBuilder> {
+  late Stream<List<TransactionRecord>> _transactionsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _transactionsStream = _watchTransactions();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RecentTransactionsBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId ||
+        oldWidget.month != widget.month ||
+        oldWidget.transactionRepository != widget.transactionRepository) {
+      _transactionsStream = _watchTransactions();
+    }
+  }
+
+  Stream<List<TransactionRecord>> _watchTransactions() {
+    return widget.transactionRepository.watchMonthTransactions(
+      widget.userId,
+      widget.month,
+      limit: 5,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<TransactionRecord>>(
-      stream: transactionRepository.watchMonthTransactions(
-        userId,
-        month,
-        limit: 5,
-      ),
+      stream: _transactionsStream,
       builder: (context, snapshot) {
         final transactions = snapshot.data ?? const [];
 
@@ -1659,8 +1718,8 @@ class _RecentTransactionsBuilder extends StatelessWidget {
                   isScrollControlled: true,
                   backgroundColor: const Color(0xFFF8FFFF),
                   builder: (context) => ManualTransactionSheet(
-                    user: user,
-                    transactionRepository: transactionRepository,
+                    user: widget.user,
+                    transactionRepository: widget.transactionRepository,
                     source: transactions[index].source,
                     title: context.strings.isThai
                         ? 'ดูและแก้ไขรายการ'
@@ -1679,7 +1738,7 @@ class _RecentTransactionsBuilder extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(
-                onPressed: onSeeMore,
+                onPressed: widget.onSeeMore,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF16345F),
                   backgroundColor: Colors.white.withValues(alpha: 0.72),

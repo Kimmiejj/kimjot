@@ -31,6 +31,7 @@ class TransactionListScreen extends StatefulWidget {
 
 class _TransactionListScreenState extends State<TransactionListScreen> {
   late DateTime _selectedMonth;
+  late Stream<List<TransactionRecord>> _transactionsStream;
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -39,6 +40,16 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     super.initState();
     final initial = widget.initialMonth ?? DateTime.now();
     _selectedMonth = DateTime(initial.year, initial.month);
+    _transactionsStream = _watchSelectedMonth();
+  }
+
+  @override
+  void didUpdateWidget(covariant TransactionListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.uid != widget.user.uid ||
+        oldWidget.transactionRepository != widget.transactionRepository) {
+      _transactionsStream = _watchSelectedMonth();
+    }
   }
 
   @override
@@ -53,6 +64,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         _selectedMonth.year,
         _selectedMonth.month + delta,
       );
+      _transactionsStream = _watchSelectedMonth();
     });
   }
 
@@ -62,7 +74,17 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
       initialMonth: _selectedMonth,
     );
     if (selected == null || !mounted) return;
-    setState(() => _selectedMonth = selected);
+    setState(() {
+      _selectedMonth = selected;
+      _transactionsStream = _watchSelectedMonth();
+    });
+  }
+
+  Stream<List<TransactionRecord>> _watchSelectedMonth() {
+    return widget.transactionRepository.watchMonthTransactions(
+      widget.user.uid,
+      _selectedMonth,
+    );
   }
 
   void _setSearchQuery(String value) {
@@ -151,10 +173,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(gutter, 18, gutter, 24),
                 sliver: StreamBuilder<List<TransactionRecord>>(
-                  stream: widget.transactionRepository.watchMonthTransactions(
-                    widget.user.uid,
-                    _selectedMonth,
-                  ),
+                  stream: _transactionsStream,
                   builder: (context, snapshot) {
                     final records = snapshot.data ?? const [];
                     final transactions = _filterTransactions(

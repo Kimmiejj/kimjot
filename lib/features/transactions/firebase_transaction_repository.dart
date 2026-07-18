@@ -266,6 +266,8 @@ class FirebaseTransactionRepository
   @override
   Stream<TransactionSyncStatus> watchSyncStatus(String userId) {
     return _userTransactionsCollection(userId)
+        .orderBy('clientUpdatedAt', descending: true)
+        .limit(25)
         .snapshots(includeMetadataChanges: true)
         .map(
           (snapshot) => TransactionSyncStatus(

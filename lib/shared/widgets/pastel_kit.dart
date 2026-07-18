@@ -97,6 +97,8 @@ class KimjodMascot extends StatelessWidget {
                   'assets/branding/kimjod_sloth_icon.png',
                   fit: BoxFit.cover,
                   filterQuality: FilterQuality.medium,
+                  cacheWidth: 512,
+                  cacheHeight: 512,
                 ),
               ),
             ),

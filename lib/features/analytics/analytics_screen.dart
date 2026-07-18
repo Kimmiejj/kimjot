@@ -36,12 +36,27 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   _AnalyticsRange _range = _AnalyticsRange.sixMonths;
   bool _loadingInsight = false;
   FinancialAiInsight? _insight;
+  late Stream<List<TransactionRecord>> _transactionsStream;
 
   @override
   void initState() {
     super.initState();
+    _transactionsStream = widget.transactionRepository.watchTransactions(
+      widget.user.uid,
+    );
     AiSettingsStore.instance.load();
     MoneySettingsStore.instance.load(widget.user.uid);
+  }
+
+  @override
+  void didUpdateWidget(covariant AnalyticsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.uid != widget.user.uid ||
+        oldWidget.transactionRepository != widget.transactionRepository) {
+      _transactionsStream = widget.transactionRepository.watchTransactions(
+        widget.user.uid,
+      );
+    }
   }
 
   Future<void> _analyze(_AnalyticsData data) async {
@@ -87,9 +102,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
         child: SafeArea(
           child: StreamBuilder<List<TransactionRecord>>(
-            stream: widget.transactionRepository.watchTransactions(
-              widget.user.uid,
-            ),
+            stream: _transactionsStream,
             builder: (context, snapshot) {
               final settings = MoneySettingsStore.instance.snapshotFor(
                 widget.user.uid,

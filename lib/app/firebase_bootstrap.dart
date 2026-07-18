@@ -26,31 +26,20 @@ class FirebaseBootstrap extends StatefulWidget {
 }
 
 class _FirebaseBootstrapState extends State<FirebaseBootstrap> {
-  static const _minimumLaunchDuration = Duration(seconds: 2);
-
   late Future<FirebaseApp> _startup;
 
   @override
   void initState() {
     super.initState();
-    _startup = _initializeWithLaunchMovie();
+    _startup = widget.firebaseInitialization;
   }
 
   @override
   void didUpdateWidget(covariant FirebaseBootstrap oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.firebaseInitialization != widget.firebaseInitialization) {
-      _startup = _initializeWithLaunchMovie();
+      _startup = widget.firebaseInitialization;
     }
-  }
-
-  Future<FirebaseApp> _initializeWithLaunchMovie() async {
-    final initialization = widget.firebaseInitialization;
-    await Future.wait<void>([
-      initialization.then<void>((_) {}),
-      Future<void>.delayed(_minimumLaunchDuration),
-    ]);
-    return initialization;
   }
 
   @override

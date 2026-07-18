@@ -9,6 +9,8 @@ class UsageAnalytics {
   static final instance = UsageAnalytics._();
 
   static const _versionChannel = MethodChannel('kimjod/app_update');
+  static const _heartbeatInterval = Duration(minutes: 30);
+  static const _minimumActivityWriteInterval = Duration(minutes: 15);
   static const _allowedFeatures = <String>{
     'home',
     'scan',
@@ -22,14 +24,17 @@ class UsageAnalytics {
   String _versionName = '';
   int _versionCode = 0;
   Future<void>? _ready;
+  DateTime? _lastActivityWriteAt;
+  final _trackedFeatures = <String>{};
 
   Future<void> startSession(String userId) {
     if (_userId == userId && _ready != null) return _ready!;
     stop();
     _userId = userId;
+    _trackedFeatures.add('home');
     _ready = _initializeAndStart(userId);
     _heartbeatTimer = Timer.periodic(
-      const Duration(minutes: 5),
+      _heartbeatInterval,
       (_) => unawaited(heartbeat()),
     );
     return _ready!;
@@ -50,7 +55,11 @@ class UsageAnalytics {
   }
 
   Future<void> trackFeature(String feature) async {
-    if (!_allowedFeatures.contains(feature) || _userId == null) return;
+    if (!_allowedFeatures.contains(feature) ||
+        _userId == null ||
+        !_trackedFeatures.add(feature)) {
+      return;
+    }
     try {
       await _ready;
       await _writeDailyUsage(feature: feature);
@@ -61,6 +70,12 @@ class UsageAnalytics {
 
   Future<void> heartbeat() async {
     if (_userId == null) return;
+    final lastWriteAt = _lastActivityWriteAt;
+    if (lastWriteAt != null &&
+        DateTime.now().difference(lastWriteAt) <
+            _minimumActivityWriteInterval) {
+      return;
+    }
     try {
       await _ready;
       await _writeDailyUsage();
@@ -74,6 +89,8 @@ class UsageAnalytics {
     _heartbeatTimer = null;
     _userId = null;
     _ready = null;
+    _lastActivityWriteAt = null;
+    _trackedFeatures.clear();
   }
 
   Future<void> _writeDailyUsage({
@@ -84,9 +101,9 @@ class UsageAnalytics {
     if (userId == null) return;
     final now = DateTime.now();
     final day = _dateKey(now);
-    final userRef = FirebaseFirestore.instance.collection('usage_users').doc(
-      userId,
-    );
+    final userRef = FirebaseFirestore.instance
+        .collection('usage_users')
+        .doc(userId);
     final dailyRef = FirebaseFirestore.instance
         .collection('usage_days')
         .doc(day)
@@ -106,19 +123,18 @@ class UsageAnalytics {
     };
 
     final batch = FirebaseFirestore.instance.batch();
-    batch.set(
-      userRef,
-      <String, Object?>{
+    if (incrementSession) {
+      batch.set(userRef, <String, Object?>{
         'uid': userId,
         'lastSeenAt': FieldValue.serverTimestamp(),
         'versionName': _versionName,
         'versionCode': _versionCode,
         'platform': 'android',
-      },
-      SetOptions(merge: true),
-    );
+      }, SetOptions(merge: true));
+    }
     batch.set(dailyRef, daily, SetOptions(merge: true));
     await batch.commit();
+    _lastActivityWriteAt = now;
   }
 }
 

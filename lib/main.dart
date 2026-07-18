@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +15,10 @@ import 'firebase_options.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  final firebaseInitialization = Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   await SystemChrome.setPreferredOrientations(const [
     DeviceOrientation.portraitUp,
   ]);
@@ -26,17 +32,27 @@ Future<void> main() async {
   );
 
   final initialLanguage = await AppLanguageController.loadSavedLanguage();
-  await AiSettingsStore.instance.load();
-  await AlbumSyncBackgroundService.initialize();
 
   runApp(
     KimjodApp(
-      firebaseInitialization: Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      ),
+      firebaseInitialization: firebaseInitialization,
       authService: FirebaseAuthService(),
       transactionRepository: FirebaseTransactionRepository(),
       initialLanguage: initialLanguage,
     ),
   );
+
+  unawaited(_initializeOptionalServices());
+}
+
+Future<void> _initializeOptionalServices() async {
+  try {
+    await Future.wait<void>([
+      AiSettingsStore.instance.load(),
+      AlbumSyncBackgroundService.initialize(),
+    ]);
+  } catch (_) {
+    // Optional services retry when their features are opened. They must not
+    // delay the first frame or prevent the core transaction flow from loading.
+  }
 }

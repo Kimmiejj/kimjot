@@ -73,7 +73,7 @@ void main() {
       messageTh: null,
       messageEn: null,
     );
-    await tester.pump(const Duration(minutes: 1));
+    await tester.pump(const Duration(hours: 1));
     await tester.pumpAndSettle();
 
     expect(find.text('App update required'), findsOneWidget);

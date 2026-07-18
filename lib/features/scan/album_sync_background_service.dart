@@ -34,6 +34,8 @@ StreamSubscription<AlbumSyncJobSnapshot>? _albumSyncProgressSubscription;
 class AlbumSyncBackgroundService {
   const AlbumSyncBackgroundService._();
 
+  static Future<void>? _initialization;
+
   static Stream<void> get openRequests => _albumSyncOpenController.stream;
 
   static Stream<AlbumSyncJobSnapshot?> get watchJob =>
@@ -57,6 +59,20 @@ class AlbumSyncBackgroundService {
   }
 
   static Future<void> initialize() async {
+    final pending = _initialization;
+    if (pending != null) return pending;
+
+    final initialization = _initialize();
+    _initialization = initialization;
+    try {
+      await initialization;
+    } catch (_) {
+      _initialization = null;
+      rethrow;
+    }
+  }
+
+  static Future<void> _initialize() async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       return;
     }
@@ -152,6 +168,7 @@ class AlbumSyncBackgroundService {
     required List<String> imagePaths,
     required Set<String> activeFingerprints,
   }) async {
+    await initialize();
     final snapshot = AlbumSyncJobSnapshot(
       jobId: DateTime.now().microsecondsSinceEpoch.toString(),
       userId: userId,

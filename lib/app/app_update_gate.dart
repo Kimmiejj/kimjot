@@ -116,7 +116,7 @@ class AppUpdateGate extends StatefulWidget {
 
 class _AppUpdateGateState extends State<AppUpdateGate>
     with WidgetsBindingObserver {
-  static const _checkInterval = Duration(minutes: 1);
+  static const _checkInterval = Duration(hours: 1);
 
   late final AppUpdateService _service =
       widget.service ?? FirebaseAndroidAppUpdateService();
@@ -129,6 +129,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   var _updating = false;
   var _updateStarted = false;
   String? _error;
+  DateTime? _lastCheckAt;
 
   @override
   void initState() {
@@ -150,9 +151,17 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     super.dispose();
   }
 
-  Future<void> _checkForUpdate() async {
+  Future<void> _checkForUpdate({bool force = false}) async {
     if (_checking) return;
+    final now = DateTime.now();
+    final lastCheckAt = _lastCheckAt;
+    if (!force &&
+        lastCheckAt != null &&
+        now.difference(lastCheckAt) < _checkInterval) {
+      return;
+    }
     _checking = true;
+    _lastCheckAt = now;
     final requirement = await _service.checkForRequiredUpdate();
     _checking = false;
     if (!mounted) return;
@@ -192,7 +201,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       _updateStarted = false;
       _error = null;
     });
-    _checkForUpdate();
+    _checkForUpdate(force: true);
   }
 
   @override

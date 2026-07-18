@@ -23,6 +23,42 @@ import 'package:kimjot/features/transactions/transaction_type.dart';
 import 'package:kimjot/features/transactions/update_transaction_input.dart';
 
 void main() {
+  testWidgets('defers analytics reads until the graph tab is opened', (
+    tester,
+  ) async {
+    final authService = _FakeAuthService();
+    final transactionRepository = _FakeTransactionRepository();
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        AppShell(
+          user: const AuthUser(
+            uid: 'test-user',
+            displayName: 'Test User',
+            email: 'test@example.com',
+          ),
+          authService: authService,
+          transactionRepository: transactionRepository,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(transactionRepository.watchAllTransactionsCalls, 0);
+
+    await tester.tap(find.text('Graph').last);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(transactionRepository.watchAllTransactionsCalls, 1);
+
+    await tester.tap(find.text('Settings').last);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.tap(find.text('Graph').last);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(transactionRepository.watchAllTransactionsCalls, 1);
+
+    authService.dispose();
+  });
+
   for (final size in <Size>[const Size(375, 667), const Size(384, 824)]) {
     testWidgets('main tabs fit ${size.width}x${size.height}', (
       WidgetTester tester,
@@ -507,6 +543,7 @@ class _FakeAuthService implements AuthService {
 
 class _FakeTransactionRepository implements TransactionRepository {
   final savedInputs = <CreateTransactionInput>[];
+  var watchAllTransactionsCalls = 0;
   final _summaryController = StreamController<HomeSummary>.broadcast();
   final _transactionsController =
       StreamController<List<TransactionRecord>>.broadcast();
@@ -576,6 +613,7 @@ class _FakeTransactionRepository implements TransactionRepository {
 
   @override
   Stream<List<TransactionRecord>> watchTransactions(String userId) {
+    watchAllTransactionsCalls++;
     return _transactionsController.stream;
   }
 
